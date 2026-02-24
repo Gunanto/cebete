@@ -11,7 +11,15 @@ docker compose -f deployments/docker-compose.yml up -d
 ## Jalankan aplikasi
 
 ```bash
+cp .env.example .env.local
+# edit .env.local, terutama DB_DSN dan BOOTSTRAP_TOKEN
+
+set -a
+source .env.local
+set +a
+
 go mod tidy
+./scripts/migrate.sh up
 go run ./cmd/web
 ```
 
@@ -76,6 +84,14 @@ Urutan migration saat ini:
 - `000008_master_data_school_class_enrollment`
 - `000009_attempt_events_anticheat`
 - `000010_performance_indexes`
+- `000011_education_levels`
+- `000012_exam_access_token`
+- `000013_exam_assignments`
+- `000014_user_student_identity_fields`
+- `000015_exam_question_incidents`
+- `000016_question_reopen_workflow`
+- `000017_learning_goals`
+- `000018_link_learning_goals_to_questions_and_stimuli`
 
 Gunakan runner:
 

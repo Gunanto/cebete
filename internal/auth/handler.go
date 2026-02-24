@@ -355,7 +355,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.svc.ListUsers(r.Context(), role, q, limit, offset)
+	items, err := h.svc.ListUsers(r.Context(), role, q, limit, offset, false)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid role filter") {
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})

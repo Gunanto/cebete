@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE learning_goals
+  DROP COLUMN IF EXISTS materi;
+
+COMMIT;

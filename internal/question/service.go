@@ -11,18 +11,19 @@ import (
 )
 
 var (
-	ErrInvalidInput       = errors.New("invalid input")
-	ErrSubjectNotFound    = errors.New("subject not found")
-	ErrStimulusNotFound   = errors.New("stimulus not found")
-	ErrExamNotFound       = errors.New("exam not found")
-	ErrQuestionNotFound   = errors.New("question not found")
-	ErrParallelNotFound   = errors.New("question parallel not found")
-	ErrQuestionNotInExam  = errors.New("question not in exam")
-	ErrVersionNotFound    = errors.New("question version not found")
-	ErrReviewTaskNotFound = errors.New("review task not found")
-	ErrReviewForbidden    = errors.New("review forbidden")
-	ErrReopenNotAllowed   = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
-	ErrReopenPending      = errors.New("permintaan reopen final masih menunggu persetujuan")
+	ErrInvalidInput         = errors.New("invalid input")
+	ErrSubjectNotFound      = errors.New("subject not found")
+	ErrLearningGoalNotFound = errors.New("learning goal not found")
+	ErrStimulusNotFound     = errors.New("stimulus not found")
+	ErrExamNotFound         = errors.New("exam not found")
+	ErrQuestionNotFound     = errors.New("question not found")
+	ErrParallelNotFound     = errors.New("question parallel not found")
+	ErrQuestionNotInExam    = errors.New("question not in exam")
+	ErrVersionNotFound      = errors.New("question version not found")
+	ErrReviewTaskNotFound   = errors.New("review task not found")
+	ErrReviewForbidden      = errors.New("review forbidden")
+	ErrReopenNotAllowed     = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
+	ErrReopenPending        = errors.New("permintaan reopen final masih menunggu persetujuan")
 )
 
 type Service struct {
@@ -30,35 +31,39 @@ type Service struct {
 }
 
 type CreateStimulusInput struct {
-	SubjectID    int64
-	Title        string
-	StimulusType string
-	Content      json.RawMessage
-	CreatedBy    int64
+	SubjectID      int64
+	LearningGoalID int64
+	Title          string
+	StimulusType   string
+	Content        json.RawMessage
+	CreatedBy      int64
 }
 
 type Stimulus struct {
-	ID           int64           `json:"id"`
-	SubjectID    int64           `json:"subject_id"`
-	Title        string          `json:"title"`
-	StimulusType string          `json:"stimulus_type"`
-	Content      json.RawMessage `json:"content"`
-	IsActive     bool            `json:"is_active"`
-	CreatedBy    *int64          `json:"created_by,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID             int64           `json:"id"`
+	SubjectID      int64           `json:"subject_id"`
+	LearningGoalID int64           `json:"learning_goal_id"`
+	Title          string          `json:"title"`
+	StimulusType   string          `json:"stimulus_type"`
+	Content        json.RawMessage `json:"content"`
+	IsActive       bool            `json:"is_active"`
+	CreatedBy      *int64          `json:"created_by,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 type UpdateStimulusInput struct {
-	ID           int64
-	SubjectID    int64
-	Title        string
-	StimulusType string
-	Content      json.RawMessage
+	ID             int64
+	SubjectID      int64
+	LearningGoalID int64
+	Title          string
+	StimulusType   string
+	Content        json.RawMessage
 }
 
 type CreateQuestionInput struct {
 	SubjectID      int64
+	LearningGoalID int64
 	QuestionType   string
 	Title          string
 	Indicator      string
@@ -72,6 +77,7 @@ type CreateQuestionInput struct {
 type QuestionBlueprint struct {
 	ID             int64           `json:"id"`
 	SubjectID      int64           `json:"subject_id"`
+	LearningGoalID int64           `json:"learning_goal_id"`
 	EducationLevel string          `json:"education_level"`
 	SubjectType    string          `json:"subject_type"`
 	SubjectName    string          `json:"subject_name"`
@@ -306,7 +312,7 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 	in.Objective = strings.TrimSpace(in.Objective)
 	in.CognitiveLevel = strings.TrimSpace(in.CognitiveLevel)
 
-	if in.SubjectID <= 0 || in.QuestionType == "" || in.Title == "" {
+	if in.SubjectID <= 0 || in.LearningGoalID <= 0 || in.QuestionType == "" || in.Title == "" {
 		return nil, ErrInvalidInput
 	}
 	if in.Difficulty != nil && (*in.Difficulty < 1 || *in.Difficulty > 5) {
@@ -328,6 +334,21 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 		}
 		return nil, fmt.Errorf("load subject: %w", err)
 	}
+	var validGoal bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM learning_goals lg
+			WHERE lg.id = $1
+			  AND lg.mata_pelajaran = $2
+			  AND lg.kelas = $3
+		)
+	`, in.LearningGoalID, subject.name, subject.educationLevel).Scan(&validGoal); err != nil {
+		return nil, fmt.Errorf("check learning goal: %w", err)
+	}
+	if !validGoal {
+		return nil, ErrLearningGoalNotFound
+	}
 
 	metaRaw, err := json.Marshal(map[string]any{
 		"title":           in.Title,
@@ -344,19 +365,20 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 	stem := "<p>Draft naskah soal: " + in.Title + "</p>"
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO questions (
-			subject_id, question_type, stem_html, stimulus_html, difficulty,
+			subject_id, learning_goal_id, question_type, stem_html, stimulus_html, difficulty,
 			metadata, is_active, version, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, NULL, $4, $5::jsonb, TRUE, 1, now(), now()
+			$1, $2, $3, $4, NULL, $5, $6::jsonb, TRUE, 1, now(), now()
 		)
-		RETURNING id, subject_id, question_type, difficulty, metadata, created_at, updated_at
-	`, in.SubjectID, in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw))
+		RETURNING id, subject_id, learning_goal_id, question_type, difficulty, metadata, created_at, updated_at
+	`, in.SubjectID, in.LearningGoalID, in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw))
 
 	var out QuestionBlueprint
 	var difficulty sql.NullInt64
 	if err := row.Scan(
 		&out.ID,
 		&out.SubjectID,
+		&out.LearningGoalID,
 		&out.QuestionType,
 		&difficulty,
 		&out.Metadata,
@@ -378,7 +400,7 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 
 func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
 	query := `
-		SELECT q.id, q.subject_id, s.education_level, s.subject_type, s.name,
+		SELECT q.id, q.subject_id, q.learning_goal_id, s.education_level, s.subject_type, s.name,
 			q.question_type, q.difficulty, q.metadata, q.created_at, q.updated_at
 		FROM questions q
 		JOIN subjects s ON s.id = q.subject_id
@@ -412,6 +434,7 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 		if err := rows.Scan(
 			&out.ID,
 			&out.SubjectID,
+			&out.LearningGoalID,
 			&out.EducationLevel,
 			&out.SubjectType,
 			&out.SubjectName,
@@ -440,7 +463,7 @@ func (s *Service) CreateStimulus(ctx context.Context, in CreateStimulusInput) (*
 	in.Title = strings.TrimSpace(in.Title)
 	in.StimulusType = strings.ToLower(strings.TrimSpace(in.StimulusType))
 
-	if in.SubjectID <= 0 || in.Title == "" || in.StimulusType == "" {
+	if in.SubjectID <= 0 || in.LearningGoalID <= 0 || in.Title == "" || in.StimulusType == "" {
 		return nil, ErrInvalidInput
 	}
 	if in.StimulusType != "single" && in.StimulusType != "multiteks" {
@@ -454,27 +477,48 @@ func (s *Service) CreateStimulus(ctx context.Context, in CreateStimulusInput) (*
 		return nil, err
 	}
 
-	var subjectExists bool
+	var subjectName, educationLevel string
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(SELECT 1 FROM subjects WHERE id = $1 AND is_active = TRUE)
-	`, in.SubjectID).Scan(&subjectExists); err != nil {
+		SELECT name, education_level
+		FROM subjects
+		WHERE id = $1 AND is_active = TRUE
+	`, in.SubjectID).Scan(&subjectName, &educationLevel); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSubjectNotFound
+		}
 		return nil, fmt.Errorf("check subject: %w", err)
 	}
-	if !subjectExists {
+	var validGoal bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM learning_goals lg
+			WHERE lg.id = $1
+			  AND lg.mata_pelajaran = $2
+			  AND lg.kelas = $3
+		)
+	`, in.LearningGoalID, subjectName, educationLevel).Scan(&validGoal); err != nil {
+		return nil, fmt.Errorf("check learning goal: %w", err)
+	}
+	if !validGoal {
+		return nil, ErrLearningGoalNotFound
+	}
+	if strings.TrimSpace(subjectName) == "" {
 		return nil, ErrSubjectNotFound
 	}
 
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO stimuli (subject_id, title, stimulus_type, content, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4::jsonb, NULLIF($5, 0), now(), now())
-		RETURNING id, subject_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
-	`, in.SubjectID, in.Title, in.StimulusType, []byte(in.Content), in.CreatedBy)
+		INSERT INTO stimuli (subject_id, learning_goal_id, title, stimulus_type, content, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, NULLIF($6, 0), now(), now())
+		RETURNING id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
+	`, in.SubjectID, in.LearningGoalID, in.Title, in.StimulusType, []byte(in.Content), in.CreatedBy)
 
 	var out Stimulus
 	var createdBy sql.NullInt64
 	if err := row.Scan(
 		&out.ID,
 		&out.SubjectID,
+		&out.LearningGoalID,
 		&out.Title,
 		&out.StimulusType,
 		&out.Content,
@@ -497,7 +541,7 @@ func (s *Service) ListStimuliBySubject(ctx context.Context, subjectID int64) ([]
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, subject_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
+		SELECT id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
 		FROM stimuli
 		WHERE subject_id = $1 AND is_active = TRUE
 		ORDER BY id DESC
@@ -514,6 +558,7 @@ func (s *Service) ListStimuliBySubject(ctx context.Context, subjectID int64) ([]
 		if err := rows.Scan(
 			&item.ID,
 			&item.SubjectID,
+			&item.LearningGoalID,
 			&item.Title,
 			&item.StimulusType,
 			&item.Content,
@@ -538,7 +583,7 @@ func (s *Service) ListStimuliBySubject(ctx context.Context, subjectID int64) ([]
 func (s *Service) UpdateStimulus(ctx context.Context, in UpdateStimulusInput) (*Stimulus, error) {
 	in.Title = strings.TrimSpace(in.Title)
 	in.StimulusType = strings.ToLower(strings.TrimSpace(in.StimulusType))
-	if in.ID <= 0 || in.SubjectID <= 0 || in.Title == "" || in.StimulusType == "" {
+	if in.ID <= 0 || in.SubjectID <= 0 || in.LearningGoalID <= 0 || in.Title == "" || in.StimulusType == "" {
 		return nil, ErrInvalidInput
 	}
 	if in.StimulusType != "single" && in.StimulusType != "multiteks" {
@@ -551,32 +596,54 @@ func (s *Service) UpdateStimulus(ctx context.Context, in UpdateStimulusInput) (*
 		return nil, err
 	}
 
-	var subjectExists bool
+	var subjectName, educationLevel string
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(SELECT 1 FROM subjects WHERE id = $1 AND is_active = TRUE)
-	`, in.SubjectID).Scan(&subjectExists); err != nil {
+		SELECT name, education_level
+		FROM subjects
+		WHERE id = $1 AND is_active = TRUE
+	`, in.SubjectID).Scan(&subjectName, &educationLevel); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSubjectNotFound
+		}
 		return nil, fmt.Errorf("check subject: %w", err)
 	}
-	if !subjectExists {
+	var validGoal bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM learning_goals lg
+			WHERE lg.id = $1
+			  AND lg.mata_pelajaran = $2
+			  AND lg.kelas = $3
+		)
+	`, in.LearningGoalID, subjectName, educationLevel).Scan(&validGoal); err != nil {
+		return nil, fmt.Errorf("check learning goal: %w", err)
+	}
+	if !validGoal {
+		return nil, ErrLearningGoalNotFound
+	}
+	if strings.TrimSpace(subjectName) == "" {
 		return nil, ErrSubjectNotFound
 	}
 
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE stimuli
 		SET subject_id = $2,
-			title = $3,
-			stimulus_type = $4,
-			content = $5::jsonb,
+			learning_goal_id = $3,
+			title = $4,
+			stimulus_type = $5,
+			content = $6::jsonb,
 			updated_at = now()
 		WHERE id = $1 AND is_active = TRUE
-		RETURNING id, subject_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
-	`, in.ID, in.SubjectID, in.Title, in.StimulusType, []byte(in.Content))
+		RETURNING id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
+	`, in.ID, in.SubjectID, in.LearningGoalID, in.Title, in.StimulusType, []byte(in.Content))
 
 	var out Stimulus
 	var createdBy sql.NullInt64
 	if err := row.Scan(
 		&out.ID,
 		&out.SubjectID,
+		&out.LearningGoalID,
 		&out.Title,
 		&out.StimulusType,
 		&out.Content,

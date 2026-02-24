@@ -34,20 +34,8 @@
                 </button>
                 <button
                     type="button"
-                    class="btn btn-secondary admin-menu-btn active"
-                    data-guru-menu="reviews"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path d="M4 6h16M4 12h16M4 18h10" />
-                        </svg>
-                    </span>
-                    Tugas Reviu
-                </button>
-                <button
-                    type="button"
                     class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="blueprints"
+                    data-guru-menu="learning-goals"
                 >
                     <span class="admin-menu-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" focusable="false">
@@ -55,7 +43,7 @@
                             <path d="M8 9h8M8 13h6" />
                         </svg>
                     </span>
-                    Kisi-Kisi
+                    Tujuan Pembelajaran
                 </button>
                 <button
                     type="button"
@@ -125,29 +113,28 @@
         </aside>
 
         <div class="admin-content">
+            <section class="page-hero">
+                <h2 id="guru-page-title">Dashboard Guru</h2>
+                <p id="guru-page-desc">
+                    Ringkasan workflow penyusunan stimulus dan naskah soal.
+                </p>
+            </section>
             <section id="guru-dashboard-panel" class="panel dashboard-hero">
                 <div class="dashboard-hero-head">
                     <div>
                         <h2>Dashboard Guru</h2>
                         <p class="muted">
-                            Ringkasan tugas reviu dan workflow penyusunan
-                            kisi-kisi, stimuli, dan naskah soal.
+                            Ringkasan workflow penyusunan stimulus dan naskah
+                            soal.
                         </p>
                     </div>
                     <div class="dashboard-quick-actions">
                         <button
                             type="button"
                             class="btn btn-secondary dashboard-quick-btn"
-                            data-guru-jump="reviews"
+                            data-guru-jump="learning-goals"
                         >
-                            Tugas Reviu
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-secondary dashboard-quick-btn"
-                            data-guru-jump="blueprints"
-                        >
-                            Kisi-Kisi
+                            Tujuan Pembelajaran
                         </button>
                         <button
                             type="button"
@@ -196,137 +183,103 @@
                         <div class="stat-label">Jenjang Tersedia</div>
                         <div id="guru-stat-levels" class="stat-value">0</div>
                     </article>
-                    <article class="admin-stat-card stat-proktor">
-                        <div class="stat-label">Reviu Menunggu</div>
-                        <div id="guru-stat-review-pending" class="stat-value">
-                            0
-                        </div>
-                    </article>
-                    <article class="admin-stat-card stat-sekolah">
-                        <div class="stat-label">Total Tugas Reviu</div>
-                        <div id="guru-stat-review-total" class="stat-value">
-                            0
-                        </div>
-                    </article>
                 </div>
             </section>
 
-            <section id="guru-reviews-panel" class="panel" hidden>
+            <section id="guru-learning-goals-panel" class="panel" hidden>
                 <div class="admin-section-head">
-                    <h3>Tugas Reviu Saya</h3>
-                    <button
-                        id="guru-reviews-refresh-btn"
-                        class="btn btn-secondary"
-                        type="button"
-                    >
-                        Muat Tugas Reviu
-                    </button>
+                    <h3>Tujuan Pembelajaran</h3>
+                    <div class="action-icons">
+                        <button
+                            id="guru-learning-goals-template-btn"
+                            class="btn btn-secondary btn-inline"
+                            type="button"
+                        >
+                            Template CSV
+                        </button>
+                        <button
+                            id="guru-learning-goals-import-btn"
+                            class="btn btn-secondary btn-inline"
+                            type="button"
+                        >
+                            Import CSV
+                        </button>
+                        <button
+                            id="guru-learning-goals-refresh-btn"
+                            class="btn btn-secondary btn-inline"
+                            type="button"
+                        >
+                            Muat Tujuan Pembelajaran
+                        </button>
+                    </div>
                 </div>
 
-                <form id="guru-reviews-filter-form" class="form-grid mt">
-                    <label>
-                        Status
-                        <select name="status">
-                            <option value="">semua</option>
-                            <option value="menunggu_reviu">
-                                menunggu_reviu
-                            </option>
-                            <option value="disetujui">disetujui</option>
-                            <option value="perlu_revisi">perlu_revisi</option>
-                        </select>
-                    </label>
-                    <button class="btn btn-secondary" type="submit">
-                        Terapkan Filter
-                    </button>
-                </form>
-
-                <div class="table-wrap mt">
-                    <table class="bs-table">
-                        <thead>
-                            <tr>
-                                <th>Task ID</th>
-                                <th>Question ID</th>
-                                <th>Status</th>
-                                <th>Ditugaskan</th>
-                                <th>Direviu</th>
-                                <th>Catatan</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="guru-reviews-body">
-                            <tr>
-                                <td colspan="7" class="muted">
-                                    Belum ada data tugas reviu.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section id="guru-blueprints-panel" class="panel" hidden>
-                <div class="admin-section-head">
-                    <h3>Kisi-Kisi Soal</h3>
-                    <button
-                        id="guru-blueprint-refresh-btn"
-                        class="btn btn-secondary"
-                        type="button"
-                    >
-                        Muat Kisi-Kisi
-                    </button>
-                </div>
-                <form id="guru-blueprint-form" class="form-grid mt">
+                <form id="guru-learning-goal-form" class="form-grid mt">
+                    <input type="hidden" name="id" />
                     <label
-                        >Mapel
+                        >Mata Pelajaran
                         <select
-                            id="guru-blueprint-subject-select"
-                            name="subject_id"
+                            id="guru-learning-goal-mapel"
+                            name="mata_pelajaran"
                             required
-                        ></select>
-                    </label>
-                    <label
-                        >Tipe Soal
-                        <select name="question_type" required>
-                            <option value="pg_tunggal">pg_tunggal</option>
-                            <option value="multi_jawaban">multi_jawaban</option>
-                            <option value="benar_salah_pernyataan">
-                                benar_salah_pernyataan
-                            </option>
+                        >
+                            <option value="">Pilih Mata Pelajaran</option>
                         </select>
                     </label>
                     <label
-                        >Judul Kisi-Kisi
-                        <input type="text" name="title" required
-                    /></label>
-                    <label
-                        >Indikator
-                        <textarea name="indicator" rows="2"></textarea>
+                        >Kelas
+                        <select
+                            id="guru-learning-goal-kelas"
+                            name="kelas"
+                            required
+                        >
+                            <option value="">Pilih Kelas</option>
+                        </select>
                     </label>
                     <label
-                        >Materi <textarea name="material" rows="2"></textarea>
+                        >Semester
+                        <input type="number" name="semester" min="1" required />
+                    </label>
+                    <label
+                        >Materi
+                        <input type="text" name="materi" required />
                     </label>
                     <label
                         >Tujuan Pembelajaran
-                        <textarea name="objective" rows="2"></textarea>
+                        <textarea
+                            name="tujuan_pembelajaran"
+                            rows="2"
+                            required
+                        ></textarea>
                     </label>
-                    <label
-                        >Level Kognitif
-                        <input type="text" name="cognitive_level"
-                    /></label>
-                    <button class="btn" type="submit">Simpan Kisi-Kisi</button>
+                    <div class="action-icons">
+                        <button
+                            id="guru-learning-goal-submit-btn"
+                            class="btn"
+                            type="submit"
+                        >
+                            Simpan Tujuan Pembelajaran
+                        </button>
+                        <button
+                            id="guru-learning-goal-cancel-edit-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                            hidden
+                        >
+                            Batal Edit
+                        </button>
+                    </div>
                 </form>
 
-                <form id="guru-blueprint-filter-form" class="form-grid mt">
-                    <label
-                        >Filter Mapel
-                        <select
-                            id="guru-blueprint-filter-subject"
-                            name="subject_id"
-                        ></select>
+                <form id="guru-learning-goals-search-form" class="form-grid mt">
+                    <label>
+                        Pencarian
+                        <input
+                            id="guru-learning-goals-search"
+                            type="search"
+                            placeholder="Cari mapel, kelas, materi, tujuan, semester..."
+                        />
                     </label>
-                    <button class="btn btn-secondary" type="submit">
-                        Terapkan Filter
-                    </button>
                 </form>
 
                 <div class="table-wrap mt">
@@ -335,22 +288,49 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Mapel</th>
-                                <th>Tipe</th>
-                                <th>Judul</th>
-                                <th>Indikator</th>
+                                <th>Kelas</th>
+                                <th>Semester</th>
                                 <th>Materi</th>
-                                <th>Level Kognitif</th>
-                                <th>Dibuat</th>
+                                <th>Tujuan</th>
+                                <th>Aksi</th>
                             </tr>
                         </thead>
-                        <tbody id="guru-blueprint-body">
+                        <tbody id="guru-learning-goal-body">
                             <tr>
-                                <td colspan="8" class="muted">
-                                    Belum ada data kisi-kisi.
+                                <td colspan="7" class="muted">
+                                    Belum ada data tujuan pembelajaran.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+                <div class="action-icons mt">
+                    <label class="muted">
+                        Per halaman
+                        <select id="guru-learning-goals-page-size">
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="30">30</option>
+                            <option value="50">50</option>
+                        </select>
+                    </label>
+                    <button
+                        id="guru-learning-goals-prev-btn"
+                        class="btn btn-secondary btn-inline"
+                        type="button"
+                    >
+                        Sebelumnya
+                    </button>
+                    <button
+                        id="guru-learning-goals-next-btn"
+                        class="btn btn-secondary btn-inline"
+                        type="button"
+                    >
+                        Berikutnya
+                    </button>
+                    <div id="guru-learning-goals-page-info" class="muted">
+                        Baris 0 - 0
+                    </div>
                 </div>
             </section>
 
@@ -475,6 +455,32 @@
                             name="subject_id"
                             required
                         ></select>
+                    </label>
+                    <label
+                        >Tujuan Pembelajaran
+                        <select
+                            id="guru-stimulus-learning-goal-select"
+                            name="learning_goal_id"
+                            required
+                        >
+                            <option value="">Pilih tujuan pembelajaran</option>
+                        </select>
+                        <div
+                            id="guru-stimulus-learning-goal-empty"
+                            class="muted mt"
+                            hidden
+                        >
+                            Belum ada tujuan pembelajaran untuk mapel ini.
+                        </div>
+                        <button
+                            id="guru-stimulus-learning-goal-add-btn"
+                            class="btn btn-secondary btn-inline mt"
+                            type="button"
+                            data-guru-jump="learning-goals"
+                            hidden
+                        >
+                            Tambah Tujuan Pembelajaran
+                        </button>
                     </label>
                     <label
                         >Judul Stimulus
@@ -628,11 +634,28 @@
 
                 <form id="guru-manuscript-form" class="form-grid mt">
                     <label
-                        >Kisi-Kisi
+                        >Mapel
+                        <select
+                            id="guru-manuscript-subject-select"
+                            name="subject_id"
+                            required
+                        ></select>
+                    </label>
+                    <label
+                        >Tujuan Pembelajaran
+                        <select
+                            id="guru-manuscript-learning-goal-select"
+                            name="learning_goal_id"
+                            required
+                        >
+                            <option value="">Pilih tujuan pembelajaran</option>
+                        </select>
+                    </label>
+                    <label
+                        >Soal
                         <select
                             id="guru-manuscript-question-select"
                             name="question_id"
-                            required
                         ></select>
                     </label>
                     <label
@@ -646,7 +669,7 @@
                     <label
                         >Tipe Soal
                         <select id="guru-manuscript-question-type-ui">
-                            <option value="">Pilih Kisi-Kisi dulu</option>
+                            <option value="">Pilih tipe soal</option>
                             <option value="pg_tunggal">MC</option>
                             <option value="multi_jawaban">MR</option>
                             <option value="benar_salah_pernyataan">TF</option>
@@ -773,11 +796,10 @@
 
                 <form id="guru-manuscript-list-form" class="form-grid mt">
                     <label
-                        >Lihat Versi Naskah dari Kisi-Kisi
+                        >Lihat Versi Naskah dari Soal
                         <select
                             id="guru-manuscript-list-question-select"
                             name="question_id"
-                            required
                         ></select>
                     </label>
                     <button class="btn btn-secondary" type="submit">
@@ -787,7 +809,7 @@
 
                 <form id="guru-manuscript-finalize-form" class="form-grid mt">
                     <label
-                        >Kisi-Kisi
+                        >Soal
                         <select
                             id="guru-manuscript-finalize-question-select"
                             name="question_id"
@@ -1119,45 +1141,56 @@
     </section>
 </section>
 
-<dialog id="guru-review-decision-dialog" class="admin-dialog">
-    <form id="guru-review-decision-form" class="form-grid">
-        <h3 id="guru-review-decision-title">Keputusan Reviu</h3>
-        <p id="guru-review-decision-help" class="muted"></p>
-        <input type="hidden" name="task_id" />
-        <input type="hidden" name="status" />
-        <label>
-            Catatan
-            <textarea
-                id="guru-review-note"
-                name="note"
-                rows="4"
-                placeholder="Wajib diisi jika perlu revisi"
-            ></textarea>
-        </label>
-        <div class="actions">
-            <button
-                id="guru-review-decision-cancel-btn"
-                class="btn btn-secondary"
-                type="button"
-            >
-                Batal
-            </button>
-            <button
-                id="guru-review-decision-submit-btn"
-                class="btn"
-                type="submit"
-            >
-                Simpan
-            </button>
-        </div>
-    </form>
-</dialog>
 <dialog id="guru-stimulus-preview-dialog" class="admin-dialog">
     <form method="dialog" class="form-grid">
         <h3 id="guru-stimulus-preview-title">Preview Stimulus</h3>
         <div id="guru-stimulus-preview-content" class="box"></div>
         <div class="actions">
             <button class="btn btn-secondary" type="submit">Tutup</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="guru-learning-goal-view-dialog" class="admin-dialog">
+    <form method="dialog" class="form-grid">
+        <h3 id="guru-learning-goal-view-title">Detail Tujuan Pembelajaran</h3>
+        <div id="guru-learning-goal-view-content" class="box"></div>
+        <div class="actions">
+            <button class="btn btn-secondary" type="submit">Tutup</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="guru-learning-goals-import-dialog" class="admin-dialog">
+    <form id="guru-learning-goals-import-form" class="form-grid">
+        <h3>Import Tujuan Pembelajaran (CSV)</h3>
+        <label>
+            File CSV
+            <input
+                id="guru-learning-goals-import-file"
+                name="file"
+                type="file"
+                accept=".csv,text/csv"
+                required
+            />
+        </label>
+        <pre id="guru-learning-goals-import-output" class="box code-box"></pre>
+        <div class="actions">
+            <button
+                id="guru-learning-goals-import-close-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Tutup
+            </button>
+            <button
+                id="guru-learning-goals-import-cancel-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Batal
+            </button>
+            <button class="btn" type="submit">Import</button>
         </div>
     </form>
 </dialog>
@@ -1218,6 +1251,16 @@
                 name="subject_id"
                 required
             ></select>
+        </label>
+        <label>
+            Tujuan Pembelajaran
+            <select
+                id="guru-stimulus-edit-learning-goal"
+                name="learning_goal_id"
+                required
+            >
+                <option value="">Pilih tujuan pembelajaran</option>
+            </select>
         </label>
         <label>
             Judul Stimulus

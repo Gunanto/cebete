@@ -1,7 +1,10 @@
 {{define "attempt_content"}}
 <section class="card" data-attempt-id="{{.AttemptID}}" id="attempt-root">
-    <div class="attempt-head">
+    <section class="page-hero">
         <h2>Ujian Attempt #{{.AttemptID}}</h2>
+        <p>Kerjakan soal, atur ukuran font, dan pantau sisa waktu.</p>
+    </section>
+    <div class="attempt-head">
         <div class="attempt-tools">
             <button id="info-soal-btn" type="button" class="chip chip-primary">
                 Informasi Soal
@@ -54,6 +57,19 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    <div class="attempt-layout">
+        <article class="panel stimulus-panel">
+            <h3>Stimulus</h3>
+            <div id="stimulus-box" class="box muted">Belum ada stimulus.</div>
+        </article>
+
+        <article class="panel question-panel">
+            <h3 id="question-title">Soal</h3>
+            <div id="stem-box" class="box"></div>
+            <div id="options-box" class="box"></div>
+        </article>
         <section id="daftar-soal-panel" class="question-list-panel" hidden>
             <div class="question-list-head">Navigasi Nomor Soal</div>
             <div class="question-list-legend">
@@ -69,19 +85,6 @@
             </div>
             <div id="daftar-soal-body" class="question-list-grid"></div>
         </section>
-    </div>
-
-    <div class="attempt-layout">
-        <article class="panel stimulus-panel">
-            <h3>Stimulus</h3>
-            <div id="stimulus-box" class="box muted">Belum ada stimulus.</div>
-        </article>
-
-        <article class="panel question-panel">
-            <h3 id="question-title">Soal</h3>
-            <div id="stem-box" class="box"></div>
-            <div id="options-box" class="box"></div>
-        </article>
     </div>
 
     <div class="actions">

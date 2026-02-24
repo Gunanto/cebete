@@ -1,10 +1,9 @@
 {{define "authoring_content"}}
 <section class="card">
-    <h2>Authoring Soal (Milestone B.1)</h2>
-    <p class="muted">
-        Halaman ini untuk workflow stimulus, versi soal draft/final, dan paralel
-        exam.
-    </p>
+    <section class="page-hero">
+        <h2>Authoring Soal (Milestone B.1)</h2>
+        <p>Kelola stimulus, versi soal, dan paralel exam.</p>
+    </section>
 
     <div class="author-grid">
         <section class="panel">
@@ -13,6 +12,14 @@
                 <label
                     >Subject ID
                     <input type="number" name="subject_id" min="1" required
+                /></label>
+                <label
+                    >Tujuan Pembelajaran ID
+                    <input
+                        type="number"
+                        name="learning_goal_id"
+                        min="1"
+                        required
                 /></label>
                 <label>Title <input type="text" name="title" required /></label>
                 <label

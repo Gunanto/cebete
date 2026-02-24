@@ -52,6 +52,12 @@
         </aside>
 
         <div class="admin-content">
+            <section class="page-hero">
+                <h2 id="admin-page-title">Dasbor Admin</h2>
+                <p id="admin-page-desc">
+                    Mode admin untuk pengelolaan master data dan pengguna.
+                </p>
+            </section>
             <section
                 id="admin-dashboard-panel"
                 class="panel admin-overview dashboard-hero"
@@ -518,7 +524,7 @@
 
     <dialog id="admin-user-delete-dialog" class="admin-dialog">
         <form id="admin-user-delete-form" class="form-grid" method="dialog">
-            <h3>Nonaktifkan Pengguna</h3>
+            <h3>Hapus Pengguna</h3>
             <input type="hidden" name="id" />
             <p id="admin-user-delete-label" class="muted"></p>
             <div class="actions">
@@ -529,9 +535,7 @@
                 >
                     Batal
                 </button>
-                <button class="btn btn-danger" type="submit">
-                    Nonaktifkan
-                </button>
+                <button class="btn btn-danger" type="submit">Hapus</button>
             </div>
         </form>
     </dialog>

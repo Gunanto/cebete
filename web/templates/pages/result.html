@@ -1,6 +1,9 @@
 {{define "result_content"}}
 <section class="card" data-attempt-id="{{.AttemptID}}" id="result-root">
-    <h2>Hasil Attempt #{{.AttemptID}}</h2>
+    <section class="page-hero">
+        <h2>Hasil Attempt #{{.AttemptID}}</h2>
+        <p>Ringkasan hasil dan detail jawaban.</p>
+    </section>
     <div id="result-summary" class="box muted" role="status" aria-live="polite">
         Memuat ringkasan...
     </div>

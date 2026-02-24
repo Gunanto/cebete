@@ -483,6 +483,20 @@
         setProfileCell(profileSchoolName, profile.school_name);
         setProfileCell(profileSchoolCode, profile.school_code);
       } catch (err) {
+        const errMsg = String((err && err.message) || "")
+          .trim()
+          .toLowerCase();
+        // Fallback: non-siswa should continue via token flow without profile dialog.
+        if (!isStudentRole || errMsg.includes("forbidden")) {
+          if (examTokenDialogInput) examTokenDialogInput.value = "";
+          if (
+            examTokenDialog &&
+            typeof examTokenDialog.showModal === "function"
+          ) {
+            examTokenDialog.showModal();
+            return;
+          }
+        }
         text(msg, "Gagal memuat data peserta: " + err.message);
         return;
       }
@@ -1589,6 +1603,8 @@
       "admin-master-delete-cancel-btn",
     );
     const menuButtons = root.querySelectorAll("[data-admin-menu]");
+    const adminPageTitle = document.getElementById("admin-page-title");
+    const adminPageDesc = document.getElementById("admin-page-desc");
     const dashboardPanel = document.getElementById("admin-dashboard-panel");
     const usersPanel = document.getElementById("admin-users-panel");
     const masterPanel = document.getElementById("admin-master-panel");
@@ -1898,6 +1914,23 @@
         const isActive = btn.getAttribute("data-admin-menu") === target;
         btn.classList.toggle("active", isActive);
       });
+      const adminTitles = {
+        dashboard: {
+          title: "Dasbor Admin",
+          desc: "Ringkasan sistem dan akses cepat ke data utama.",
+        },
+        master: {
+          title: "Data Master",
+          desc: "Kelola jenjang, sekolah, kelas, dan master akademik.",
+        },
+        users: {
+          title: "Daftar Pengguna",
+          desc: "Kelola akun admin, proktor, guru, dan siswa.",
+        },
+      };
+      const info = adminTitles[target] || adminTitles.dashboard;
+      if (adminPageTitle) adminPageTitle.textContent = info.title;
+      if (adminPageDesc) adminPageDesc.textContent = info.desc;
     }
 
     async function loadEducationLevels(showAll) {
@@ -2085,8 +2118,8 @@
         const disableBtn =
           '<button class="icon-only-btn danger" type="button" data-action="deactivate" data-id="' +
           escapeHtml(String(it.id || "")) +
-          '" title="Nonaktifkan pengguna" aria-label="Nonaktifkan pengguna">' +
-          '<svg viewBox="0 0 24 24" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg></button>';
+          '" title="Hapus pengguna" aria-label="Hapus pengguna">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>';
         const actionIcons = isAdmin()
           ? '<span class="action-icons">' +
             detailBtn +
@@ -2432,7 +2465,7 @@
             );
           if (userDeleteLabel) {
             userDeleteLabel.textContent =
-              "Yakin nonaktifkan pengguna " +
+              "Yakin hapus pengguna " +
               String(userItem.full_name || userItem.username || "") +
               " (ID " +
               String(userItem.id || "") +
@@ -2641,12 +2674,12 @@
         const done = beginBusy(
           userDeleteForm,
           message,
-          "Menonaktifkan pengguna...",
+          "Menghapus pengguna...",
         );
         try {
           const out = await api("/api/v1/admin/users/" + id, "DELETE", {});
           pretty(regOut, out);
-          setMsg("Pengguna berhasil dinonaktifkan.");
+          setMsg("Pengguna berhasil dihapus.");
           userDeleteForm.reset();
           if (
             userDeleteDialog &&
@@ -2657,7 +2690,7 @@
           await loadUsers();
           await loadDashboardStats();
         } catch (err) {
-          setMsg("Gagal menonaktifkan pengguna: " + err.message);
+          setMsg("Gagal menghapus pengguna: " + err.message);
         } finally {
           done();
         }
@@ -3275,6 +3308,8 @@
     const masterPanel = document.getElementById("proktor-master-panel");
     const quickPanel = document.getElementById("proktor-quick-panel");
     const menuButtons = root.querySelectorAll("[data-proktor-menu]");
+    const proktorPageTitle = document.getElementById("proktor-page-title");
+    const proktorPageDesc = document.getElementById("proktor-page-desc");
     let examFormSubmitting = false;
     let latestResultData = null;
     let placementUsers = [];
@@ -3537,6 +3572,43 @@
       if (resultsPanel) resultsPanel.hidden = key !== "results";
       if (masterPanel) masterPanel.hidden = key !== "master";
       if (quickPanel) quickPanel.hidden = key !== "quick";
+      const proktorTitles = {
+        dashboard: {
+          title: "Dashboard Proktor",
+          desc: "Ringkasan operasional proktor untuk monitoring ujian.",
+        },
+        registrations: {
+          title: "Verifikasi Pendaftaran",
+          desc: "Tinjau dan verifikasi pendaftaran peserta.",
+        },
+        events: {
+          title: "Monitoring Event",
+          desc: "Pantau sesi ujian dan aktivitas peserta.",
+        },
+        token: {
+          title: "Token Ujian",
+          desc: "Buat dan kelola token ujian.",
+        },
+        exams: {
+          title: "Kelola Ujian",
+          desc: "Atur jadwal, mapel, dan konfigurasi ujian.",
+        },
+        results: {
+          title: "Hasil Ujian",
+          desc: "Lihat rekap dan detail hasil peserta.",
+        },
+        master: {
+          title: "Data Master",
+          desc: "Kelola jenjang, sekolah, dan kelas.",
+        },
+        quick: {
+          title: "Aksi Cepat",
+          desc: "Jalankan tindakan administrasi cepat.",
+        },
+      };
+      const info = proktorTitles[key] || proktorTitles.dashboard;
+      if (proktorPageTitle) proktorPageTitle.textContent = info.title;
+      if (proktorPageDesc) proktorPageDesc.textContent = info.desc;
     }
 
     async function loadTokenExamOptions() {
@@ -4441,17 +4513,6 @@
     const msg = document.getElementById("guru-message");
     const statSubjects = document.getElementById("guru-stat-subjects");
     const statLevels = document.getElementById("guru-stat-levels");
-    const statReviewPending = document.getElementById(
-      "guru-stat-review-pending",
-    );
-    const statReviewTotal = document.getElementById("guru-stat-review-total");
-    const reviewFilterForm = document.getElementById(
-      "guru-reviews-filter-form",
-    );
-    const reviewRefreshBtn = document.getElementById(
-      "guru-reviews-refresh-btn",
-    );
-    const reviewBody = document.getElementById("guru-reviews-body");
     const subjectRefreshBtn = document.getElementById(
       "guru-subjects-refresh-btn",
     );
@@ -4480,6 +4541,9 @@
     );
     const dashboardPanel = document.getElementById("guru-dashboard-panel");
     const reviewsPanel = document.getElementById("guru-reviews-panel");
+    const learningGoalsPanel = document.getElementById(
+      "guru-learning-goals-panel",
+    );
     const blueprintsPanel = document.getElementById("guru-blueprints-panel");
     const stimuliPanel = document.getElementById("guru-stimuli-panel");
     const manuscriptsPanel = document.getElementById("guru-manuscripts-panel");
@@ -4487,6 +4551,8 @@
     const examsPanel = document.getElementById("guru-exams-panel");
     const resultsPanel = document.getElementById("guru-results-panel");
     const menuButtons = root.querySelectorAll("[data-guru-menu]");
+    const guruPageTitle = document.getElementById("guru-page-title");
+    const guruPageDesc = document.getElementById("guru-page-desc");
 
     const blueprintForm = document.getElementById("guru-blueprint-form");
     const blueprintRefreshBtn = document.getElementById(
@@ -4501,6 +4567,71 @@
     );
     const blueprintFilterSubject = document.getElementById(
       "guru-blueprint-filter-subject",
+    );
+    const learningGoalForm = document.getElementById("guru-learning-goal-form");
+    const learningGoalRefreshBtn = document.getElementById(
+      "guru-learning-goals-refresh-btn",
+    );
+    const learningGoalSearchInput = document.getElementById(
+      "guru-learning-goals-search",
+    );
+    const learningGoalPageSizeSelect = document.getElementById(
+      "guru-learning-goals-page-size",
+    );
+    const learningGoalPrevBtn = document.getElementById(
+      "guru-learning-goals-prev-btn",
+    );
+    const learningGoalNextBtn = document.getElementById(
+      "guru-learning-goals-next-btn",
+    );
+    const learningGoalPageInfo = document.getElementById(
+      "guru-learning-goals-page-info",
+    );
+    const learningGoalTemplateBtn = document.getElementById(
+      "guru-learning-goals-template-btn",
+    );
+    const learningGoalImportBtn = document.getElementById(
+      "guru-learning-goals-import-btn",
+    );
+    const learningGoalImportDialog = document.getElementById(
+      "guru-learning-goals-import-dialog",
+    );
+    const learningGoalImportForm = document.getElementById(
+      "guru-learning-goals-import-form",
+    );
+    const learningGoalImportFile = document.getElementById(
+      "guru-learning-goals-import-file",
+    );
+    const learningGoalImportOutput = document.getElementById(
+      "guru-learning-goals-import-output",
+    );
+    const learningGoalImportCloseBtn = document.getElementById(
+      "guru-learning-goals-import-close-btn",
+    );
+    const learningGoalImportCancelBtn = document.getElementById(
+      "guru-learning-goals-import-cancel-btn",
+    );
+    const learningGoalBody = document.getElementById("guru-learning-goal-body");
+    const learningGoalMapelInput = document.getElementById(
+      "guru-learning-goal-mapel",
+    );
+    const learningGoalKelasInput = document.getElementById(
+      "guru-learning-goal-kelas",
+    );
+    const learningGoalSubmitBtn = document.getElementById(
+      "guru-learning-goal-submit-btn",
+    );
+    const learningGoalCancelEditBtn = document.getElementById(
+      "guru-learning-goal-cancel-edit-btn",
+    );
+    const learningGoalViewDialog = document.getElementById(
+      "guru-learning-goal-view-dialog",
+    );
+    const learningGoalViewTitle = document.getElementById(
+      "guru-learning-goal-view-title",
+    );
+    const learningGoalViewContent = document.getElementById(
+      "guru-learning-goal-view-content",
     );
 
     const stimulusForm = document.getElementById("guru-stimulus-form");
@@ -4526,6 +4657,15 @@
     );
     const stimulusSubjectSelect = document.getElementById(
       "guru-stimulus-subject-select",
+    );
+    const stimulusLearningGoalSelect = document.getElementById(
+      "guru-stimulus-learning-goal-select",
+    );
+    const stimulusLearningGoalEmpty = document.getElementById(
+      "guru-stimulus-learning-goal-empty",
+    );
+    const stimulusLearningGoalAddBtn = document.getElementById(
+      "guru-stimulus-learning-goal-add-btn",
     );
     const stimulusListSubject = document.getElementById(
       "guru-stimulus-list-subject",
@@ -4567,6 +4707,9 @@
     const stimulusEditForm = document.getElementById("guru-stimulus-edit-form");
     const stimulusEditSubject = document.getElementById(
       "guru-stimulus-edit-subject",
+    );
+    const stimulusEditLearningGoal = document.getElementById(
+      "guru-stimulus-edit-learning-goal",
     );
     const stimulusEditCancelBtn = document.getElementById(
       "guru-stimulus-edit-cancel-btn",
@@ -4648,6 +4791,12 @@
     );
     const manuscriptQuestionSelect = document.getElementById(
       "guru-manuscript-question-select",
+    );
+    const manuscriptSubjectSelect = document.getElementById(
+      "guru-manuscript-subject-select",
+    );
+    const manuscriptLearningGoalSelect = document.getElementById(
+      "guru-manuscript-learning-goal-select",
     );
     const manuscriptQuestionTypeUI = document.getElementById(
       "guru-manuscript-question-type-ui",
@@ -4757,23 +4906,8 @@
     const resultsStatsBtn = document.getElementById("guru-results-stats-btn");
     const resultsChartBtn = document.getElementById("guru-results-chart-btn");
 
-    const reviewDecisionDialog = document.getElementById(
-      "guru-review-decision-dialog",
-    );
-    const reviewDecisionForm = document.getElementById(
-      "guru-review-decision-form",
-    );
-    const reviewDecisionTitle = document.getElementById(
-      "guru-review-decision-title",
-    );
-    const reviewDecisionHelp = document.getElementById(
-      "guru-review-decision-help",
-    );
-    const reviewDecisionNote = document.getElementById("guru-review-note");
-    const reviewDecisionCancelBtn = document.getElementById(
-      "guru-review-decision-cancel-btn",
-    );
     let subjectsCache = [];
+    let learningGoalsCache = [];
     let blueprintsCache = [];
     const stimuliBySubject = {};
     let currentStimulusTableSubjectID = 0;
@@ -4798,6 +4932,10 @@
     let lastStimulusImportErrors = [];
     let examFormSubmitting = false;
     let latestResultData = null;
+    let learningGoalEditingID = 0;
+    let learningGoalPage = 1;
+    let learningGoalPageSize = 10;
+    let learningGoalSearch = "";
 
     const setMsg = function (value) {
       text(msg, value);
@@ -4978,6 +5116,65 @@
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+    }
+
+    async function downloadLearningGoalsTemplateCSV() {
+      const res = await fetch("/api/v1/learning-goals/import-template", {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errJSON = await res.json().catch(function () {
+          return {};
+        });
+        const msg = extractAPIError(
+          errJSON,
+          res.statusText || "Request failed",
+        );
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const filename = parseDownloadFilenameLite(
+        res.headers.get("Content-Disposition"),
+        "template_import_learning_goals.csv",
+      );
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+
+    function formatLearningGoalImportErrorsMultiline(errors) {
+      const rows = Array.isArray(errors) ? errors : [];
+      if (!rows.length) return "Tidak ada detail error.";
+      return rows
+        .map(function (it) {
+          const rowNo = Number(it && it.row) || 0;
+          const mapel = String((it && it.mata_pelajaran) || "").trim();
+          const kelas = String((it && it.kelas) || "").trim();
+          const materi = String((it && it.materi) || "").trim();
+          const semester = String((it && it.semester) || "").trim();
+          const err = String(
+            (it && it.error) || "error tidak diketahui",
+          ).trim();
+          const label = [
+            mapel ? "mapel: " + mapel : "",
+            kelas ? "kelas: " + kelas : "",
+            materi ? "materi: " + materi : "",
+            semester ? "semester: " + semester : "",
+          ]
+            .filter(Boolean)
+            .join(" | ");
+          if (label) {
+            return "Baris " + String(rowNo) + " | " + label + " | " + err;
+          }
+          return "Baris " + String(rowNo) + " | " + err;
+        })
+        .join("\n");
     }
 
     function formatStimulusImportErrors(errors) {
@@ -5689,6 +5886,73 @@
         .toLowerCase();
     }
 
+    function findQuestionByID(questionID) {
+      return blueprintsCache.find(function (it) {
+        return Number((it && it.id) || 0) === Number(questionID || 0);
+      });
+    }
+
+    function syncManuscriptSubjectState() {
+      if (!manuscriptSubjectSelect) return;
+      const selectedQuestionID = Number(
+        (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
+      );
+      const selectedQuestion = findQuestionByID(selectedQuestionID);
+      const questionSubjectID = Number(
+        (selectedQuestion && selectedQuestion.subject_id) || 0,
+      );
+      if (questionSubjectID > 0) {
+        manuscriptSubjectSelect.value = String(questionSubjectID);
+        manuscriptSubjectSelect.disabled = true;
+        fillLearningGoalSelect(manuscriptLearningGoalSelect, questionSubjectID);
+        const selectedQuestionGoalID = Number(
+          (selectedQuestion && selectedQuestion.learning_goal_id) || 0,
+        );
+        if (selectedQuestionGoalID > 0 && manuscriptLearningGoalSelect) {
+          manuscriptLearningGoalSelect.value = String(selectedQuestionGoalID);
+          manuscriptLearningGoalSelect.disabled = true;
+        }
+        return;
+      }
+      manuscriptSubjectSelect.disabled = false;
+      fillLearningGoalSelect(
+        manuscriptLearningGoalSelect,
+        Number((manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0),
+      );
+      if (manuscriptLearningGoalSelect) {
+        manuscriptLearningGoalSelect.disabled = false;
+      }
+    }
+
+    function getManuscriptTargetSubjectID() {
+      const selectedQuestionID = Number(
+        (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
+      );
+      const selectedQuestion = findQuestionByID(selectedQuestionID);
+      const questionSubjectID = Number(
+        (selectedQuestion && selectedQuestion.subject_id) || 0,
+      );
+      if (questionSubjectID > 0) return questionSubjectID;
+      return Number(
+        (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
+      );
+    }
+
+    function getManuscriptTargetLearningGoalID() {
+      const selectedQuestionID = Number(
+        (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
+      );
+      const selectedQuestion = findQuestionByID(selectedQuestionID);
+      const questionGoalID = Number(
+        (selectedQuestion && selectedQuestion.learning_goal_id) || 0,
+      );
+      if (questionGoalID > 0) return questionGoalID;
+      return Number(
+        (manuscriptLearningGoalSelect && manuscriptLearningGoalSelect.value) ||
+          0,
+      );
+    }
+
     function collectManuscriptAnswerKey() {
       const qType = String(currentManuscriptQuestionType || "").toLowerCase();
       if (qType === "pg_tunggal") {
@@ -5750,7 +6014,7 @@
         });
         return { statements: statements };
       }
-      throw new Error("Tipe soal pada kisi-kisi belum valid.");
+      throw new Error("Tipe soal belum valid.");
     }
 
     function syncManuscriptAnswerKeyPreview() {
@@ -5926,6 +6190,7 @@
       if (manuscriptQuestionSelect) {
         manuscriptQuestionSelect.value = String(questionID);
       }
+      syncManuscriptSubjectState();
       applyManuscriptTypeUI(true);
       await refreshStimuliSelectByQuestion();
 
@@ -6056,9 +6321,12 @@
     function validateStimulusFormPayload(fd, content) {
       const errors = [];
       const subjectID = Number(fd.get("subject_id") || 0);
+      const learningGoalID = Number(fd.get("learning_goal_id") || 0);
       const title = String(fd.get("title") || "").trim();
       const stimulusType = String(fd.get("stimulus_type") || "").trim();
       if (subjectID <= 0) errors.push("Mapel wajib dipilih.");
+      if (learningGoalID <= 0)
+        errors.push("Tujuan Pembelajaran wajib dipilih.");
       if (!title) errors.push("Judul stimulus wajib diisi.");
       if (stimulusType === "single" && !String(content.body || "").trim()) {
         errors.push("Konten single wajib diisi.");
@@ -6125,6 +6393,7 @@
       const allowed = [
         "dashboard",
         "reviews",
+        "learning-goals",
         "blueprints",
         "stimuli",
         "manuscripts",
@@ -6139,12 +6408,55 @@
       });
       if (dashboardPanel) dashboardPanel.hidden = key !== "dashboard";
       if (reviewsPanel) reviewsPanel.hidden = key !== "reviews";
+      if (learningGoalsPanel)
+        learningGoalsPanel.hidden = key !== "learning-goals";
       if (blueprintsPanel) blueprintsPanel.hidden = key !== "blueprints";
       if (stimuliPanel) stimuliPanel.hidden = key !== "stimuli";
       if (manuscriptsPanel) manuscriptsPanel.hidden = key !== "manuscripts";
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
       if (subjectsPanel) subjectsPanel.hidden = key !== "subjects";
+      const guruTitles = {
+        dashboard: {
+          title: "Dashboard Guru",
+          desc: "Ringkasan workflow penyusunan stimulus dan naskah soal.",
+        },
+        reviews: {
+          title: "Review Soal",
+          desc: "Tinjau dan validasi soal yang perlu review.",
+        },
+        "learning-goals": {
+          title: "Tujuan Pembelajaran",
+          desc: "Kelola tujuan pembelajaran per mapel dan jenjang.",
+        },
+        blueprints: {
+          title: "Blueprint",
+          desc: "Susun blueprint sebagai kerangka penyusunan soal.",
+        },
+        stimuli: {
+          title: "Stimuli",
+          desc: "Kelola stimulus pendukung untuk soal.",
+        },
+        manuscripts: {
+          title: "Naskah Soal",
+          desc: "Kelola naskah soal berbasis blueprint dan stimulus.",
+        },
+        exams: {
+          title: "Ujian",
+          desc: "Kelola paket ujian dan jadwal pelaksanaan.",
+        },
+        results: {
+          title: "Hasil Ujian",
+          desc: "Lihat hasil dan performa peserta.",
+        },
+        subjects: {
+          title: "Mata Pelajaran",
+          desc: "Kelola daftar mapel yang tersedia.",
+        },
+      };
+      const info = guruTitles[key] || guruTitles.dashboard;
+      if (guruPageTitle) guruPageTitle.textContent = info.title;
+      if (guruPageDesc) guruPageDesc.textContent = info.desc;
     }
 
     function subjectLabel(it) {
@@ -6176,6 +6488,320 @@
       }
     }
 
+    function findSubjectByID(subjectID) {
+      return subjectsCache.find(function (it) {
+        return Number((it && it.id) || 0) === Number(subjectID || 0);
+      });
+    }
+
+    function filterLearningGoalsBySubject(subjectID) {
+      const subject = findSubjectByID(subjectID);
+      if (!subject) return [];
+      const mapel = String((subject && subject.name) || "")
+        .trim()
+        .toLowerCase();
+      const kelas = String((subject && subject.education_level) || "")
+        .trim()
+        .toLowerCase();
+      const matches = (
+        Array.isArray(learningGoalsCache) ? learningGoalsCache : []
+      ).filter(function (it) {
+        return (
+          String((it && it.mata_pelajaran) || "")
+            .trim()
+            .toLowerCase() === mapel &&
+          String((it && it.kelas) || "")
+            .trim()
+            .toLowerCase() === kelas
+        );
+      });
+      if (matches.length) return matches;
+      // Fallback: if kelas doesn't match (e.g., kelas is class name), show by mapel only.
+      return (
+        Array.isArray(learningGoalsCache) ? learningGoalsCache : []
+      ).filter(function (it) {
+        return (
+          String((it && it.mata_pelajaran) || "")
+            .trim()
+            .toLowerCase() === mapel
+        );
+      });
+    }
+
+    function resolveDefaultLearningGoalID(subjectID) {
+      const goals = filterLearningGoalsBySubject(subjectID);
+      if (!goals.length) return 0;
+      return Number((goals[0] && goals[0].id) || 0);
+    }
+
+    function fillLearningGoalSelect(selectEl, subjectID) {
+      if (!selectEl) return;
+      const current = String(selectEl.value || "");
+      selectEl.innerHTML = "";
+      const firstOpt = document.createElement("option");
+      firstOpt.value = "";
+      firstOpt.textContent = "Pilih tujuan pembelajaran";
+      selectEl.appendChild(firstOpt);
+      const goals = filterLearningGoalsBySubject(subjectID);
+      goals.forEach(function (it) {
+        const opt = document.createElement("option");
+        opt.value = String((it && it.id) || "");
+        opt.textContent =
+          "LG-" +
+          String((it && it.id) || "") +
+          " | S" +
+          String((it && it.semester) || "") +
+          " | " +
+          String((it && it.tujuan_pembelajaran) || "");
+        if (current && current === opt.value) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+      if (!selectEl.value) selectEl.selectedIndex = 0;
+      if (selectEl === stimulusLearningGoalSelect) {
+        updateStimulusLearningGoalEmptyState(subjectID);
+      }
+    }
+
+    function updateStimulusLearningGoalEmptyState(subjectID) {
+      if (!stimulusLearningGoalSelect) return;
+      const hasItems = stimulusLearningGoalSelect.options.length > 1;
+      if (stimulusLearningGoalEmpty) {
+        if (hasItems) {
+          stimulusLearningGoalEmpty.hidden = true;
+        } else {
+          const subject = findSubjectByID(subjectID);
+          const label = subject ? String(subject.name || "") : "";
+          text(
+            stimulusLearningGoalEmpty,
+            label
+              ? "Belum ada tujuan pembelajaran untuk mapel " + label + "."
+              : "Belum ada tujuan pembelajaran untuk mapel ini.",
+          );
+          stimulusLearningGoalEmpty.hidden = false;
+        }
+      }
+      if (stimulusLearningGoalAddBtn) {
+        stimulusLearningGoalAddBtn.hidden = hasItems;
+      }
+    }
+
+    function renderLearningGoals(items) {
+      if (!learningGoalBody) return;
+      if (!Array.isArray(items) || items.length === 0) {
+        learningGoalBody.innerHTML =
+          '<tr><td colspan="7" class="muted">Belum ada data tujuan pembelajaran.</td></tr>';
+        if (learningGoalPageInfo)
+          learningGoalPageInfo.textContent = "Baris 0 - 0";
+        if (learningGoalPrevBtn) learningGoalPrevBtn.disabled = true;
+        if (learningGoalNextBtn) learningGoalNextBtn.disabled = true;
+        return;
+      }
+      const total = items.length;
+      const totalPages = Math.max(
+        1,
+        Math.ceil(total / Math.max(1, learningGoalPageSize)),
+      );
+      if (learningGoalPage > totalPages) learningGoalPage = totalPages;
+      if (learningGoalPage < 1) learningGoalPage = 1;
+      const start = (learningGoalPage - 1) * learningGoalPageSize;
+      const pageItems = items.slice(start, start + learningGoalPageSize);
+      const from = pageItems.length ? start + 1 : 0;
+      const to = pageItems.length ? start + pageItems.length : 0;
+      if (learningGoalPageInfo) {
+        learningGoalPageInfo.textContent =
+          "Baris " +
+          String(from) +
+          " - " +
+          String(to) +
+          " dari " +
+          String(total);
+      }
+      if (learningGoalPrevBtn)
+        learningGoalPrevBtn.disabled = learningGoalPage <= 1;
+      if (learningGoalNextBtn)
+        learningGoalNextBtn.disabled = learningGoalPage >= totalPages;
+      learningGoalBody.innerHTML = "";
+      pageItems.forEach(function (it) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = [
+          "<td>" + escapeHtml(String(it.id || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.mata_pelajaran || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.kelas || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.semester || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.materi || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.tujuan_pembelajaran || "")) + "</td>",
+          '<td><span class="action-icons">' +
+            '<button class="icon-only-btn" type="button" data-action="view-learning-goal" data-id="' +
+            escapeHtml(String(it.id || "")) +
+            '" title="Lihat" aria-label="Lihat">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
+            "</button>" +
+            '<button class="icon-only-btn" type="button" data-action="edit-learning-goal" data-id="' +
+            escapeHtml(String(it.id || "")) +
+            '" title="Ubah" aria-label="Ubah">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25z"/><path d="M14.05 6.2l3.75 3.75"/></svg>' +
+            "</button>" +
+            '<button class="icon-only-btn danger" type="button" data-action="delete-learning-goal" data-id="' +
+            escapeHtml(String(it.id || "")) +
+            '" title="Hapus" aria-label="Hapus">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>' +
+            "</button>" +
+            "</span></td>",
+        ].join("");
+        learningGoalBody.appendChild(tr);
+      });
+    }
+
+    function getFilteredLearningGoals() {
+      const q = String(learningGoalSearch || "")
+        .trim()
+        .toLowerCase();
+      if (!q)
+        return Array.isArray(learningGoalsCache) ? learningGoalsCache : [];
+      const rows = Array.isArray(learningGoalsCache) ? learningGoalsCache : [];
+      return rows.filter(function (it) {
+        const id = String((it && it.id) || "");
+        const mapel = String((it && it.mata_pelajaran) || "");
+        const kelas = String((it && it.kelas) || "");
+        const semester = String((it && it.semester) || "");
+        const materi = String((it && it.materi) || "");
+        const tujuan = String((it && it.tujuan_pembelajaran) || "");
+        return (
+          id.toLowerCase().includes(q) ||
+          mapel.toLowerCase().includes(q) ||
+          kelas.toLowerCase().includes(q) ||
+          semester.toLowerCase().includes(q) ||
+          materi.toLowerCase().includes(q) ||
+          tujuan.toLowerCase().includes(q)
+        );
+      });
+    }
+
+    function findLearningGoalByID(id) {
+      return (Array.isArray(learningGoalsCache) ? learningGoalsCache : []).find(
+        function (it) {
+          return Number((it && it.id) || 0) === Number(id || 0);
+        },
+      );
+    }
+
+    function resetLearningGoalFormMode() {
+      learningGoalEditingID = 0;
+      if (learningGoalForm) {
+        const idField = learningGoalForm.elements.namedItem("id");
+        if (idField) idField.value = "";
+      }
+      if (learningGoalSubmitBtn) {
+        text(learningGoalSubmitBtn, "Simpan Tujuan Pembelajaran");
+      }
+      if (learningGoalCancelEditBtn) {
+        learningGoalCancelEditBtn.hidden = true;
+      }
+    }
+
+    function fillLearningGoalViewPopup(item) {
+      if (!learningGoalViewContent) return;
+      learningGoalViewContent.innerHTML = [
+        "<p><strong>ID:</strong> " +
+          escapeHtml(String(item.id || "-")) +
+          "</p>",
+        "<p><strong>Mapel:</strong> " +
+          escapeHtml(String(item.mata_pelajaran || "-")) +
+          "</p>",
+        "<p><strong>Kelas:</strong> " +
+          escapeHtml(String(item.kelas || "-")) +
+          "</p>",
+        "<p><strong>Semester:</strong> " +
+          escapeHtml(String(item.semester || "-")) +
+          "</p>",
+        "<p><strong>Materi:</strong> " +
+          escapeHtml(String(item.materi || "-")) +
+          "</p>",
+        "<p><strong>Tujuan:</strong><br>" +
+          escapeHtml(String(item.tujuan_pembelajaran || "-")) +
+          "</p>",
+      ].join("");
+    }
+
+    function startLearningGoalEdit(item) {
+      if (!learningGoalForm || !item) return;
+      const idField = learningGoalForm.elements.namedItem("id");
+      const mapelField = learningGoalForm.elements.namedItem("mata_pelajaran");
+      const kelasField = learningGoalForm.elements.namedItem("kelas");
+      const semesterField = learningGoalForm.elements.namedItem("semester");
+      const materiField = learningGoalForm.elements.namedItem("materi");
+      const tujuanField = learningGoalForm.elements.namedItem(
+        "tujuan_pembelajaran",
+      );
+
+      learningGoalEditingID = Number(item.id || 0);
+      if (idField) idField.value = String(item.id || "");
+      if (mapelField) mapelField.value = String(item.mata_pelajaran || "");
+      if (kelasField) kelasField.value = String(item.kelas || "");
+      if (semesterField) semesterField.value = String(item.semester || "");
+      if (materiField) materiField.value = String(item.materi || "");
+      if (tujuanField) {
+        tujuanField.value = String(item.tujuan_pembelajaran || "");
+      }
+      if (learningGoalSubmitBtn) {
+        text(learningGoalSubmitBtn, "Simpan Perubahan");
+      }
+      if (learningGoalCancelEditBtn) {
+        learningGoalCancelEditBtn.hidden = false;
+      }
+    }
+
+    async function loadClassesForLearningGoal() {
+      try {
+        const classes = await api("/api/v1/admin/classes?all=1", "GET");
+        if (!learningGoalKelasInput) return;
+        learningGoalKelasInput.innerHTML =
+          '<option value="">Pilih Kelas</option>';
+        if (Array.isArray(classes)) {
+          classes.forEach(function (it) {
+            const opt = document.createElement("option");
+            opt.value = String(it.name || "");
+            opt.textContent = String(it.name || "");
+            learningGoalKelasInput.appendChild(opt);
+          });
+        }
+      } catch (err) {
+        console.error("Gagal memuat data kelas:", err);
+      }
+    }
+
+    function fillLearningGoalSubjectSelect() {
+      if (!learningGoalMapelInput) return;
+      learningGoalMapelInput.innerHTML =
+        '<option value="">Pilih Mata Pelajaran</option>';
+      subjectsCache.forEach(function (it) {
+        const opt = document.createElement("option");
+        const label = subjectLabel(it);
+        opt.value = String(it.name || "");
+        opt.textContent = label;
+        learningGoalMapelInput.appendChild(opt);
+      });
+    }
+
+    async function loadLearningGoals() {
+      const items = await api("/api/v1/learning-goals", "GET");
+      learningGoalsCache = Array.isArray(items) ? items : [];
+      renderLearningGoals(getFilteredLearningGoals());
+      fillLearningGoalSelect(
+        stimulusLearningGoalSelect,
+        Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
+      );
+      fillLearningGoalSelect(
+        manuscriptLearningGoalSelect,
+        getManuscriptTargetSubjectID(),
+      );
+      fillLearningGoalSelect(
+        stimulusEditLearningGoal,
+        Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
+      );
+      return learningGoalsCache;
+    }
+
     function blueprintLabel(it) {
       const title = String((it && it.title) || "").trim();
       const subject = String((it && it.subject_name) || "").trim();
@@ -6193,7 +6819,7 @@
       selectEl.innerHTML = "";
       const firstOpt = document.createElement("option");
       firstOpt.value = "";
-      firstOpt.textContent = "Pilih Kisi-Kisi";
+      firstOpt.textContent = "Pilih Soal";
       selectEl.appendChild(firstOpt);
       blueprintsCache.forEach(function (it) {
         const opt = document.createElement("option");
@@ -6203,8 +6829,7 @@
         selectEl.appendChild(opt);
       });
       if (
-        (selectEl === manuscriptQuestionSelect ||
-          selectEl === manuscriptListQuestionSelect ||
+        (selectEl === manuscriptListQuestionSelect ||
           selectEl === manuscriptFinalizeQuestionSelect) &&
         !selectEl.value &&
         selectEl.options.length > 1
@@ -6801,7 +7426,37 @@
       fillSubjectSelect(blueprintFilterSubject, true);
       fillSubjectSelect(stimulusSubjectSelect, false);
       fillSubjectSelect(stimulusListSubject, false);
+      fillSubjectSelect(manuscriptSubjectSelect, false);
       fillSubjectSelect(examSubjectSelect, false);
+      fillSubjectSelect(stimulusEditSubject, false);
+      fillLearningGoalSelect(
+        stimulusLearningGoalSelect,
+        Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
+      );
+      fillLearningGoalSelect(
+        manuscriptLearningGoalSelect,
+        getManuscriptTargetSubjectID(),
+      );
+      fillLearningGoalSelect(
+        stimulusEditLearningGoal,
+        Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
+      );
+      if (learningGoalMapelInput || learningGoalKelasInput) {
+        const defaultSubject = findSubjectByID(
+          Number(
+            (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
+          ),
+        );
+        if (defaultSubject) {
+          if (learningGoalMapelInput)
+            learningGoalMapelInput.value = String(defaultSubject.name || "");
+          if (learningGoalKelasInput)
+            learningGoalKelasInput.value = String(
+              defaultSubject.education_level || "",
+            );
+        }
+      }
+      syncManuscriptSubjectState();
       return subjectItems;
     }
 
@@ -6820,6 +7475,7 @@
       fillBlueprintSelect(manuscriptQuestionSelect);
       fillBlueprintSelect(manuscriptListQuestionSelect);
       fillBlueprintSelect(manuscriptFinalizeQuestionSelect);
+      syncManuscriptSubjectState();
       applyManuscriptTypeUI(true);
       return blueprintsCache;
     }
@@ -6897,13 +7553,7 @@
     }
 
     async function refreshStimuliSelectByQuestion() {
-      const questionID = Number(
-        (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
-      );
-      const blueprint = blueprintsCache.find(function (it) {
-        return Number(it.id) === questionID;
-      });
-      const subjectID = Number((blueprint && blueprint.subject_id) || 0);
+      const subjectID = getManuscriptTargetSubjectID();
       const items = await ensureStimuliBySubject(subjectID);
       fillStimulusSelect(manuscriptStimulusSelect, items);
       if (manuscriptStimulusSelect) {
@@ -6912,15 +7562,55 @@
       return items;
     }
 
-    async function loadReviewStats() {
-      const [allItems, pendingItems] = await Promise.all([
-        api("/api/v1/reviews/tasks", "GET"),
-        api("/api/v1/reviews/tasks?status=menunggu_reviu", "GET"),
-      ]);
-      const total = Array.isArray(allItems) ? allItems.length : 0;
-      const pending = Array.isArray(pendingItems) ? pendingItems.length : 0;
-      if (statReviewTotal) statReviewTotal.textContent = String(total);
-      if (statReviewPending) statReviewPending.textContent = String(pending);
+    function buildManuscriptAutoQuestionTitle(stemHTML) {
+      const container = document.createElement("div");
+      container.innerHTML = String(stemHTML || "");
+      const textValue = String(container.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!textValue) {
+        return "Soal Baru";
+      }
+      const maxLen = 80;
+      return textValue.length > maxLen
+        ? textValue.slice(0, maxLen - 1) + "..."
+        : textValue;
+    }
+
+    async function ensureQuestionForManuscriptSubmission(payload) {
+      const questionID = Number((payload && payload.question_id) || 0);
+      if (questionID > 0) return questionID;
+      const subjectID = Number((payload && payload.subject_id) || 0);
+      const learningGoalID = Number((payload && payload.learning_goal_id) || 0);
+      const questionType = String((payload && payload.question_type) || "")
+        .trim()
+        .toLowerCase();
+      if (subjectID <= 0) {
+        throw new Error("Mapel wajib dipilih sebelum menyimpan naskah.");
+      }
+      if (!questionType) {
+        throw new Error("Tipe soal wajib dipilih sebelum menyimpan naskah.");
+      }
+      if (learningGoalID <= 0) {
+        throw new Error(
+          "Tujuan Pembelajaran wajib dipilih sebelum menyimpan naskah.",
+        );
+      }
+      const created = await api("/api/v1/questions", "POST", {
+        subject_id: subjectID,
+        learning_goal_id: learningGoalID,
+        question_type: questionType,
+        title: buildManuscriptAutoQuestionTitle(payload.stem_html),
+        indicator: "",
+        material: "",
+        objective: "",
+        cognitive_level: "",
+      });
+      const newQuestionID = Number((created && created.id) || 0);
+      if (newQuestionID <= 0) {
+        throw new Error("Gagal membuat soal.");
+      }
+      return newQuestionID;
     }
 
     async function loadGuruExamSubjectOptions() {
@@ -7046,63 +7736,16 @@
       });
     }
 
-    async function loadReviews(statusValue) {
-      const status = String(statusValue || "").trim();
-      const qs = status ? "?status=" + encodeURIComponent(status) : "";
-      const items = await api("/api/v1/reviews/tasks" + qs, "GET");
-      const reviewItems = Array.isArray(items) ? items : [];
-
-      if (!reviewBody) return reviewItems;
-      if (!reviewItems.length) {
-        reviewBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Tidak ada data tugas reviu.</td></tr>';
-        return reviewItems;
-      }
-      reviewBody.innerHTML = "";
-      reviewItems.forEach(function (it) {
-        const status = String(it.status || "");
-        const canDecide = status === "menunggu_reviu";
-        const actionHTML = canDecide
-          ? '<span class="action-icons">' +
-            '<button class="icon-only-btn" type="button" data-action="approve" data-id="' +
-            escapeHtml(String(it.id || "")) +
-            '" title="Setujui" aria-label="Setujui">' +
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M5 13l4 4L19 7"/></svg>' +
-            "</button>" +
-            '<button class="icon-only-btn danger" type="button" data-action="revise" data-id="' +
-            escapeHtml(String(it.id || "")) +
-            '" title="Perlu Revisi" aria-label="Perlu Revisi">' +
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25z"/><path d="M14.05 6.2l3.75 3.75"/></svg>' +
-            "</button>" +
-            "</span>"
-          : "-";
-        const tr = document.createElement("tr");
-        tr.innerHTML = [
-          "<td>" + escapeHtml(String(it.id || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_id || "")) + "</td>",
-          "<td>" + escapeHtml(status) + "</td>",
-          "<td>" + escapeHtml(fmtDate(it.assigned_at)) + "</td>",
-          "<td>" + escapeHtml(fmtDate(it.reviewed_at)) + "</td>",
-          "<td>" + escapeHtml(String(it.note || "-")) + "</td>",
-          "<td>" + actionHTML + "</td>",
-        ].join("");
-        reviewBody.appendChild(tr);
-      });
-      return reviewItems;
-    }
-
     async function loadGuruDashboard() {
-      const statusEl =
-        reviewFilterForm && reviewFilterForm.elements.namedItem("status");
-      const statusValue = statusEl ? statusEl.value : "";
       await Promise.all([
         loadEducationLevelsForGuruSubjectForm(),
         loadSubjects(),
-        loadReviews(statusValue),
-        loadReviewStats(),
+        loadLearningGoals(),
+        loadClassesForLearningGoal(),
         loadGuruExamSubjectOptions(),
         loadGuruExamManageTable(),
       ]);
+      fillLearningGoalSubjectSelect();
       const defaultSubjectID = Number(
         (stimulusListSubject && stimulusListSubject.value) || 0,
       );
@@ -7140,6 +7783,12 @@
         stimulusListPageSize = Math.max(
           1,
           Number(stimulusPageSizeSelect.value) || 10,
+        );
+      }
+      if (learningGoalPageSizeSelect) {
+        learningGoalPageSize = Math.max(
+          1,
+          Number(learningGoalPageSizeSelect.value) || 10,
         );
       }
       if (manuscriptPageSizeSelect) {
@@ -7214,6 +7863,296 @@
       });
     });
 
+    if (learningGoalForm) {
+      learningGoalForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const fd = new FormData(learningGoalForm);
+        const id = Number(fd.get("id") || 0);
+        const isEdit = id > 0 || learningGoalEditingID > 0;
+        const targetID = id > 0 ? id : learningGoalEditingID;
+        const done = beginBusy(
+          learningGoalForm,
+          msg,
+          isEdit
+            ? "Menyimpan perubahan tujuan pembelajaran..."
+            : "Menyimpan tujuan pembelajaran...",
+        );
+        try {
+          const payload = {
+            tujuan_pembelajaran: String(
+              fd.get("tujuan_pembelajaran") || "",
+            ).trim(),
+            materi: String(fd.get("materi") || "").trim(),
+            mata_pelajaran: String(fd.get("mata_pelajaran") || "").trim(),
+            kelas: String(fd.get("kelas") || "").trim(),
+            semester: Number(fd.get("semester") || 0),
+          };
+          if (isEdit && targetID > 0) {
+            await api("/api/v1/learning-goals/" + targetID, "PUT", payload);
+          } else {
+            await api("/api/v1/learning-goals", "POST", payload);
+          }
+          await loadLearningGoals();
+          learningGoalForm.reset();
+          resetLearningGoalFormMode();
+          setMsg(
+            isEdit
+              ? "Learning goal berhasil diperbarui."
+              : "Learning goal berhasil disimpan.",
+          );
+        } catch (err) {
+          setMsg(
+            (isEdit
+              ? "Simpan perubahan tujuan pembelajaran gagal: "
+              : "Simpan tujuan pembelajaran gagal: ") + err.message,
+          );
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (learningGoalCancelEditBtn) {
+      learningGoalCancelEditBtn.addEventListener("click", function () {
+        if (learningGoalForm) learningGoalForm.reset();
+        resetLearningGoalFormMode();
+        setMsg("Mode edit tujuan pembelajaran dibatalkan.");
+      });
+    }
+
+    if (learningGoalRefreshBtn) {
+      learningGoalRefreshBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          learningGoalRefreshBtn,
+          msg,
+          "Memuat tujuan pembelajaran...",
+        );
+        try {
+          learningGoalPage = 1;
+          await Promise.all([
+            loadLearningGoals(),
+            loadClassesForLearningGoal(),
+            loadSubjects(),
+          ]);
+          fillLearningGoalSubjectSelect();
+          setMsg("Learning goals berhasil dimuat.");
+        } catch (err) {
+          setMsg("Gagal memuat tujuan pembelajaran: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (learningGoalPageSizeSelect) {
+      learningGoalPageSizeSelect.addEventListener("change", function () {
+        learningGoalPageSize = Math.max(
+          1,
+          Number(learningGoalPageSizeSelect.value) || 10,
+        );
+        learningGoalPage = 1;
+        renderLearningGoals(getFilteredLearningGoals());
+      });
+    }
+
+    if (learningGoalPrevBtn) {
+      learningGoalPrevBtn.addEventListener("click", function () {
+        learningGoalPage = Math.max(1, learningGoalPage - 1);
+        renderLearningGoals(getFilteredLearningGoals());
+      });
+    }
+
+    if (learningGoalNextBtn) {
+      learningGoalNextBtn.addEventListener("click", function () {
+        learningGoalPage += 1;
+        renderLearningGoals(getFilteredLearningGoals());
+      });
+    }
+
+    if (learningGoalSearchInput) {
+      learningGoalSearchInput.addEventListener("input", function () {
+        learningGoalSearch = String(learningGoalSearchInput.value || "").trim();
+        learningGoalPage = 1;
+        renderLearningGoals(getFilteredLearningGoals());
+      });
+    }
+
+    if (learningGoalTemplateBtn) {
+      learningGoalTemplateBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          learningGoalTemplateBtn,
+          msg,
+          "Menyiapkan template tujuan pembelajaran...",
+        );
+        try {
+          await downloadLearningGoalsTemplateCSV();
+          setMsg("Template import tujuan pembelajaran berhasil diunduh.");
+        } catch (err) {
+          setMsg(
+            "Gagal mengunduh template tujuan pembelajaran: " + err.message,
+          );
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (learningGoalImportBtn) {
+      learningGoalImportBtn.addEventListener("click", function () {
+        if (learningGoalImportOutput) {
+          learningGoalImportOutput.textContent = "";
+        }
+        if (
+          learningGoalImportDialog &&
+          typeof learningGoalImportDialog.showModal === "function"
+        ) {
+          learningGoalImportDialog.showModal();
+        }
+      });
+    }
+
+    if (learningGoalImportCancelBtn) {
+      learningGoalImportCancelBtn.addEventListener("click", function () {
+        if (
+          learningGoalImportDialog &&
+          typeof learningGoalImportDialog.close === "function"
+        ) {
+          learningGoalImportDialog.close();
+        }
+      });
+    }
+
+    if (learningGoalImportCloseBtn) {
+      learningGoalImportCloseBtn.addEventListener("click", function () {
+        if (
+          learningGoalImportDialog &&
+          typeof learningGoalImportDialog.close === "function"
+        ) {
+          learningGoalImportDialog.close();
+        }
+      });
+    }
+
+    if (learningGoalImportForm) {
+      learningGoalImportForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const file =
+          learningGoalImportFile &&
+          learningGoalImportFile.files &&
+          learningGoalImportFile.files[0];
+        if (!file) {
+          setMsg("Pilih file CSV terlebih dahulu.");
+          return;
+        }
+        const fd = new FormData();
+        fd.append("file", file);
+        const done = beginBusy(
+          learningGoalImportForm,
+          msg,
+          "Mengimpor tujuan pembelajaran dari CSV...",
+        );
+        try {
+          const out = await apiMultipart(
+            "/api/v1/learning-goals/import",
+            "POST",
+            fd,
+          );
+          const report = (out && out.report) || {};
+          const total = Number(report.total_rows || 0);
+          const okRows = Number(report.success_rows || 0);
+          const failRows = Number(report.failed_rows || 0);
+          const errors = Array.isArray(report.errors) ? report.errors : [];
+          if (learningGoalImportOutput) {
+            learningGoalImportOutput.textContent =
+              failRows > 0
+                ? formatLearningGoalImportErrorsMultiline(errors)
+                : "Import berhasil tanpa error.";
+          }
+          setMsg(
+            "Import tujuan pembelajaran selesai. Total: " +
+              String(total) +
+              ", berhasil: " +
+              String(okRows) +
+              ", gagal: " +
+              String(failRows),
+          );
+          learningGoalImportForm.reset();
+          await loadLearningGoals();
+          if (
+            learningGoalImportDialog &&
+            typeof learningGoalImportDialog.close === "function"
+          ) {
+            learningGoalImportDialog.close();
+          }
+        } catch (err) {
+          if (learningGoalImportOutput) {
+            learningGoalImportOutput.textContent =
+              "Import gagal:\n" + String(err.message || "Request failed");
+          }
+          setMsg("Import tujuan pembelajaran gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (learningGoalBody) {
+      learningGoalBody.addEventListener("click", async function (e) {
+        const btn =
+          e.target && e.target.closest("button[data-action][data-id]");
+        if (!btn) return;
+        const action = String(btn.getAttribute("data-action") || "");
+        const id = Number(btn.getAttribute("data-id") || 0);
+        if (id <= 0) return;
+        const item = findLearningGoalByID(id);
+        if (!item) {
+          setMsg("Data tujuan pembelajaran tidak ditemukan.");
+          return;
+        }
+
+        if (action === "view-learning-goal") {
+          if (learningGoalViewTitle) {
+            text(
+              learningGoalViewTitle,
+              "Detail Tujuan Pembelajaran: LG-" + String(id),
+            );
+          }
+          fillLearningGoalViewPopup(item);
+          if (
+            learningGoalViewDialog &&
+            typeof learningGoalViewDialog.showModal === "function"
+          ) {
+            learningGoalViewDialog.showModal();
+          }
+          return;
+        }
+
+        if (action === "edit-learning-goal") {
+          startLearningGoalEdit(item);
+          setMsg("Mode edit tujuan pembelajaran aktif.");
+          return;
+        }
+
+        if (action !== "delete-learning-goal") return;
+        const ok = window.confirm("Hapus tujuan pembelajaran ini?");
+        if (!ok) return;
+        const done = beginBusy(btn, msg, "Menghapus tujuan pembelajaran...");
+        try {
+          await api("/api/v1/learning-goals/" + id, "DELETE");
+          await loadLearningGoals();
+          if (learningGoalEditingID === id) {
+            if (learningGoalForm) learningGoalForm.reset();
+            resetLearningGoalFormMode();
+          }
+          setMsg("Learning goal berhasil dihapus.");
+        } catch (err) {
+          setMsg("Hapus tujuan pembelajaran gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
     if (stimulusTypeSelect) {
       stimulusTypeSelect.addEventListener("change", function () {
         switchStimulusEditorByType();
@@ -7232,6 +8171,24 @@
         buildStimulusTabEditor();
         renderLiveStimulusPreview();
         clearStimulusInlineError();
+      });
+    }
+
+    if (stimulusSubjectSelect) {
+      stimulusSubjectSelect.addEventListener("change", function () {
+        fillLearningGoalSelect(
+          stimulusLearningGoalSelect,
+          Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
+        );
+      });
+    }
+
+    if (stimulusEditSubject) {
+      stimulusEditSubject.addEventListener("change", function () {
+        fillLearningGoalSelect(
+          stimulusEditLearningGoal,
+          Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
+        );
       });
     }
 
@@ -7311,11 +8268,20 @@
           const titleField = stimulusEditForm.elements.namedItem("title");
           const typeField =
             stimulusEditForm.elements.namedItem("stimulus_type");
+          const learningGoalField =
+            stimulusEditForm.elements.namedItem("learning_goal_id");
           const contentField =
             stimulusEditForm.elements.namedItem("content_raw");
           fillSubjectSelect(stimulusEditSubject, false);
           if (idField) idField.value = String(item.id || "");
           if (subjectField) subjectField.value = String(item.subject_id || "");
+          fillLearningGoalSelect(
+            stimulusEditLearningGoal,
+            Number(item.subject_id || 0),
+          );
+          if (learningGoalField) {
+            learningGoalField.value = String(item.learning_goal_id || "");
+          }
           if (titleField) titleField.value = String(item.title || "");
           if (typeField)
             typeField.value = String(item.stimulus_type || "single");
@@ -7388,6 +8354,7 @@
         try {
           await api("/api/v1/stimuli/" + id, "PUT", {
             subject_id: Number(fd.get("subject_id") || 0),
+            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
             title: String(fd.get("title") || "").trim(),
             stimulus_type: String(fd.get("stimulus_type") || "").trim(),
             content: JSON.parse(String(fd.get("content_raw") || "{}")),
@@ -7444,6 +8411,7 @@
         try {
           const payload = {
             subject_id: Number(fd.get("subject_id") || 0),
+            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
             question_type: String(fd.get("question_type") || "").trim(),
             title: String(fd.get("title") || "").trim(),
             indicator: String(fd.get("indicator") || "").trim(),
@@ -7529,6 +8497,7 @@
           const stimulusType = String(fd.get("stimulus_type") || "").trim();
           const payload = {
             subject_id: subjectID,
+            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
             title: String(fd.get("title") || "").trim(),
             stimulus_type: stimulusType,
             content: content,
@@ -7540,6 +8509,10 @@
           stimulusForm.reset();
           clearStimulusInlineError();
           fillSubjectSelect(stimulusSubjectSelect, false);
+          fillLearningGoalSelect(
+            stimulusLearningGoalSelect,
+            Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
+          );
           switchStimulusEditorByType();
           resetStimulusEditors();
           renderLiveStimulusPreview();
@@ -7763,7 +8736,28 @@
     if (manuscriptQuestionSelect) {
       manuscriptQuestionSelect.addEventListener("change", async function () {
         clearManuscriptEditMode();
+        syncManuscriptSubjectState();
         applyManuscriptTypeUI(true);
+        try {
+          await refreshStimuliSelectByQuestion();
+        } catch (err) {
+          setMsg("Gagal memuat stimulus naskah: " + err.message);
+        }
+      });
+    }
+
+    if (manuscriptSubjectSelect) {
+      manuscriptSubjectSelect.addEventListener("change", async function () {
+        clearManuscriptEditMode();
+        if (manuscriptQuestionSelect && manuscriptQuestionSelect.value) {
+          return;
+        }
+        fillLearningGoalSelect(
+          manuscriptLearningGoalSelect,
+          Number(
+            (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
+          ),
+        );
         try {
           await refreshStimuliSelectByQuestion();
         } catch (err) {
@@ -7944,6 +8938,12 @@
             imported_question_ids: [],
           };
           const knownStimuli = await ensureStimuliBySubject(subjectID);
+          const defaultLearningGoalID = resolveDefaultLearningGoalID(subjectID);
+          if (defaultLearningGoalID <= 0) {
+            throw new Error(
+              "Tujuan Pembelajaran untuk mapel ini belum tersedia. Buat Tujuan Pembelajaran dulu.",
+            );
+          }
           const stimulusByKey = {};
           knownStimuli.forEach(function (it) {
             if (String((it && it.stimulus_type) || "") !== "single") return;
@@ -7956,6 +8956,7 @@
             try {
               const parsed = parseImportQuestionBlock(blocks[i], blockNo);
               let stimulusID = null;
+              let learningGoalID = defaultLearningGoalID;
               if (parsed.stimulus_text) {
                 const stimulusKey = normalizeTextKey(parsed.stimulus_text);
                 const existingStimulus =
@@ -7964,6 +8965,13 @@
                     : null;
                 if (existingStimulus && Number(existingStimulus.id || 0) > 0) {
                   stimulusID = Number(existingStimulus.id || 0);
+                  learningGoalID = Number(
+                    (existingStimulus && existingStimulus.learning_goal_id) ||
+                      0,
+                  );
+                  if (learningGoalID <= 0) {
+                    learningGoalID = defaultLearningGoalID;
+                  }
                 } else {
                   const labelMap = {
                     pg_tunggal: "MC",
@@ -7977,6 +8985,7 @@
                   const safeStimulus = escapeHtml(parsed.stimulus_text);
                   const stim = await api("/api/v1/stimuli", "POST", {
                     subject_id: subjectID,
+                    learning_goal_id: defaultLearningGoalID,
                     title: autoTitle,
                     stimulus_type: "single",
                     content: { body: "<p>" + safeStimulus + "</p>" },
@@ -7990,6 +8999,7 @@
               }
               const blueprint = await api("/api/v1/questions", "POST", {
                 subject_id: subjectID,
+                learning_goal_id: learningGoalID,
                 question_type: parsed.question_type,
                 title: parsed.title,
                 indicator: parsed.indicator,
@@ -7999,7 +9009,7 @@
               });
               const qid = Number((blueprint && blueprint.id) || 0);
               if (qid <= 0) {
-                throw new Error("gagal membuat kisi-kisi/soal.");
+                throw new Error("gagal membuat soal.");
               }
               await api("/api/v1/questions/" + qid + "/versions", "POST", {
                 stimulus_id: stimulusID,
@@ -8026,7 +9036,6 @@
           }
           await Promise.all([
             loadBlueprints(subjectID),
-            loadReviewStats(),
             loadStimuliTable(subjectID),
           ]);
           if (
@@ -8169,7 +9178,7 @@
         }
         if (blueprintType && selectedType !== blueprintType) {
           setMsg(
-            "Tipe Soal harus sama dengan tipe pada Kisi-Kisi terpilih (" +
+            "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
               blueprintType +
               ").",
           );
@@ -8202,9 +9211,29 @@
             : "Menyimpan draft naskah...",
         );
         try {
-          const questionID = isEditMode
+          let questionID = isEditMode
             ? manuscriptEditingQuestionID
             : Number(fd.get("question_id") || 0);
+          if (!isEditMode) {
+            questionID = await ensureQuestionForManuscriptSubmission({
+              question_id: questionID,
+              subject_id: Number(fd.get("subject_id") || 0),
+              learning_goal_id: Number(fd.get("learning_goal_id") || 0),
+              question_type: selectedType,
+              stem_html: stemHTML,
+            });
+            await loadBlueprints(0);
+            if (manuscriptQuestionSelect) {
+              manuscriptQuestionSelect.value = String(questionID);
+            }
+            if (manuscriptListQuestionSelect) {
+              manuscriptListQuestionSelect.value = String(questionID);
+            }
+            if (manuscriptFinalizeQuestionSelect) {
+              manuscriptFinalizeQuestionSelect.value = String(questionID);
+            }
+            syncManuscriptSubjectState();
+          }
           const stimulusID = Number(fd.get("stimulus_id") || 0);
           const payload = {
             stimulus_id: stimulusID,
@@ -8235,6 +9264,7 @@
           }
           resetManuscriptEditors();
           manuscriptForm.reset();
+          syncManuscriptSubjectState();
           fillBlueprintSelect(manuscriptQuestionSelect);
           fillStimulusSelect(manuscriptStimulusSelect, []);
           if (manuscriptStimulusSelect) {
@@ -8392,6 +9422,7 @@
         if (!manuscriptForm) return;
         clearManuscriptEditMode();
         manuscriptForm.reset();
+        syncManuscriptSubjectState();
         resetManuscriptEditors();
         if (manuscriptStatementsWrap) manuscriptStatementsWrap.innerHTML = "";
         if (manuscriptOptionsWrap) manuscriptOptionsWrap.innerHTML = "";
@@ -8453,44 +9484,6 @@
         }
         e.preventDefault();
         await runManuscriptRowAction(btn, action, questionID, versionNo);
-      });
-    }
-
-    if (reviewFilterForm) {
-      reviewFilterForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const done = beginBusy(reviewFilterForm, msg, "Memuat tugas reviu...");
-        try {
-          const statusEl = reviewFilterForm.elements.namedItem("status");
-          const statusValue = statusEl ? statusEl.value : "";
-          await Promise.all([loadReviews(statusValue), loadReviewStats()]);
-          setMsg("Data tugas reviu berhasil dimuat.");
-        } catch (err) {
-          setMsg("Gagal memuat tugas reviu: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (reviewRefreshBtn) {
-      reviewRefreshBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          reviewRefreshBtn,
-          msg,
-          "Memuat ulang tugas reviu...",
-        );
-        try {
-          const statusEl =
-            reviewFilterForm && reviewFilterForm.elements.namedItem("status");
-          const statusValue = statusEl ? statusEl.value : "";
-          await Promise.all([loadReviews(statusValue), loadReviewStats()]);
-          setMsg("Tugas reviu berhasil dimuat ulang.");
-        } catch (err) {
-          setMsg("Gagal memuat ulang tugas reviu: " + err.message);
-        } finally {
-          done();
-        }
       });
     }
 
@@ -8791,7 +9784,7 @@
       subjectRefreshBtn.addEventListener("click", async function () {
         const done = beginBusy(subjectRefreshBtn, msg, "Memuat ulang mapel...");
         try {
-          await Promise.all([loadSubjects(), loadReviewStats()]);
+          await loadSubjects();
           setMsg("Data mapel berhasil dimuat ulang.");
         } catch (err) {
           setMsg("Gagal memuat mapel: " + err.message);
@@ -8871,7 +9864,7 @@
           if (subjectDialog && typeof subjectDialog.close === "function") {
             subjectDialog.close();
           }
-          await Promise.all([loadSubjects(), loadReviewStats()]);
+          await loadSubjects();
         } catch (err) {
           setMsg("Simpan mapel gagal: " + err.message);
         } finally {
@@ -8895,106 +9888,10 @@
           ) {
             subjectDeleteDialog.close();
           }
-          await Promise.all([loadSubjects(), loadReviewStats()]);
+          await loadSubjects();
           setMsg("Mapel berhasil dihapus.");
         } catch (err) {
           setMsg("Hapus mapel gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (reviewDecisionCancelBtn) {
-      reviewDecisionCancelBtn.addEventListener("click", function () {
-        if (
-          reviewDecisionDialog &&
-          typeof reviewDecisionDialog.close === "function"
-        ) {
-          reviewDecisionDialog.close();
-        }
-      });
-    }
-
-    if (reviewBody) {
-      reviewBody.addEventListener("click", function (e) {
-        const btn =
-          e.target && e.target.closest("button[data-action][data-id]");
-        if (!btn || !reviewDecisionForm) return;
-
-        const taskID = Number(btn.getAttribute("data-id") || 0);
-        const action = String(btn.getAttribute("data-action") || "");
-        if (!taskID || (action !== "approve" && action !== "revise")) return;
-
-        const status = action === "approve" ? "disetujui" : "perlu_revisi";
-        const title =
-          action === "approve" ? "Setujui Tugas Reviu" : "Kirim Perlu Revisi";
-        const noteHint =
-          action === "approve"
-            ? "Catatan opsional untuk persetujuan."
-            : "Isi alasan revisi agar penulis mendapat arahan yang jelas.";
-
-        const taskField = reviewDecisionForm.elements.namedItem("task_id");
-        const statusField = reviewDecisionForm.elements.namedItem("status");
-        if (!taskField || !statusField) return;
-
-        taskField.value = String(taskID);
-        statusField.value = status;
-        if (reviewDecisionTitle) text(reviewDecisionTitle, title);
-        if (reviewDecisionHelp) text(reviewDecisionHelp, noteHint);
-        if (reviewDecisionNote) {
-          reviewDecisionNote.value = "";
-          reviewDecisionNote.required = action === "revise";
-        }
-        if (
-          reviewDecisionDialog &&
-          typeof reviewDecisionDialog.showModal === "function"
-        ) {
-          reviewDecisionDialog.showModal();
-        }
-      });
-    }
-
-    if (reviewDecisionForm) {
-      reviewDecisionForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(reviewDecisionForm);
-        const taskID = Number(fd.get("task_id") || 0);
-        const status = String(fd.get("status") || "").trim();
-        const note = String(fd.get("note") || "").trim();
-        if (!taskID || !status) return;
-        if (status === "perlu_revisi" && !note) {
-          setMsg("Catatan wajib diisi untuk status perlu_revisi.");
-          return;
-        }
-
-        const done = beginBusy(
-          reviewDecisionForm,
-          msg,
-          "Menyimpan keputusan...",
-        );
-        try {
-          await api("/api/v1/reviews/tasks/" + taskID + "/decision", "POST", {
-            status: status,
-            note: note,
-          });
-          if (
-            reviewDecisionDialog &&
-            typeof reviewDecisionDialog.close === "function"
-          ) {
-            reviewDecisionDialog.close();
-          }
-          const statusEl =
-            reviewFilterForm && reviewFilterForm.elements.namedItem("status");
-          const statusValue = statusEl ? statusEl.value : "";
-          await Promise.all([
-            loadReviews(statusValue),
-            loadReviewStats(),
-            loadSubjects(),
-          ]);
-          setMsg("Keputusan reviu berhasil disimpan.");
-        } catch (err) {
-          setMsg("Gagal menyimpan keputusan reviu: " + err.message);
         } finally {
           done();
         }
@@ -9040,6 +9937,7 @@
         try {
           const out = await api("/api/v1/stimuli", "POST", {
             subject_id: Number(fd.get("subject_id") || 0),
+            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
             title: String(fd.get("title") || ""),
             stimulus_type: String(fd.get("stimulus_type") || ""),
             content: JSON.parse(String(fd.get("content_raw") || "{}")),

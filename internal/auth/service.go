@@ -919,7 +919,7 @@ func isValidRole(role string) bool {
 	}
 }
 
-func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset int) ([]AdminUserRecord, error) {
+func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset int, includeInactive bool) ([]AdminUserRecord, error) {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role != "" && !isValidRole(role) {
 		return nil, errors.New("invalid role filter")
@@ -968,6 +968,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 			LIMIT 1
 		) sch ON TRUE
 		WHERE ($1 = '' OR u.role = $1)
+		  AND ($5 OR u.is_active = TRUE)
 		  AND (
 			$2 = ''
 			OR u.username ILIKE '%' || $2 || '%'
@@ -980,7 +981,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		ORDER BY u.created_at DESC, u.id DESC
 		LIMIT $3
 		OFFSET $4
-	`, role, q, limit, offset)
+	`, role, q, limit, offset, includeInactive)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}

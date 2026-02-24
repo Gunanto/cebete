@@ -138,6 +138,12 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.Get("/auth/me/student-profile", authHandler.MeStudentProfile)
 			secure.Post("/auth/logout", authHandler.Logout)
 			secure.Get("/subjects", examHandler.ListSubjects)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/learning-goals", masterHandler.ListLearningGoals)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/learning-goals", masterHandler.CreateLearningGoal)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/learning-goals/import-template", masterHandler.ExportLearningGoalsImportTemplateCSV)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/learning-goals/import", masterHandler.ImportLearningGoalsCSV)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/learning-goals/{id}", masterHandler.UpdateLearningGoal)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/learning-goals/{id}", masterHandler.DeleteLearningGoal)
 			secure.With(authHandler.RequireRoles("guru")).Post("/subjects", examHandler.CreateSubject)
 			secure.With(authHandler.RequireRoles("guru")).Put("/subjects/{id}", examHandler.UpdateSubject)
 			secure.With(authHandler.RequireRoles("guru")).Delete("/subjects/{id}", examHandler.DeleteSubject)
@@ -185,6 +191,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/questions/{questionID}", examHandler.UpsertExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/questions/{questionID}", examHandler.DeleteExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/question-incidents", examHandler.UpsertExamQuestionIncident)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/classes", masterHandler.ListClasses)
 
 			secure.Group(func(admin chi.Router) {
 				admin.Use(authHandler.RequireRoles("admin", "proktor"))
@@ -196,7 +203,6 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Get("/admin/users", authHandler.ListUsers)
 				admin.Put("/admin/users/{id}/class-placement", authHandler.AssignUserClass)
 				admin.Get("/admin/schools", masterHandler.ListSchools)
-				admin.Get("/admin/classes", masterHandler.ListClasses)
 				admin.Get("/admin/registrations", authHandler.ListPendingRegistrations)
 				admin.Post("/admin/registrations/{id}/approve", authHandler.ApproveRegistration)
 				admin.Post("/admin/registrations/{id}/reject", authHandler.RejectRegistration)

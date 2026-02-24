@@ -53,21 +53,24 @@ type apiResponse struct {
 }
 
 type createStimulusRequest struct {
-	SubjectID    int64           `json:"subject_id"`
-	Title        string          `json:"title"`
-	StimulusType string          `json:"stimulus_type"`
-	Content      json.RawMessage `json:"content"`
+	SubjectID      int64           `json:"subject_id"`
+	LearningGoalID int64           `json:"learning_goal_id"`
+	Title          string          `json:"title"`
+	StimulusType   string          `json:"stimulus_type"`
+	Content        json.RawMessage `json:"content"`
 }
 
 type updateStimulusRequest struct {
-	SubjectID    int64           `json:"subject_id"`
-	Title        string          `json:"title"`
-	StimulusType string          `json:"stimulus_type"`
-	Content      json.RawMessage `json:"content"`
+	SubjectID      int64           `json:"subject_id"`
+	LearningGoalID int64           `json:"learning_goal_id"`
+	Title          string          `json:"title"`
+	StimulusType   string          `json:"stimulus_type"`
+	Content        json.RawMessage `json:"content"`
 }
 
 type createQuestionRequest struct {
 	SubjectID      int64  `json:"subject_id"`
+	LearningGoalID int64  `json:"learning_goal_id"`
 	QuestionType   string `json:"question_type"`
 	Title          string `json:"title"`
 	Indicator      string `json:"indicator"`
@@ -159,17 +162,18 @@ func (h *Handler) CreateStimulus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.svc.CreateStimulus(r.Context(), CreateStimulusInput{
-		SubjectID:    req.SubjectID,
-		Title:        req.Title,
-		StimulusType: req.StimulusType,
-		Content:      req.Content,
-		CreatedBy:    user.ID,
+		SubjectID:      req.SubjectID,
+		LearningGoalID: req.LearningGoalID,
+		Title:          req.Title,
+		StimulusType:   req.StimulusType,
+		Content:        req.Content,
+		CreatedBy:      user.ID,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound):
+		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
@@ -195,6 +199,7 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.svc.CreateQuestion(r.Context(), CreateQuestionInput{
 		SubjectID:      req.SubjectID,
+		LearningGoalID: req.LearningGoalID,
 		QuestionType:   req.QuestionType,
 		Title:          req.Title,
 		Indicator:      req.Indicator,
@@ -208,7 +213,7 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound):
+		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
@@ -303,17 +308,18 @@ func (h *Handler) UpdateStimulus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.svc.UpdateStimulus(r.Context(), UpdateStimulusInput{
-		ID:           stimulusID,
-		SubjectID:    req.SubjectID,
-		Title:        req.Title,
-		StimulusType: req.StimulusType,
-		Content:      req.Content,
+		ID:             stimulusID,
+		SubjectID:      req.SubjectID,
+		LearningGoalID: req.LearningGoalID,
+		Title:          req.Title,
+		StimulusType:   req.StimulusType,
+		Content:        req.Content,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrStimulusNotFound):
+		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrStimulusNotFound), errors.Is(err, ErrLearningGoalNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
@@ -351,13 +357,13 @@ func (h *Handler) ExportStimuliImportTemplateCSV(w http.ResponseWriter, r *http.
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(strings.Join([]string{
-		"subject_id,title,stimulus_type,body_html,tabs_json,content_json",
-		`1,"Stimulus Single Contoh",single,"<p>Isi konten single berbasis HTML.</p>",,`,
-		`1,"Stimulus Multiteks Contoh",multiteks,,"[{""title"":""Tab 1"",""body"":""<p>Konten tab 1</p>""},{""title"":""Tab 2"",""body"":""<p>Konten tab 2</p>""}]",`,
-		`1,"Stimulus dengan content_json",single,,,"{""body"":""<p>Alternatif isi via content_json</p>""}"`,
+		"subject_id,learning_goal_id,title,stimulus_type,body_html,tabs_json,content_json",
+		`1,1,"Stimulus Single Contoh",single,"<p>Isi konten single berbasis HTML.</p>",,`,
+		`1,1,"Stimulus Multiteks Contoh",multiteks,,"[{""title"":""Tab 1"",""body"":""<p>Konten tab 1</p>""},{""title"":""Tab 2"",""body"":""<p>Konten tab 2</p>""}]",`,
+		`1,1,"Stimulus dengan content_json",single,,,"{""body"":""<p>Alternatif isi via content_json</p>""}"`,
 		"",
 		"# Catatan:",
-		"# 1) Kolom wajib: subject_id,title,stimulus_type.",
+		"# 1) Kolom wajib: subject_id,learning_goal_id,title,stimulus_type.",
 		"# 2) stimulus_type: single atau multiteks.",
 		"# 3) Untuk single, isi body_html ATAU content_json.",
 		"# 4) Untuk multiteks, isi tabs_json ATAU content_json.",
@@ -398,7 +404,7 @@ func (h *Handler) ImportStimuliCSV(w http.ResponseWriter, r *http.Request) {
 			header[k] = i
 		}
 	}
-	required := []string{"subject_id", "title", "stimulus_type"}
+	required := []string{"subject_id", "learning_goal_id", "title", "stimulus_type"}
 	for _, col := range required {
 		if _, ok := header[col]; !ok {
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: fmt.Sprintf("kolom wajib tidak ditemukan: %s", col)})
@@ -438,6 +444,7 @@ func (h *Handler) ImportStimuliCSV(w http.ResponseWriter, r *http.Request) {
 		report.TotalRows++
 
 		subjectIDRaw := get(record, "subject_id")
+		learningGoalIDRaw := get(record, "learning_goal_id")
 		title := get(record, "title")
 		stimulusType := strings.ToLower(get(record, "stimulus_type"))
 		bodyHTML := get(record, "body_html")
@@ -451,6 +458,16 @@ func (h *Handler) ImportStimuliCSV(w http.ResponseWriter, r *http.Request) {
 				Row:   rowNo,
 				Title: title,
 				Error: "subject_id harus angka positif",
+			})
+			continue
+		}
+		learningGoalID, convErr := strconv.ParseInt(learningGoalIDRaw, 10, 64)
+		if convErr != nil || learningGoalID <= 0 {
+			report.FailedRows++
+			report.Errors = append(report.Errors, stimulusImportRowError{
+				Row:   rowNo,
+				Title: title,
+				Error: "learning_goal_id harus angka positif",
 			})
 			continue
 		}
@@ -506,11 +523,12 @@ func (h *Handler) ImportStimuliCSV(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_, createErr := h.svc.CreateStimulus(r.Context(), CreateStimulusInput{
-			SubjectID:    subjectID,
-			Title:        title,
-			StimulusType: stimulusType,
-			Content:      content,
-			CreatedBy:    user.ID,
+			SubjectID:      subjectID,
+			LearningGoalID: learningGoalID,
+			Title:          title,
+			StimulusType:   stimulusType,
+			Content:        content,
+			CreatedBy:      user.ID,
 		})
 		if createErr != nil {
 			report.FailedRows++

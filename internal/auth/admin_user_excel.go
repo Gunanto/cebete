@@ -28,7 +28,7 @@ type UserImportReport struct {
 }
 
 func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte, error) {
-	items, err := s.ListUsers(ctx, role, q, 10000, 0)
+	items, err := s.ListUsers(ctx, role, q, 10000, 0, true)
 	if err != nil {
 		return nil, err
 	}

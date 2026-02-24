@@ -284,21 +284,22 @@ func TestListStimuliRequiresSubjectID(t *testing.T) {
 func TestCreateStimulusOK(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
 		createFn: func(ctx context.Context, in CreateStimulusInput) (*Stimulus, error) {
-			if in.CreatedBy != 9 || in.SubjectID != 1 || in.StimulusType != "single" {
+			if in.CreatedBy != 9 || in.SubjectID != 1 || in.LearningGoalID != 7 || in.StimulusType != "single" {
 				t.Fatalf("unexpected input: %+v", in)
 			}
 			return &Stimulus{
-				ID:           11,
-				SubjectID:    in.SubjectID,
-				Title:        in.Title,
-				StimulusType: in.StimulusType,
-				Content:      in.Content,
-				IsActive:     true,
+				ID:             11,
+				SubjectID:      in.SubjectID,
+				LearningGoalID: in.LearningGoalID,
+				Title:          in.Title,
+				StimulusType:   in.StimulusType,
+				Content:        in.Content,
+				IsActive:       true,
 			}, nil
 		},
 	}}
 
-	payload := []byte(`{"subject_id":1,"title":"Stimulus A","stimulus_type":"single","content":{"body":"Teks"}}`)
+	payload := []byte(`{"subject_id":1,"learning_goal_id":7,"title":"Stimulus A","stimulus_type":"single","content":{"body":"Teks"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimuli", bytes.NewReader(payload))
 	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
 	w := httptest.NewRecorder()
@@ -321,7 +322,7 @@ func TestCreateStimulusSubjectNotFound(t *testing.T) {
 		},
 	}}
 
-	payload := []byte(`{"subject_id":99,"title":"Stimulus","stimulus_type":"single","content":{"body":"Teks"}}`)
+	payload := []byte(`{"subject_id":99,"learning_goal_id":7,"title":"Stimulus","stimulus_type":"single","content":{"body":"Teks"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimuli", bytes.NewReader(payload))
 	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
 	w := httptest.NewRecorder()

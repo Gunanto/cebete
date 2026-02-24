@@ -76,6 +76,31 @@ type EducationLevel struct {
 	IsActive bool   `json:"is_active"`
 }
 
+type LearningGoal struct {
+	ID                 int64  `json:"id"`
+	TujuanPembelajaran string `json:"tujuan_pembelajaran"`
+	Materi             string `json:"materi"`
+	MataPelajaran      string `json:"mata_pelajaran"`
+	Kelas              string `json:"kelas"`
+	Semester           int16  `json:"semester"`
+}
+
+type CreateLearningGoalInput struct {
+	TujuanPembelajaran string
+	Materi             string
+	MataPelajaran      string
+	Kelas              string
+	Semester           int16
+}
+
+type UpdateLearningGoalInput struct {
+	TujuanPembelajaran string
+	Materi             string
+	MataPelajaran      string
+	Kelas              string
+	Semester           int16
+}
+
 type ImportStudentsReport struct {
 	TotalRows   int              `json:"total_rows"`
 	SuccessRows int              `json:"success_rows"`
@@ -533,6 +558,119 @@ func (s *Service) DeleteEducationLevel(ctx context.Context, actorID, id int64) e
 	_ = s.writeAudit(ctx, actorID, "education_level_deleted", "education_level", fmt.Sprintf("%d", id), map[string]any{
 		"name": name,
 	})
+	return nil
+}
+
+func (s *Service) ListLearningGoals(ctx context.Context, mataPelajaran, kelas string, semester int16) ([]LearningGoal, error) {
+	query := `
+		SELECT id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
+		FROM learning_goals
+		WHERE ($1 = '' OR LOWER(mata_pelajaran) = LOWER($1))
+		  AND ($2 = '' OR LOWER(kelas) = LOWER($2))
+		  AND ($3 <= 0 OR semester = $3)
+		ORDER BY mata_pelajaran ASC, kelas ASC, semester ASC, id ASC
+	`
+	rows, err := s.db.QueryContext(ctx, query, strings.TrimSpace(mataPelajaran), strings.TrimSpace(kelas), semester)
+	if err != nil {
+		return nil, fmt.Errorf("list learning goals: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]LearningGoal, 0)
+	for rows.Next() {
+		var it LearningGoal
+		if err := rows.Scan(&it.ID, &it.TujuanPembelajaran, &it.Materi, &it.MataPelajaran, &it.Kelas, &it.Semester); err != nil {
+			return nil, fmt.Errorf("scan learning goal: %w", err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate learning goals: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) CreateLearningGoal(ctx context.Context, actorID int64, in CreateLearningGoalInput) (*LearningGoal, error) {
+	tujuan := strings.TrimSpace(in.TujuanPembelajaran)
+	materi := strings.TrimSpace(in.Materi)
+	mapel := strings.TrimSpace(in.MataPelajaran)
+	kelas := strings.TrimSpace(in.Kelas)
+	if tujuan == "" || materi == "" || mapel == "" || kelas == "" || in.Semester <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	var out LearningGoal
+	if err := s.db.QueryRowContext(ctx, `
+		INSERT INTO learning_goals (tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
+	`, tujuan, materi, mapel, kelas, in.Semester).Scan(
+		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester,
+	); err != nil {
+		return nil, fmt.Errorf("create learning goal: %w", err)
+	}
+
+	_ = s.writeAudit(ctx, actorID, "learning_goal_created", "learning_goal", fmt.Sprintf("%d", out.ID), map[string]any{
+		"mata_pelajaran": out.MataPelajaran,
+		"kelas":          out.Kelas,
+		"materi":         out.Materi,
+		"semester":       out.Semester,
+	})
+	return &out, nil
+}
+
+func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in UpdateLearningGoalInput) (*LearningGoal, error) {
+	tujuan := strings.TrimSpace(in.TujuanPembelajaran)
+	materi := strings.TrimSpace(in.Materi)
+	mapel := strings.TrimSpace(in.MataPelajaran)
+	kelas := strings.TrimSpace(in.Kelas)
+	if id <= 0 || tujuan == "" || materi == "" || mapel == "" || kelas == "" || in.Semester <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	var out LearningGoal
+	if err := s.db.QueryRowContext(ctx, `
+		UPDATE learning_goals
+		SET tujuan_pembelajaran = $2,
+			materi = $3,
+			mata_pelajaran = $4,
+			kelas = $5,
+			semester = $6
+		WHERE id = $1
+		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
+	`, id, tujuan, materi, mapel, kelas, in.Semester).Scan(
+		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("update learning goal: %w", err)
+	}
+
+	_ = s.writeAudit(ctx, actorID, "learning_goal_updated", "learning_goal", fmt.Sprintf("%d", out.ID), map[string]any{
+		"mata_pelajaran": out.MataPelajaran,
+		"kelas":          out.Kelas,
+		"materi":         out.Materi,
+		"semester":       out.Semester,
+	})
+	return &out, nil
+}
+
+func (s *Service) DeleteLearningGoal(ctx context.Context, actorID, id int64) error {
+	if id <= 0 {
+		return ErrInvalidInput
+	}
+
+	res, err := s.db.ExecContext(ctx, `DELETE FROM learning_goals WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete learning goal: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	_ = s.writeAudit(ctx, actorID, "learning_goal_deleted", "learning_goal", fmt.Sprintf("%d", id), map[string]any{})
 	return nil
 }
 

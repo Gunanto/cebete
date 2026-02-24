@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE learning_goals
+  ADD COLUMN IF NOT EXISTS materi TEXT NOT NULL DEFAULT '';
+
+COMMIT;

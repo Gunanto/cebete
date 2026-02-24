@@ -4,6 +4,10 @@ APP=cbtlms
 run:
 	go run ./cmd/web
 
+.PHONY: dev
+dev:
+	@bash -lc 'set -a; [ -f .env.local ] && source .env.local; set +a; ./scripts/migrate.sh up; go run ./cmd/web'
+
 .PHONY: compose-up
 compose-up:
 	docker compose -f deployments/docker-compose.yml up -d
