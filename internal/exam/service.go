@@ -10,31 +10,34 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 	"time"
 )
 
 var (
-	ErrInvalidInput          = errors.New("invalid input")
-	ErrExamNotFound          = errors.New("exam not found")
-	ErrSubjectNotFound       = errors.New("subject not found")
-	ErrAttemptNotFound       = errors.New("attempt not found")
-	ErrAttemptNotEditable    = errors.New("attempt is not editable")
-	ErrQuestionNotInExam     = errors.New("question not in exam")
-	ErrAttemptForbidden      = errors.New("attempt forbidden")
-	ErrAttemptNotFinal       = errors.New("attempt not final")
-	ErrResultPolicyDenied    = errors.New("result not available by review policy")
-	ErrInvalidEventType      = errors.New("invalid event type")
-	ErrExamTokenRequired     = errors.New("token ujian wajib diisi")
-	ErrExamTokenInvalid      = errors.New("token ujian tidak valid")
-	ErrExamTokenExpired      = errors.New("token ujian sudah kedaluwarsa")
-	ErrExamTokenUnavailable  = errors.New("token ujian belum disiapkan proktor")
-	ErrExamNotAssigned       = errors.New("peserta tidak terdaftar pada ujian ini")
-	ErrExamCodeExists        = errors.New("kode ujian sudah digunakan")
-	ErrAssignmentFeature     = errors.New("fitur enroll ujian belum aktif di database")
-	ErrStudentDataMissing    = errors.New("data peserta belum lengkap (nomor peserta, nama, kelas, nisn, nama sekolah, npsn)")
-	ErrIncidentPolicyInvalid = errors.New("kebijakan insiden tidak valid")
+	ErrInvalidInput             = errors.New("invalid input")
+	ErrExamNotFound             = errors.New("exam not found")
+	ErrSubjectNotFound          = errors.New("subject not found")
+	ErrAttemptNotFound          = errors.New("attempt not found")
+	ErrAttemptNotEditable       = errors.New("attempt is not editable")
+	ErrQuestionNotInExam        = errors.New("question not in exam")
+	ErrAttemptForbidden         = errors.New("attempt forbidden")
+	ErrAttemptNotFinal          = errors.New("attempt not final")
+	ErrResultPolicyDenied       = errors.New("result not available by review policy")
+	ErrInvalidEventType         = errors.New("invalid event type")
+	ErrExamTokenRequired        = errors.New("token ujian wajib diisi")
+	ErrExamTokenInvalid         = errors.New("token ujian tidak valid")
+	ErrExamTokenExpired         = errors.New("token ujian sudah kedaluwarsa")
+	ErrExamTokenUnavailable     = errors.New("token ujian belum disiapkan proktor")
+	ErrExamNotAssigned          = errors.New("peserta tidak terdaftar pada ujian ini")
+	ErrExamCodeExists           = errors.New("kode ujian sudah digunakan")
+	ErrAttemptLimitReached      = errors.New("jumlah attempt ujian sudah mencapai batas")
+	ErrAssignmentFeature        = errors.New("fitur enroll ujian belum aktif di database")
+	ErrStudentDataMissing       = errors.New("data peserta belum lengkap (nomor peserta, nama, kelas, nisn, nama sekolah, npsn)")
+	ErrIncidentPolicyInvalid    = errors.New("kebijakan insiden tidak valid")
+	ErrQuestionCodeRuleNotFound = errors.New("exam question code rule not found")
 )
 
 type Service struct {
@@ -120,6 +123,7 @@ type ExamAdminRecord struct {
 	EducationLevel  string     `json:"education_level"`
 	SubjectType     string     `json:"subject_type"`
 	DurationMinutes int        `json:"duration_minutes"`
+	MaxAttempts     int        `json:"max_attempts"`
 	StartAt         *time.Time `json:"start_at,omitempty"`
 	EndAt           *time.Time `json:"end_at,omitempty"`
 	ReviewPolicy    string     `json:"review_policy"`
@@ -135,6 +139,7 @@ type CreateExamInput struct {
 	Title           string
 	SubjectID       int64
 	DurationMinutes int
+	MaxAttempts     int
 	StartAt         *time.Time
 	EndAt           *time.Time
 	ReviewPolicy    string
@@ -147,6 +152,7 @@ type UpdateExamInput struct {
 	Title           string
 	SubjectID       int64
 	DurationMinutes int
+	MaxAttempts     int
 	StartAt         *time.Time
 	EndAt           *time.Time
 	ReviewPolicy    string
@@ -218,6 +224,38 @@ type UpsertExamQuestionInput struct {
 	QuestionID int64
 	SeqNo      int
 	Weight     float64
+}
+
+type ExamQuestionCodeRule struct {
+	ExamID           int64   `json:"exam_id"`
+	QuestionCodeID   int64   `json:"question_code_id"`
+	QuestionCode     string  `json:"question_code"`
+	QuestionCodeName string  `json:"question_code_name"`
+	SubjectID        int64   `json:"subject_id"`
+	Strategy         string  `json:"strategy"`
+	PickCount        *int    `json:"pick_count,omitempty"`
+	Weight           float64 `json:"weight"`
+	IsActive         bool    `json:"is_active"`
+}
+
+type UpsertExamQuestionCodeRuleInput struct {
+	ExamID         int64
+	QuestionCodeID int64
+	Strategy       string
+	PickCount      *int
+	Weight         float64
+	CreatedBy      int64
+}
+
+type SyncExamQuestionsByCodeInput struct {
+	ExamID int64
+}
+
+type SyncExamQuestionsByCodeResult struct {
+	ExamID        int64 `json:"exam_id"`
+	RuleCount     int   `json:"rule_count"`
+	SelectedCount int   `json:"selected_count"`
+	InsertedCount int   `json:"inserted_count"`
 }
 
 type UpsertExamQuestionIncidentInput struct {
@@ -327,6 +365,9 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 		SELECT id, exam_id, student_id, status, started_at, expires_at
 		FROM attempts
 		WHERE exam_id = $1 AND student_id = $2
+		  AND status = 'in_progress'
+		ORDER BY started_at DESC, id DESC
+		LIMIT 1
 	`, examID, studentID)
 
 	var existing Attempt
@@ -337,17 +378,21 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	}
 
 	duration := s.defaultExamMinutes
+	maxAttempts := 1
 	var examTokenHash sql.NullString
 	var examTokenExpires sql.NullTime
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT duration_minutes, exam_token_hash, exam_token_expires_at
+		SELECT duration_minutes, max_attempts, exam_token_hash, exam_token_expires_at
 		FROM exams
 		WHERE id = $1 AND is_active = TRUE
-	`, examID).Scan(&duration, &examTokenHash, &examTokenExpires); err != nil {
+	`, examID).Scan(&duration, &maxAttempts, &examTokenHash, &examTokenExpires); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
 		return nil, fmt.Errorf("query exam duration: %w", err)
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 1
 	}
 	var assignmentCount int
 	if err := s.db.QueryRowContext(ctx, `
@@ -391,6 +436,17 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	}
 	if subtle.ConstantTimeCompare([]byte(hashExamToken(inputToken)), []byte(examTokenHash.String)) != 1 {
 		return nil, ErrExamTokenInvalid
+	}
+	var totalAttempts int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM attempts
+		WHERE exam_id = $1 AND student_id = $2
+	`, examID, studentID).Scan(&totalAttempts); err != nil {
+		return nil, fmt.Errorf("count attempts: %w", err)
+	}
+	if totalAttempts >= maxAttempts {
+		return nil, ErrAttemptLimitReached
 	}
 
 	row = s.db.QueryRowContext(ctx, `
@@ -580,6 +636,7 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 			s.education_level,
 			s.subject_type,
 			e.duration_minutes,
+			e.max_attempts,
 			e.start_at,
 			e.end_at,
 			e.review_policy,
@@ -621,6 +678,7 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 					s.education_level,
 					s.subject_type,
 					e.duration_minutes,
+					e.max_attempts,
 					e.start_at,
 					e.end_at,
 					e.review_policy,
@@ -664,6 +722,7 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 			&it.EducationLevel,
 			&it.SubjectType,
 			&it.DurationMinutes,
+			&it.MaxAttempts,
 			&startAt,
 			&endAt,
 			&it.ReviewPolicy,
@@ -702,15 +761,18 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if in.DurationMinutes <= 0 {
 		in.DurationMinutes = s.defaultExamMinutes
 	}
+	if in.MaxAttempts <= 0 {
+		in.MaxAttempts = 1
+	}
 	insertOnce := func(code string) (int64, error) {
 		var outID int64
 		if err := s.db.QueryRowContext(ctx, `
 			INSERT INTO exams (
-				code, title, subject_id, duration_minutes,
+				code, title, subject_id, duration_minutes, max_attempts,
 				start_at, end_at, review_policy, is_active, created_by, created_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,now())
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,now())
 			RETURNING id
-		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.StartAt, in.EndAt, in.ReviewPolicy, in.CreatedBy).Scan(&outID); err != nil {
+		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.CreatedBy).Scan(&outID); err != nil {
 			return 0, err
 		}
 		return outID, nil
@@ -755,6 +817,9 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 	if in.DurationMinutes <= 0 {
 		in.DurationMinutes = s.defaultExamMinutes
 	}
+	if in.MaxAttempts <= 0 {
+		in.MaxAttempts = 1
+	}
 	var outID int64
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE exams
@@ -762,13 +827,14 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 			title = $3,
 			subject_id = $4,
 			duration_minutes = $5,
-			start_at = $6,
-			end_at = $7,
-			review_policy = $8,
-			is_active = $9
+			max_attempts = $6,
+			start_at = $7,
+			end_at = $8,
+			review_policy = $9,
+			is_active = $10
 		WHERE id = $1
 		RETURNING id
-	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.StartAt, in.EndAt, in.ReviewPolicy, in.IsActive).Scan(&outID); err != nil {
+	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.IsActive).Scan(&outID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
@@ -813,6 +879,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 			s.education_level,
 			s.subject_type,
 			e.duration_minutes,
+			e.max_attempts,
 			e.start_at,
 			e.end_at,
 			e.review_policy,
@@ -848,6 +915,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 					s.education_level,
 					s.subject_type,
 					e.duration_minutes,
+					e.max_attempts,
 					e.start_at,
 					e.end_at,
 					e.review_policy,
@@ -887,6 +955,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 		&it.EducationLevel,
 		&it.SubjectType,
 		&it.DurationMinutes,
+		&it.MaxAttempts,
 		&startAt,
 		&endAt,
 		&it.ReviewPolicy,
@@ -908,6 +977,34 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 		it.CreatedBy = &createdBy.Int64
 	}
 	return &it, nil
+}
+
+func (s *Service) ResetExamAttempt(ctx context.Context, examID, studentID, actorID int64) (int64, error) {
+	if examID <= 0 || studentID <= 0 || actorID <= 0 {
+		return 0, ErrInvalidInput
+	}
+	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
+		return 0, err
+	}
+
+	var attemptID int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM attempts
+		WHERE exam_id = $1 AND student_id = $2
+		ORDER BY started_at DESC, id DESC
+		LIMIT 1
+	`, examID, studentID).Scan(&attemptID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrAttemptNotFound
+		}
+		return 0, fmt.Errorf("select latest attempt: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM attempts WHERE id = $1`, attemptID); err != nil {
+		return 0, fmt.Errorf("delete attempt: %w", err)
+	}
+	return attemptID, nil
 }
 
 func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error) {
@@ -1187,6 +1284,357 @@ func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQu
 		return nil, fmt.Errorf("iterate exam questions: %w", err)
 	}
 	return items, nil
+}
+
+func (s *Service) ListExamQuestionCodeRules(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			r.exam_id,
+			r.question_code_id,
+			qc.code,
+			qc.name,
+			qc.subject_id,
+			r.strategy,
+			r.pick_count,
+			r.weight,
+			r.is_active
+		FROM exam_question_code_rules r
+		JOIN question_codes qc ON qc.id = r.question_code_id
+		WHERE r.exam_id = $1
+		  AND r.is_active = TRUE
+		ORDER BY qc.code ASC, r.question_code_id ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam question code rules: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]ExamQuestionCodeRule, 0)
+	for rows.Next() {
+		var out ExamQuestionCodeRule
+		var pickCount sql.NullInt64
+		if err := rows.Scan(
+			&out.ExamID,
+			&out.QuestionCodeID,
+			&out.QuestionCode,
+			&out.QuestionCodeName,
+			&out.SubjectID,
+			&out.Strategy,
+			&pickCount,
+			&out.Weight,
+			&out.IsActive,
+		); err != nil {
+			return nil, fmt.Errorf("scan exam question code rule: %w", err)
+		}
+		if pickCount.Valid {
+			v := int(pickCount.Int64)
+			out.PickCount = &v
+		}
+		items = append(items, out)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate exam question code rules: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error) {
+	if in.ExamID <= 0 || in.QuestionCodeID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if in.Weight <= 0 {
+		in.Weight = 1
+	}
+	strategy := normalizeExamQuestionCodeStrategy(in.Strategy)
+	if strategy == "" {
+		return nil, ErrInvalidInput
+	}
+	if strategy == "random" {
+		if in.PickCount == nil || *in.PickCount <= 0 {
+			return nil, ErrInvalidInput
+		}
+	} else {
+		in.PickCount = nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin upsert exam question code rule tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var examSubjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id
+		FROM exams
+		WHERE id = $1
+	`, in.ExamID).Scan(&examSubjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam subject for code rule: %w", err)
+	}
+
+	var codeSubjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id
+		FROM question_codes
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, in.QuestionCodeID).Scan(&codeSubjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrInvalidInput
+		}
+		return nil, fmt.Errorf("load question code for exam rule: %w", err)
+	}
+	if codeSubjectID != examSubjectID {
+		return nil, ErrInvalidInput
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exam_question_code_rules (
+			exam_id, question_code_id, strategy, pick_count, weight, is_active, created_by, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, TRUE, NULLIF($6, 0), now(), now()
+		)
+		ON CONFLICT (exam_id, question_code_id)
+		DO UPDATE SET
+			strategy = EXCLUDED.strategy,
+			pick_count = EXCLUDED.pick_count,
+			weight = EXCLUDED.weight,
+			is_active = TRUE,
+			updated_at = now()
+	`, in.ExamID, in.QuestionCodeID, strategy, nullIntPtr(in.PickCount), in.Weight, in.CreatedBy); err != nil {
+		return nil, fmt.Errorf("upsert exam question code rule: %w", err)
+	}
+
+	var out ExamQuestionCodeRule
+	var pickCount sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			r.exam_id,
+			r.question_code_id,
+			qc.code,
+			qc.name,
+			qc.subject_id,
+			r.strategy,
+			r.pick_count,
+			r.weight,
+			r.is_active
+		FROM exam_question_code_rules r
+		JOIN question_codes qc ON qc.id = r.question_code_id
+		WHERE r.exam_id = $1
+		  AND r.question_code_id = $2
+	`, in.ExamID, in.QuestionCodeID).Scan(
+		&out.ExamID,
+		&out.QuestionCodeID,
+		&out.QuestionCode,
+		&out.QuestionCodeName,
+		&out.SubjectID,
+		&out.Strategy,
+		&pickCount,
+		&out.Weight,
+		&out.IsActive,
+	); err != nil {
+		return nil, fmt.Errorf("reload exam question code rule: %w", err)
+	}
+	if pickCount.Valid {
+		v := int(pickCount.Int64)
+		out.PickCount = &v
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit upsert exam question code rule tx: %w", err)
+	}
+	return &out, nil
+}
+
+func (s *Service) DeleteExamQuestionCodeRule(ctx context.Context, examID, questionCodeID int64) error {
+	if examID <= 0 || questionCodeID <= 0 {
+		return ErrInvalidInput
+	}
+	var deletedExamID int64
+	if err := s.db.QueryRowContext(ctx, `
+		UPDATE exam_question_code_rules
+		SET is_active = FALSE,
+			updated_at = now()
+		WHERE exam_id = $1
+		  AND question_code_id = $2
+		  AND is_active = TRUE
+		RETURNING exam_id
+	`, examID, questionCodeID).Scan(&deletedExamID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrQuestionCodeRuleNotFound
+		}
+		return fmt.Errorf("delete exam question code rule: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) SyncExamQuestionsByCode(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error) {
+	if in.ExamID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin sync exam questions by code tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var examSubjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id
+		FROM exams
+		WHERE id = $1
+	`, in.ExamID).Scan(&examSubjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam for sync by code: %w", err)
+	}
+
+	ruleRows, err := tx.QueryContext(ctx, `
+		SELECT question_code_id, strategy, pick_count, weight
+		FROM exam_question_code_rules
+		WHERE exam_id = $1
+		  AND is_active = TRUE
+		ORDER BY question_code_id ASC
+	`, in.ExamID)
+	if err != nil {
+		return nil, fmt.Errorf("list rules for sync by code: %w", err)
+	}
+	defer ruleRows.Close()
+
+	type rule struct {
+		QuestionCodeID int64
+		Strategy       string
+		PickCount      *int
+		Weight         float64
+	}
+	rules := make([]rule, 0)
+	for ruleRows.Next() {
+		var it rule
+		var pickCount sql.NullInt64
+		if err := ruleRows.Scan(&it.QuestionCodeID, &it.Strategy, &pickCount, &it.Weight); err != nil {
+			return nil, fmt.Errorf("scan rule for sync by code: %w", err)
+		}
+		if pickCount.Valid {
+			v := int(pickCount.Int64)
+			it.PickCount = &v
+		}
+		rules = append(rules, it)
+	}
+	if err := ruleRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rules for sync by code: %w", err)
+	}
+
+	type selectedQuestion struct {
+		QuestionID int64
+		Weight     float64
+	}
+	selected := make([]selectedQuestion, 0)
+	seenQuestion := map[int64]struct{}{}
+	for _, rl := range rules {
+		if rl.Strategy == "all" {
+			rows, err := tx.QueryContext(ctx, `
+				SELECT q.id
+				FROM questions q
+				WHERE q.question_code_id = $1
+				  AND q.subject_id = $2
+				  AND q.is_active = TRUE
+				ORDER BY q.id ASC
+			`, rl.QuestionCodeID, examSubjectID)
+			if err != nil {
+				return nil, fmt.Errorf("list questions by code (all): %w", err)
+			}
+			for rows.Next() {
+				var qid int64
+				if err := rows.Scan(&qid); err != nil {
+					_ = rows.Close()
+					return nil, fmt.Errorf("scan question by code (all): %w", err)
+				}
+				if _, exists := seenQuestion[qid]; exists {
+					continue
+				}
+				seenQuestion[qid] = struct{}{}
+				selected = append(selected, selectedQuestion{QuestionID: qid, Weight: rl.Weight})
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("iterate questions by code (all): %w", err)
+			}
+			_ = rows.Close()
+			continue
+		}
+
+		pickCount := 0
+		if rl.PickCount != nil {
+			pickCount = *rl.PickCount
+		}
+		if pickCount <= 0 {
+			continue
+		}
+		rows, err := tx.QueryContext(ctx, `
+			SELECT q.id
+			FROM questions q
+			WHERE q.question_code_id = $1
+			  AND q.subject_id = $2
+			  AND q.is_active = TRUE
+			ORDER BY random()
+			LIMIT $3
+		`, rl.QuestionCodeID, examSubjectID, pickCount)
+		if err != nil {
+			return nil, fmt.Errorf("list questions by code (random): %w", err)
+		}
+		for rows.Next() {
+			var qid int64
+			if err := rows.Scan(&qid); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan question by code (random): %w", err)
+			}
+			if _, exists := seenQuestion[qid]; exists {
+				continue
+			}
+			seenQuestion[qid] = struct{}{}
+			selected = append(selected, selectedQuestion{QuestionID: qid, Weight: rl.Weight})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate questions by code (random): %w", err)
+		}
+		_ = rows.Close()
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM exam_questions
+		WHERE exam_id = $1
+	`, in.ExamID); err != nil {
+		return nil, fmt.Errorf("clear exam questions on sync by code: %w", err)
+	}
+
+	for idx, it := range selected {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO exam_questions (exam_id, question_id, seq_no, weight)
+			VALUES ($1, $2, $3, $4)
+		`, in.ExamID, it.QuestionID, idx+1, it.Weight); err != nil {
+			return nil, fmt.Errorf("insert synced exam question by code: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit sync exam questions by code tx: %w", err)
+	}
+
+	return &SyncExamQuestionsByCodeResult{
+		ExamID:        in.ExamID,
+		RuleCount:     len(rules),
+		SelectedCount: len(selected),
+		InsertedCount: len(selected),
+	}, nil
 }
 
 func (s *Service) UpsertExamQuestion(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error) {
@@ -1591,6 +2039,27 @@ func normalizeIncidentPolicy(input string) string {
 	}
 }
 
+func normalizeExamQuestionCodeStrategy(input string) string {
+	switch strings.TrimSpace(strings.ToLower(input)) {
+	case "", "all":
+		return "all"
+	case "random":
+		return "random"
+	default:
+		return ""
+	}
+}
+
+func nullIntPtr(v *int) any {
+	if v == nil {
+		return nil
+	}
+	if *v <= 0 {
+		return nil
+	}
+	return *v
+}
+
 func hashExamToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -1710,14 +2179,17 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	}
 
 	r := s.db.QueryRowContext(ctx, `
-		SELECT
-			a.id,
-			eq.question_id,
-			eq.seq_no,
-			q.question_type,
-			q.stem_html,
-			q.stimulus_html,
-			COALESCE(qv.answer_key, '{}'::jsonb) AS answer_key,
+			SELECT
+				a.id,
+				eq.question_id,
+				eq.seq_no,
+				q.question_type,
+				COALESCE(NULLIF(qv.stem_html, ''), q.stem_html) AS stem_html,
+				qv.stimulus_html AS version_stimulus_html,
+				q.stimulus_html AS legacy_stimulus_html,
+				st.stimulus_type,
+				st.content::text AS stimulus_content,
+				COALESCE(qv.answer_key, '{}'::jsonb) AS answer_key,
 			COALESCE(aa.answer_payload, '{}'::jsonb) AS answer_payload,
 			COALESCE(aa.is_doubt, FALSE) AS is_doubt
 		FROM attempts a
@@ -1728,28 +2200,37 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		LEFT JOIN attempt_answers aa
 			ON aa.attempt_id = a.id
 			AND aa.question_id = eq.question_id
-		LEFT JOIN LATERAL (
-			SELECT answer_key
-			FROM question_versions
-			WHERE question_id = q.id
-			  AND is_active = TRUE
-			  AND status = 'final'
+			LEFT JOIN LATERAL (
+				SELECT answer_key, stimulus_id, stimulus_html, stem_html
+				FROM question_versions
+				WHERE question_id = q.id
+				  AND is_active = TRUE
+				  AND status = 'final'
 			ORDER BY version_no DESC
 			LIMIT 1
 		) qv ON TRUE
+		LEFT JOIN stimuli st
+			ON st.id = qv.stimulus_id
+		   AND st.is_active = TRUE
 		WHERE a.id = $1
 		  AND eq.seq_no = $2
 	`, attemptID, questionNo)
 
 	var out AttemptQuestion
-	var stimulus sql.NullString
+	var versionStimulus sql.NullString
+	var legacyStimulus sql.NullString
+	var stimulusType sql.NullString
+	var stimulusContent sql.NullString
 	if err := r.Scan(
 		&out.AttemptID,
 		&out.QuestionID,
 		&out.SeqNo,
 		&out.QuestionType,
 		&out.StemHTML,
-		&stimulus,
+		&versionStimulus,
+		&legacyStimulus,
+		&stimulusType,
+		&stimulusContent,
 		&out.AnswerKey,
 		&out.AnswerPayload,
 		&out.IsDoubt,
@@ -1759,9 +2240,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 		return nil, fmt.Errorf("query attempt question: %w", err)
 	}
-	if stimulus.Valid {
-		out.StimulusHTML = &stimulus.String
-	}
+	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, stimulusType, stimulusContent)
 
 	optRows, err := s.db.QueryContext(ctx, `
 		SELECT option_key, option_html
@@ -1786,6 +2265,68 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	}
 
 	return &out, nil
+}
+
+func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString, stimulusType sql.NullString, stimulusContent sql.NullString) *string {
+	if version.Valid && strings.TrimSpace(version.String) != "" {
+		v := version.String
+		return &v
+	}
+	if stimulusType.Valid && stimulusContent.Valid {
+		rendered := renderStimulusHTML(stimulusType.String, stimulusContent.String)
+		if strings.TrimSpace(rendered) != "" {
+			return &rendered
+		}
+	}
+	if legacy.Valid && strings.TrimSpace(legacy.String) != "" {
+		v := legacy.String
+		return &v
+	}
+	return nil
+}
+
+func renderStimulusHTML(stimulusType string, raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var content map[string]any
+	if err := json.Unmarshal([]byte(raw), &content); err != nil {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(stimulusType)) {
+	case "multiteks":
+		tabsRaw, ok := content["tabs"].([]any)
+		if !ok || len(tabsRaw) == 0 {
+			return ""
+		}
+		var b strings.Builder
+		for i, tabRaw := range tabsRaw {
+			tab, ok := tabRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			title, _ := tab["title"].(string)
+			body, _ := tab["body"].(string)
+			title = strings.TrimSpace(title)
+			body = strings.TrimSpace(body)
+			if title == "" {
+				title = fmt.Sprintf("Tab %d", i+1)
+			}
+			if body == "" {
+				body = `<span class="muted">(konten kosong)</span>`
+			}
+			b.WriteString(`<section class="panel mt"><h4>`)
+			b.WriteString(html.EscapeString(title))
+			b.WriteString(`</h4><div class="box mt">`)
+			b.WriteString(body)
+			b.WriteString(`</div></section>`)
+		}
+		return strings.TrimSpace(b.String())
+	default:
+		body, _ := content["body"].(string)
+		return strings.TrimSpace(body)
+	}
 }
 
 func (s *Service) GetAttemptResult(ctx context.Context, attemptID int64) (*AttemptResult, error) {

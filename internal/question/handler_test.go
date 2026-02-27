@@ -15,19 +15,20 @@ import (
 )
 
 type mockQuestionService struct {
+	createQuestionCodeFn func(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
+	listQuestionCodesFn  func(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
+	updateQuestionCodeFn func(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
+	deleteQuestionCodeFn func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	createQuestionFn     func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
+	assignQuestionCodeFn func(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
 	listQuestionsFn      func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
-	createFn             func(ctx context.Context, in CreateStimulusInput) (*Stimulus, error)
-	listFn               func(ctx context.Context, subjectID int64) ([]Stimulus, error)
-	updateStimulusFn     func(ctx context.Context, in UpdateStimulusInput) (*Stimulus, error)
-	deleteStimulusFn     func(ctx context.Context, stimulusID int64) error
 	createVersionFn      func(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
 	updateVersionFn      func(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
-	deleteVersionFn      func(ctx context.Context, questionID int64, versionNo int) error
-	finalizeFn           func(ctx context.Context, questionID int64, versionNo int) (*QuestionVersion, error)
+	deleteVersionFn      func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error
+	finalizeFn           func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error)
 	requestReopenFn      func(ctx context.Context, in RequestReopenFinalInput) (*ReopenFinalRequest, error)
 	approveReopenFn      func(ctx context.Context, in ApproveReopenFinalInput) (*ReopenFinalRequest, error)
-	listVersionsFn       func(ctx context.Context, questionID int64) ([]QuestionVersion, error)
+	listVersionsFn       func(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error)
 	createParallelFn     func(ctx context.Context, in CreateQuestionParallelInput) (*QuestionParallel, error)
 	listParallelsFn      func(ctx context.Context, examID int64, parallelGroup string) ([]QuestionParallel, error)
 	updateParallelFn     func(ctx context.Context, in UpdateQuestionParallelInput) (*QuestionParallel, error)
@@ -38,6 +39,34 @@ type mockQuestionService struct {
 	getQuestionReviewsFn func(ctx context.Context, questionID int64) ([]QuestionReview, error)
 }
 
+func (m *mockQuestionService) CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error) {
+	if m.createQuestionCodeFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.createQuestionCodeFn(ctx, in)
+}
+
+func (m *mockQuestionService) ListQuestionCodes(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error) {
+	if m.listQuestionCodesFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listQuestionCodesFn(ctx, subjectID, q, ownerID)
+}
+
+func (m *mockQuestionService) UpdateQuestionCode(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error) {
+	if m.updateQuestionCodeFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.updateQuestionCodeFn(ctx, in)
+}
+
+func (m *mockQuestionService) DeleteQuestionCode(ctx context.Context, id int64, actorID int64, enforceOwner bool) error {
+	if m.deleteQuestionCodeFn == nil {
+		return errors.New("not implemented")
+	}
+	return m.deleteQuestionCodeFn(ctx, id, actorID, enforceOwner)
+}
+
 func (m *mockQuestionService) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error) {
 	if m.createQuestionFn == nil {
 		return nil, errors.New("not implemented")
@@ -45,39 +74,18 @@ func (m *mockQuestionService) CreateQuestion(ctx context.Context, in CreateQuest
 	return m.createQuestionFn(ctx, in)
 }
 
+func (m *mockQuestionService) AssignQuestionCode(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error) {
+	if m.assignQuestionCodeFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.assignQuestionCodeFn(ctx, in)
+}
+
 func (m *mockQuestionService) ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
 	if m.listQuestionsFn == nil {
 		return nil, errors.New("not implemented")
 	}
 	return m.listQuestionsFn(ctx, subjectID, ownerID)
-}
-
-func (m *mockQuestionService) CreateStimulus(ctx context.Context, in CreateStimulusInput) (*Stimulus, error) {
-	if m.createFn == nil {
-		return nil, errors.New("not implemented")
-	}
-	return m.createFn(ctx, in)
-}
-
-func (m *mockQuestionService) ListStimuliBySubject(ctx context.Context, subjectID int64) ([]Stimulus, error) {
-	if m.listFn == nil {
-		return nil, errors.New("not implemented")
-	}
-	return m.listFn(ctx, subjectID)
-}
-
-func (m *mockQuestionService) UpdateStimulus(ctx context.Context, in UpdateStimulusInput) (*Stimulus, error) {
-	if m.updateStimulusFn == nil {
-		return nil, errors.New("not implemented")
-	}
-	return m.updateStimulusFn(ctx, in)
-}
-
-func (m *mockQuestionService) DeleteStimulus(ctx context.Context, stimulusID int64) error {
-	if m.deleteStimulusFn == nil {
-		return errors.New("not implemented")
-	}
-	return m.deleteStimulusFn(ctx, stimulusID)
 }
 
 func (m *mockQuestionService) CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error) {
@@ -94,18 +102,18 @@ func (m *mockQuestionService) UpdateQuestionVersion(ctx context.Context, in Upda
 	return m.updateVersionFn(ctx, in)
 }
 
-func (m *mockQuestionService) DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int) error {
+func (m *mockQuestionService) DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error {
 	if m.deleteVersionFn == nil {
 		return errors.New("not implemented")
 	}
-	return m.deleteVersionFn(ctx, questionID, versionNo)
+	return m.deleteVersionFn(ctx, questionID, versionNo, actorID, enforceOwner)
 }
 
-func (m *mockQuestionService) FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int) (*QuestionVersion, error) {
+func (m *mockQuestionService) FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error) {
 	if m.finalizeFn == nil {
 		return nil, errors.New("not implemented")
 	}
-	return m.finalizeFn(ctx, questionID, versionNo)
+	return m.finalizeFn(ctx, questionID, versionNo, actorID, enforceOwner)
 }
 
 func (m *mockQuestionService) RequestReopenFinal(ctx context.Context, in RequestReopenFinalInput) (*ReopenFinalRequest, error) {
@@ -122,11 +130,11 @@ func (m *mockQuestionService) ApproveReopenFinal(ctx context.Context, in Approve
 	return m.approveReopenFn(ctx, in)
 }
 
-func (m *mockQuestionService) ListQuestionVersions(ctx context.Context, questionID int64) ([]QuestionVersion, error) {
+func (m *mockQuestionService) ListQuestionVersions(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error) {
 	if m.listVersionsFn == nil {
 		return nil, errors.New("not implemented")
 	}
-	return m.listVersionsFn(ctx, questionID)
+	return m.listVersionsFn(ctx, questionID, ownerID)
 }
 
 func (m *mockQuestionService) CreateQuestionParallel(ctx context.Context, in CreateQuestionParallelInput) (*QuestionParallel, error) {
@@ -251,8 +259,8 @@ func TestListQuestionsAdminDefaultsAll(t *testing.T) {
 func TestListQuestionsOwnerOnlyQueryFalseForGuru(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
 		listQuestionsFn: func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
-			if ownerID != nil {
-				t.Fatalf("expected ownerID nil when owner_only=false, got %+v", ownerID)
+			if ownerID == nil || *ownerID != 9 {
+				t.Fatalf("expected ownerID=9 for guru, got %+v", ownerID)
 			}
 			return []QuestionBlueprint{{ID: 301, SubjectID: 2}}, nil
 		},
@@ -266,71 +274,6 @@ func TestListQuestionsOwnerOnlyQueryFalseForGuru(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
-	}
-}
-
-func TestListStimuliRequiresSubjectID(t *testing.T) {
-	h := &Handler{svc: &mockQuestionService{}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/stimuli", nil)
-	w := httptest.NewRecorder()
-
-	h.ListStimuli(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
-	}
-}
-
-func TestCreateStimulusOK(t *testing.T) {
-	h := &Handler{svc: &mockQuestionService{
-		createFn: func(ctx context.Context, in CreateStimulusInput) (*Stimulus, error) {
-			if in.CreatedBy != 9 || in.SubjectID != 1 || in.LearningGoalID != 7 || in.StimulusType != "single" {
-				t.Fatalf("unexpected input: %+v", in)
-			}
-			return &Stimulus{
-				ID:             11,
-				SubjectID:      in.SubjectID,
-				LearningGoalID: in.LearningGoalID,
-				Title:          in.Title,
-				StimulusType:   in.StimulusType,
-				Content:        in.Content,
-				IsActive:       true,
-			}, nil
-		},
-	}}
-
-	payload := []byte(`{"subject_id":1,"learning_goal_id":7,"title":"Stimulus A","stimulus_type":"single","content":{"body":"Teks"}}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimuli", bytes.NewReader(payload))
-	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
-	w := httptest.NewRecorder()
-
-	h.CreateStimulus(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d", w.Code)
-	}
-	body := decodeMap(t, w)
-	if body["ok"] != true {
-		t.Fatalf("expected ok=true")
-	}
-}
-
-func TestCreateStimulusSubjectNotFound(t *testing.T) {
-	h := &Handler{svc: &mockQuestionService{
-		createFn: func(ctx context.Context, in CreateStimulusInput) (*Stimulus, error) {
-			return nil, ErrSubjectNotFound
-		},
-	}}
-
-	payload := []byte(`{"subject_id":99,"learning_goal_id":7,"title":"Stimulus","stimulus_type":"single","content":{"body":"Teks"}}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimuli", bytes.NewReader(payload))
-	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
-	w := httptest.NewRecorder()
-
-	h.CreateStimulus(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 
@@ -359,7 +302,7 @@ func TestCreateQuestionVersionOK(t *testing.T) {
 
 func TestFinalizeQuestionVersionNotFound(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
-		finalizeFn: func(ctx context.Context, questionID int64, versionNo int) (*QuestionVersion, error) {
+		finalizeFn: func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error) {
 			return nil, ErrVersionNotFound
 		},
 	}}
@@ -367,6 +310,7 @@ func TestFinalizeQuestionVersionNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions/5/versions/2/finalize", nil)
 	req = withParam(req, "id", "5")
 	req = withParam(req, "version", "2")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 10, Role: "guru"}))
 	w := httptest.NewRecorder()
 
 	h.FinalizeQuestionVersion(w, req)
@@ -390,6 +334,7 @@ func TestUpdateQuestionVersionOK(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/questions/5/versions/2", bytes.NewReader(payload))
 	req = withParam(req, "id", "5")
 	req = withParam(req, "version", "2")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 10, Role: "guru"}))
 	w := httptest.NewRecorder()
 
 	h.UpdateQuestionVersion(w, req)
@@ -401,7 +346,7 @@ func TestUpdateQuestionVersionOK(t *testing.T) {
 
 func TestDeleteQuestionVersionNotFound(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
-		deleteVersionFn: func(ctx context.Context, questionID int64, versionNo int) error {
+		deleteVersionFn: func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error {
 			return ErrVersionNotFound
 		},
 	}}
@@ -409,6 +354,7 @@ func TestDeleteQuestionVersionNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/questions/5/versions/2", nil)
 	req = withParam(req, "id", "5")
 	req = withParam(req, "version", "2")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 10, Role: "guru"}))
 	w := httptest.NewRecorder()
 
 	h.DeleteQuestionVersion(w, req)
@@ -420,13 +366,14 @@ func TestDeleteQuestionVersionNotFound(t *testing.T) {
 
 func TestListQuestionVersionsOK(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
-		listVersionsFn: func(ctx context.Context, questionID int64) ([]QuestionVersion, error) {
+		listVersionsFn: func(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error) {
 			return []QuestionVersion{{ID: 1, QuestionID: questionID, VersionNo: 2}, {ID: 2, QuestionID: questionID, VersionNo: 1}}, nil
 		},
 	}}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/questions/5/versions", nil)
 	req = withParam(req, "id", "5")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 1, Role: "admin"}))
 	w := httptest.NewRecorder()
 
 	h.ListQuestionVersions(w, req)

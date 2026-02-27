@@ -21,6 +21,7 @@ type mockExamService struct {
 	createExamFn                    func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	deleteExamFn                    func(ctx context.Context, examID int64) error
+	resetExamAttemptFn              func(ctx context.Context, examID, studentID, actorID int64) (int64, error)
 	listSubjectsFn                  func(ctx context.Context, level, subjectType string) ([]SubjectOption, error)
 	createSubjectFn                 func(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
 	updateSubjectFn                 func(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
@@ -32,6 +33,10 @@ type mockExamService struct {
 	replaceExamAssignmentsFn        func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	replaceExamAssignmentsByClassFn func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	listExamQuestionsFn             func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
+	listExamQuestionCodeRulesFn     func(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
+	upsertExamQuestionCodeRuleFn    func(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
+	deleteExamQuestionCodeRuleFn    func(ctx context.Context, examID, questionCodeID int64) error
+	syncExamQuestionsByCodeFn       func(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error)
 	upsertExamQuestionFn            func(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error)
 	upsertExamQuestionIncidentFn    func(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error)
 	deleteExamQuestionFn            func(ctx context.Context, examID, questionID int64) error
@@ -78,6 +83,13 @@ func (m *mockExamService) DeleteExam(ctx context.Context, examID int64) error {
 		return errors.New("not implemented")
 	}
 	return m.deleteExamFn(ctx, examID)
+}
+
+func (m *mockExamService) ResetExamAttempt(ctx context.Context, examID, studentID, actorID int64) (int64, error) {
+	if m.resetExamAttemptFn == nil {
+		return 0, errors.New("not implemented")
+	}
+	return m.resetExamAttemptFn(ctx, examID, studentID, actorID)
 }
 
 func (m *mockExamService) ListSubjects(ctx context.Context, level, subjectType string) ([]SubjectOption, error) {
@@ -155,6 +167,34 @@ func (m *mockExamService) ListExamQuestions(ctx context.Context, examID int64) (
 		return nil, errors.New("not implemented")
 	}
 	return m.listExamQuestionsFn(ctx, examID)
+}
+
+func (m *mockExamService) ListExamQuestionCodeRules(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error) {
+	if m.listExamQuestionCodeRulesFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamQuestionCodeRulesFn(ctx, examID)
+}
+
+func (m *mockExamService) UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error) {
+	if m.upsertExamQuestionCodeRuleFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.upsertExamQuestionCodeRuleFn(ctx, in)
+}
+
+func (m *mockExamService) DeleteExamQuestionCodeRule(ctx context.Context, examID, questionCodeID int64) error {
+	if m.deleteExamQuestionCodeRuleFn == nil {
+		return errors.New("not implemented")
+	}
+	return m.deleteExamQuestionCodeRuleFn(ctx, examID, questionCodeID)
+}
+
+func (m *mockExamService) SyncExamQuestionsByCode(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error) {
+	if m.syncExamQuestionsByCodeFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.syncExamQuestionsByCodeFn(ctx, in)
 }
 
 func (m *mockExamService) UpsertExamQuestion(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error) {

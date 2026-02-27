@@ -5,20 +5,6 @@ import (
 	"testing"
 )
 
-func TestValidateStimulusContentSingle(t *testing.T) {
-	err := validateStimulusContent("single", json.RawMessage(`{"body":"Isi stimulus"}`))
-	if err != nil {
-		t.Fatalf("expected valid single content, got err=%v", err)
-	}
-}
-
-func TestValidateStimulusContentMultiteksInvalid(t *testing.T) {
-	err := validateStimulusContent("multiteks", json.RawMessage(`{"tabs":[]}`))
-	if err == nil {
-		t.Fatalf("expected error for empty multiteks tabs")
-	}
-}
-
 func TestValidateAnswerKey(t *testing.T) {
 	tests := []struct {
 		name         string

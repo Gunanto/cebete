@@ -83,6 +83,7 @@ type LearningGoal struct {
 	MataPelajaran      string `json:"mata_pelajaran"`
 	Kelas              string `json:"kelas"`
 	Semester           int16  `json:"semester"`
+	CreatedBy          *int64 `json:"created_by,omitempty"`
 }
 
 type CreateLearningGoalInput struct {
@@ -561,16 +562,21 @@ func (s *Service) DeleteEducationLevel(ctx context.Context, actorID, id int64) e
 	return nil
 }
 
-func (s *Service) ListLearningGoals(ctx context.Context, mataPelajaran, kelas string, semester int16) ([]LearningGoal, error) {
+func (s *Service) ListLearningGoals(ctx context.Context, mataPelajaran, kelas string, semester int16, ownerID *int64) ([]LearningGoal, error) {
 	query := `
-		SELECT id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
+		SELECT id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by
 		FROM learning_goals
 		WHERE ($1 = '' OR LOWER(mata_pelajaran) = LOWER($1))
 		  AND ($2 = '' OR LOWER(kelas) = LOWER($2))
 		  AND ($3 <= 0 OR semester = $3)
+		  AND ($4 <= 0 OR created_by = $4)
 		ORDER BY mata_pelajaran ASC, kelas ASC, semester ASC, id ASC
 	`
-	rows, err := s.db.QueryContext(ctx, query, strings.TrimSpace(mataPelajaran), strings.TrimSpace(kelas), semester)
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
+	}
+	rows, err := s.db.QueryContext(ctx, query, strings.TrimSpace(mataPelajaran), strings.TrimSpace(kelas), semester, ownerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("list learning goals: %w", err)
 	}
@@ -579,8 +585,12 @@ func (s *Service) ListLearningGoals(ctx context.Context, mataPelajaran, kelas st
 	items := make([]LearningGoal, 0)
 	for rows.Next() {
 		var it LearningGoal
-		if err := rows.Scan(&it.ID, &it.TujuanPembelajaran, &it.Materi, &it.MataPelajaran, &it.Kelas, &it.Semester); err != nil {
+		var createdBy sql.NullInt64
+		if err := rows.Scan(&it.ID, &it.TujuanPembelajaran, &it.Materi, &it.MataPelajaran, &it.Kelas, &it.Semester, &createdBy); err != nil {
 			return nil, fmt.Errorf("scan learning goal: %w", err)
+		}
+		if createdBy.Valid {
+			it.CreatedBy = &createdBy.Int64
 		}
 		items = append(items, it)
 	}
@@ -600,14 +610,18 @@ func (s *Service) CreateLearningGoal(ctx context.Context, actorID int64, in Crea
 	}
 
 	var out LearningGoal
+	var createdBy sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO learning_goals (tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
-	`, tujuan, materi, mapel, kelas, in.Semester).Scan(
-		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester,
+		INSERT INTO learning_goals (tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0))
+		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by
+	`, tujuan, materi, mapel, kelas, in.Semester, actorID).Scan(
+		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester, &createdBy,
 	); err != nil {
 		return nil, fmt.Errorf("create learning goal: %w", err)
+	}
+	if createdBy.Valid {
+		out.CreatedBy = &createdBy.Int64
 	}
 
 	_ = s.writeAudit(ctx, actorID, "learning_goal_created", "learning_goal", fmt.Sprintf("%d", out.ID), map[string]any{
@@ -619,7 +633,7 @@ func (s *Service) CreateLearningGoal(ctx context.Context, actorID int64, in Crea
 	return &out, nil
 }
 
-func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in UpdateLearningGoalInput) (*LearningGoal, error) {
+func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in UpdateLearningGoalInput, ownerID *int64) (*LearningGoal, error) {
 	tujuan := strings.TrimSpace(in.TujuanPembelajaran)
 	materi := strings.TrimSpace(in.Materi)
 	mapel := strings.TrimSpace(in.MataPelajaran)
@@ -628,7 +642,13 @@ func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in 
 		return nil, ErrInvalidInput
 	}
 
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
+	}
+
 	var out LearningGoal
+	var createdBy sql.NullInt64
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE learning_goals
 		SET tujuan_pembelajaran = $2,
@@ -637,14 +657,18 @@ func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in 
 			kelas = $5,
 			semester = $6
 		WHERE id = $1
-		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
-	`, id, tujuan, materi, mapel, kelas, in.Semester).Scan(
-		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester,
+		  AND ($7 <= 0 OR created_by = $7)
+		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by
+	`, id, tujuan, materi, mapel, kelas, in.Semester, ownerFilter).Scan(
+		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester, &createdBy,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("update learning goal: %w", err)
+	}
+	if createdBy.Valid {
+		out.CreatedBy = &createdBy.Int64
 	}
 
 	_ = s.writeAudit(ctx, actorID, "learning_goal_updated", "learning_goal", fmt.Sprintf("%d", out.ID), map[string]any{
@@ -656,12 +680,21 @@ func (s *Service) UpdateLearningGoal(ctx context.Context, actorID, id int64, in 
 	return &out, nil
 }
 
-func (s *Service) DeleteLearningGoal(ctx context.Context, actorID, id int64) error {
+func (s *Service) DeleteLearningGoal(ctx context.Context, actorID, id int64, ownerID *int64) error {
 	if id <= 0 {
 		return ErrInvalidInput
 	}
 
-	res, err := s.db.ExecContext(ctx, `DELETE FROM learning_goals WHERE id = $1`, id)
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM learning_goals
+		WHERE id = $1
+		  AND ($2 <= 0 OR created_by = $2)
+	`, id, ownerFilter)
 	if err != nil {
 		return fmt.Errorf("delete learning goal: %w", err)
 	}

@@ -14,7 +14,9 @@ var (
 	ErrInvalidInput         = errors.New("invalid input")
 	ErrSubjectNotFound      = errors.New("subject not found")
 	ErrLearningGoalNotFound = errors.New("learning goal not found")
-	ErrStimulusNotFound     = errors.New("stimulus not found")
+	ErrQuestionCodeNotFound = errors.New("question code not found")
+	ErrQuestionCodeExists   = errors.New("question code already exists")
+	ErrForbidden            = errors.New("forbidden")
 	ErrExamNotFound         = errors.New("exam not found")
 	ErrQuestionNotFound     = errors.New("question not found")
 	ErrParallelNotFound     = errors.New("question parallel not found")
@@ -30,40 +32,11 @@ type Service struct {
 	db *sql.DB
 }
 
-type CreateStimulusInput struct {
-	SubjectID      int64
-	LearningGoalID int64
-	Title          string
-	StimulusType   string
-	Content        json.RawMessage
-	CreatedBy      int64
-}
-
-type Stimulus struct {
-	ID             int64           `json:"id"`
-	SubjectID      int64           `json:"subject_id"`
-	LearningGoalID int64           `json:"learning_goal_id"`
-	Title          string          `json:"title"`
-	StimulusType   string          `json:"stimulus_type"`
-	Content        json.RawMessage `json:"content"`
-	IsActive       bool            `json:"is_active"`
-	CreatedBy      *int64          `json:"created_by,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
-}
-
-type UpdateStimulusInput struct {
-	ID             int64
-	SubjectID      int64
-	LearningGoalID int64
-	Title          string
-	StimulusType   string
-	Content        json.RawMessage
-}
-
 type CreateQuestionInput struct {
 	SubjectID      int64
 	LearningGoalID int64
+	QuestionCodeID *int64
+	EnforceOwner   bool
 	QuestionType   string
 	Title          string
 	Indicator      string
@@ -78,6 +51,8 @@ type QuestionBlueprint struct {
 	ID             int64           `json:"id"`
 	SubjectID      int64           `json:"subject_id"`
 	LearningGoalID int64           `json:"learning_goal_id"`
+	QuestionCodeID *int64          `json:"question_code_id,omitempty"`
+	QuestionCode   *string         `json:"question_code,omitempty"`
 	EducationLevel string          `json:"education_level"`
 	SubjectType    string          `json:"subject_type"`
 	SubjectName    string          `json:"subject_name"`
@@ -95,7 +70,7 @@ type QuestionBlueprint struct {
 
 type CreateQuestionVersionInput struct {
 	QuestionID      int64
-	StimulusID      *int64
+	StimulusHTML    *string
 	StemHTML        *string
 	ExplanationHTML *string
 	HintHTML        *string
@@ -105,12 +80,47 @@ type CreateQuestionVersionInput struct {
 	Weight          *float64
 	ChangeNote      *string
 	CreatedBy       int64
+	EnforceOwner    bool
+}
+
+type QuestionCode struct {
+	ID        int64      `json:"id"`
+	SubjectID int64      `json:"subject_id"`
+	Code      string     `json:"code"`
+	Name      string     `json:"name"`
+	IsActive  bool       `json:"is_active"`
+	CreatedBy *int64     `json:"created_by,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+type CreateQuestionCodeInput struct {
+	SubjectID int64
+	Code      string
+	Name      string
+	CreatedBy int64
+}
+
+type UpdateQuestionCodeInput struct {
+	ID           int64
+	SubjectID    int64
+	Code         string
+	Name         string
+	ActorID      int64
+	EnforceOwner bool
+}
+
+type AssignQuestionCodeInput struct {
+	QuestionID     int64
+	QuestionCodeID *int64
+	ActorID        int64
+	EnforceOwner   bool
 }
 
 type UpdateQuestionVersionInput struct {
 	QuestionID      int64
 	VersionNo       int
-	StimulusID      *int64
+	StimulusHTML    *string
 	StemHTML        *string
 	ExplanationHTML *string
 	HintHTML        *string
@@ -119,6 +129,8 @@ type UpdateQuestionVersionInput struct {
 	DurationSeconds *int
 	Weight          *float64
 	ChangeNote      *string
+	ActorID         int64
+	EnforceOwner    bool
 }
 
 type QuestionOptionInput struct {
@@ -130,7 +142,7 @@ type QuestionVersion struct {
 	ID              int64                 `json:"id"`
 	QuestionID      int64                 `json:"question_id"`
 	VersionNo       int                   `json:"version_no"`
-	StimulusID      *int64                `json:"stimulus_id,omitempty"`
+	StimulusHTML    *string               `json:"stimulus_html,omitempty"`
 	StemHTML        string                `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html,omitempty"`
 	HintHTML        *string               `json:"hint_html,omitempty"`
@@ -271,6 +283,14 @@ func normalizeReopenActorRole(v string) string {
 	}
 }
 
+func normalizeQuestionCode(v string) string {
+	v = strings.TrimSpace(strings.ToUpper(v))
+	if v == "" {
+		return ""
+	}
+	return v
+}
+
 func nullableDifficulty(v *int) any {
 	if v == nil {
 		return nil
@@ -341,13 +361,38 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 			FROM learning_goals lg
 			WHERE lg.id = $1
 			  AND lg.mata_pelajaran = $2
-			  AND lg.kelas = $3
 		)
-	`, in.LearningGoalID, subject.name, subject.educationLevel).Scan(&validGoal); err != nil {
+	`, in.LearningGoalID, subject.name).Scan(&validGoal); err != nil {
 		return nil, fmt.Errorf("check learning goal: %w", err)
 	}
 	if !validGoal {
 		return nil, ErrLearningGoalNotFound
+	}
+
+	if in.QuestionCodeID != nil {
+		if *in.QuestionCodeID <= 0 {
+			return nil, ErrInvalidInput
+		}
+		var codeSubjectID int64
+		var codeCreatedBy sql.NullInt64
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT subject_id, created_by
+			FROM question_codes
+			WHERE id = $1
+			  AND is_active = TRUE
+		`, *in.QuestionCodeID).Scan(&codeSubjectID, &codeCreatedBy); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrQuestionCodeNotFound
+			}
+			return nil, fmt.Errorf("load question code: %w", err)
+		}
+		if codeSubjectID != in.SubjectID {
+			return nil, fmt.Errorf("%w: question_code subject mismatch", ErrInvalidInput)
+		}
+		// Guru only: code must be owned by actor.
+		if in.EnforceOwner && (!codeCreatedBy.Valid || codeCreatedBy.Int64 != in.CreatedBy) {
+			return nil, ErrForbidden
+		}
 	}
 
 	metaRaw, err := json.Marshal(map[string]any{
@@ -365,20 +410,22 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 	stem := "<p>Draft naskah soal: " + in.Title + "</p>"
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO questions (
-			subject_id, learning_goal_id, question_type, stem_html, stimulus_html, difficulty,
+			subject_id, learning_goal_id, question_code_id, question_type, stem_html, stimulus_html, difficulty,
 			metadata, is_active, version, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, NULL, $5, $6::jsonb, TRUE, 1, now(), now()
+			$1, $2, $3, $4, $5, NULL, $6, $7::jsonb, TRUE, 1, now(), now()
 		)
-		RETURNING id, subject_id, learning_goal_id, question_type, difficulty, metadata, created_at, updated_at
-	`, in.SubjectID, in.LearningGoalID, in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw))
+		RETURNING id, subject_id, learning_goal_id, question_code_id, question_type, difficulty, metadata, created_at, updated_at
+	`, in.SubjectID, in.LearningGoalID, nullInt64Ptr(in.QuestionCodeID), in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw))
 
 	var out QuestionBlueprint
+	var questionCodeID sql.NullInt64
 	var difficulty sql.NullInt64
 	if err := row.Scan(
 		&out.ID,
 		&out.SubjectID,
 		&out.LearningGoalID,
+		&questionCodeID,
 		&out.QuestionType,
 		&difficulty,
 		&out.Metadata,
@@ -386,6 +433,9 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 		&out.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert question: %w", err)
+	}
+	if questionCodeID.Valid {
+		out.QuestionCodeID = &questionCodeID.Int64
 	}
 	if difficulty.Valid {
 		d := int(difficulty.Int64)
@@ -400,10 +450,11 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 
 func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
 	query := `
-		SELECT q.id, q.subject_id, q.learning_goal_id, s.education_level, s.subject_type, s.name,
+		SELECT q.id, q.subject_id, q.learning_goal_id, q.question_code_id, qc.code, s.education_level, s.subject_type, s.name,
 			q.question_type, q.difficulty, q.metadata, q.created_at, q.updated_at
 		FROM questions q
 		JOIN subjects s ON s.id = q.subject_id
+		LEFT JOIN question_codes qc ON qc.id = q.question_code_id
 		WHERE q.is_active = TRUE
 	`
 	args := make([]any, 0, 2)
@@ -430,11 +481,15 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 	items := make([]QuestionBlueprint, 0)
 	for rows.Next() {
 		var out QuestionBlueprint
+		var questionCodeID sql.NullInt64
+		var questionCode sql.NullString
 		var difficulty sql.NullInt64
 		if err := rows.Scan(
 			&out.ID,
 			&out.SubjectID,
 			&out.LearningGoalID,
+			&questionCodeID,
+			&questionCode,
 			&out.EducationLevel,
 			&out.SubjectType,
 			&out.SubjectName,
@@ -450,6 +505,12 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 			d := int(difficulty.Int64)
 			out.Difficulty = &d
 		}
+		if questionCodeID.Valid {
+			out.QuestionCodeID = &questionCodeID.Int64
+		}
+		if questionCode.Valid {
+			out.QuestionCode = &questionCode.String
+		}
 		populateBlueprintMetadata(&out, out.Metadata)
 		items = append(items, out)
 	}
@@ -459,228 +520,225 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 	return items, nil
 }
 
-func (s *Service) CreateStimulus(ctx context.Context, in CreateStimulusInput) (*Stimulus, error) {
-	in.Title = strings.TrimSpace(in.Title)
-	in.StimulusType = strings.ToLower(strings.TrimSpace(in.StimulusType))
-
-	if in.SubjectID <= 0 || in.LearningGoalID <= 0 || in.Title == "" || in.StimulusType == "" {
+func (s *Service) CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error) {
+	in.Code = normalizeQuestionCode(in.Code)
+	in.Name = strings.TrimSpace(in.Name)
+	if in.SubjectID <= 0 || in.Code == "" || in.Name == "" {
 		return nil, ErrInvalidInput
 	}
-	if in.StimulusType != "single" && in.StimulusType != "multiteks" {
-		return nil, fmt.Errorf("%w: stimulus_type must be single or multiteks", ErrInvalidInput)
-	}
 
-	if len(in.Content) == 0 {
-		in.Content = json.RawMessage(`{}`)
-	}
-	if err := validateStimulusContent(in.StimulusType, in.Content); err != nil {
-		return nil, err
-	}
-
-	var subjectName, educationLevel string
+	var exists bool
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT name, education_level
-		FROM subjects
-		WHERE id = $1 AND is_active = TRUE
-	`, in.SubjectID).Scan(&subjectName, &educationLevel); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrSubjectNotFound
-		}
-		return nil, fmt.Errorf("check subject: %w", err)
+		SELECT EXISTS(SELECT 1 FROM subjects WHERE id = $1 AND is_active = TRUE)
+	`, in.SubjectID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check subject for question code: %w", err)
 	}
-	var validGoal bool
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(
-			SELECT 1
-			FROM learning_goals lg
-			WHERE lg.id = $1
-			  AND lg.mata_pelajaran = $2
-			  AND lg.kelas = $3
-		)
-	`, in.LearningGoalID, subjectName, educationLevel).Scan(&validGoal); err != nil {
-		return nil, fmt.Errorf("check learning goal: %w", err)
-	}
-	if !validGoal {
-		return nil, ErrLearningGoalNotFound
-	}
-	if strings.TrimSpace(subjectName) == "" {
+	if !exists {
 		return nil, ErrSubjectNotFound
 	}
 
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO stimuli (subject_id, learning_goal_id, title, stimulus_type, content, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, NULLIF($6, 0), now(), now())
-		RETURNING id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
-	`, in.SubjectID, in.LearningGoalID, in.Title, in.StimulusType, []byte(in.Content), in.CreatedBy)
-
-	var out Stimulus
-	var createdBy sql.NullInt64
-	if err := row.Scan(
-		&out.ID,
-		&out.SubjectID,
-		&out.LearningGoalID,
-		&out.Title,
-		&out.StimulusType,
-		&out.Content,
-		&out.IsActive,
-		&createdBy,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-	); err != nil {
-		return nil, fmt.Errorf("insert stimulus: %w", err)
+		INSERT INTO question_codes (subject_id, code, name, is_active, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, TRUE, NULLIF($4, 0), now(), now())
+		RETURNING id, subject_id, code, name, is_active, created_by, created_at, updated_at
+	`, in.SubjectID, in.Code, in.Name, in.CreatedBy)
+	out, err := scanQuestionCode(row)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "question_codes_subject_id_code_key") {
+			return nil, ErrQuestionCodeExists
+		}
+		return nil, fmt.Errorf("create question code: %w", err)
 	}
-	if createdBy.Valid {
-		out.CreatedBy = &createdBy.Int64
-	}
-	return &out, nil
+	return out, nil
 }
 
-func (s *Service) ListStimuliBySubject(ctx context.Context, subjectID int64) ([]Stimulus, error) {
-	if subjectID <= 0 {
-		return nil, ErrInvalidInput
+func (s *Service) ListQuestionCodes(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error) {
+	q = strings.TrimSpace(strings.ToLower(q))
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
 	}
-
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
-		FROM stimuli
-		WHERE subject_id = $1 AND is_active = TRUE
-		ORDER BY id DESC
-	`, subjectID)
+		SELECT id, subject_id, code, name, is_active, created_by, created_at, updated_at
+		FROM question_codes
+		WHERE is_active = TRUE
+		  AND ($1 <= 0 OR subject_id = $1)
+		  AND ($2 = '' OR LOWER(code) LIKE '%' || $2 || '%' OR LOWER(name) LIKE '%' || $2 || '%')
+		  AND ($3 <= 0 OR created_by = $3)
+		ORDER BY subject_id ASC, code ASC, id ASC
+	`, subjectID, q, ownerFilter)
 	if err != nil {
-		return nil, fmt.Errorf("query stimuli: %w", err)
+		return nil, fmt.Errorf("list question codes: %w", err)
 	}
 	defer rows.Close()
 
-	items := make([]Stimulus, 0)
+	items := make([]QuestionCode, 0)
 	for rows.Next() {
-		var item Stimulus
-		var createdBy sql.NullInt64
-		if err := rows.Scan(
-			&item.ID,
-			&item.SubjectID,
-			&item.LearningGoalID,
-			&item.Title,
-			&item.StimulusType,
-			&item.Content,
-			&item.IsActive,
-			&createdBy,
-			&item.CreatedAt,
-			&item.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan stimulus: %w", err)
+		it, err := scanQuestionCode(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan question code: %w", err)
 		}
-		if createdBy.Valid {
-			item.CreatedBy = &createdBy.Int64
-		}
-		items = append(items, item)
+		items = append(items, *it)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate stimuli: %w", err)
+		return nil, fmt.Errorf("iterate question codes: %w", err)
 	}
 	return items, nil
 }
 
-func (s *Service) UpdateStimulus(ctx context.Context, in UpdateStimulusInput) (*Stimulus, error) {
-	in.Title = strings.TrimSpace(in.Title)
-	in.StimulusType = strings.ToLower(strings.TrimSpace(in.StimulusType))
-	if in.ID <= 0 || in.SubjectID <= 0 || in.LearningGoalID <= 0 || in.Title == "" || in.StimulusType == "" {
+func (s *Service) UpdateQuestionCode(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error) {
+	in.Code = normalizeQuestionCode(in.Code)
+	in.Name = strings.TrimSpace(in.Name)
+	if in.ID <= 0 || in.SubjectID <= 0 || in.Code == "" || in.Name == "" {
 		return nil, ErrInvalidInput
 	}
-	if in.StimulusType != "single" && in.StimulusType != "multiteks" {
-		return nil, fmt.Errorf("%w: stimulus_type must be single or multiteks", ErrInvalidInput)
-	}
-	if len(in.Content) == 0 {
-		in.Content = json.RawMessage(`{}`)
-	}
-	if err := validateStimulusContent(in.StimulusType, in.Content); err != nil {
-		return nil, err
+	if in.EnforceOwner && in.ActorID <= 0 {
+		return nil, ErrInvalidInput
 	}
 
-	var subjectName, educationLevel string
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT name, education_level
-		FROM subjects
-		WHERE id = $1 AND is_active = TRUE
-	`, in.SubjectID).Scan(&subjectName, &educationLevel); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrSubjectNotFound
-		}
-		return nil, fmt.Errorf("check subject: %w", err)
-	}
-	var validGoal bool
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(
-			SELECT 1
-			FROM learning_goals lg
-			WHERE lg.id = $1
-			  AND lg.mata_pelajaran = $2
-			  AND lg.kelas = $3
-		)
-	`, in.LearningGoalID, subjectName, educationLevel).Scan(&validGoal); err != nil {
-		return nil, fmt.Errorf("check learning goal: %w", err)
-	}
-	if !validGoal {
-		return nil, ErrLearningGoalNotFound
-	}
-	if strings.TrimSpace(subjectName) == "" {
-		return nil, ErrSubjectNotFound
+	var ownerFilter int64
+	if in.EnforceOwner {
+		ownerFilter = in.ActorID
 	}
 
 	row := s.db.QueryRowContext(ctx, `
-		UPDATE stimuli
+		UPDATE question_codes
 		SET subject_id = $2,
-			learning_goal_id = $3,
-			title = $4,
-			stimulus_type = $5,
-			content = $6::jsonb,
-			updated_at = now()
-		WHERE id = $1 AND is_active = TRUE
-		RETURNING id, subject_id, learning_goal_id, title, stimulus_type, content, is_active, created_by, created_at, updated_at
-	`, in.ID, in.SubjectID, in.LearningGoalID, in.Title, in.StimulusType, []byte(in.Content))
-
-	var out Stimulus
-	var createdBy sql.NullInt64
-	if err := row.Scan(
-		&out.ID,
-		&out.SubjectID,
-		&out.LearningGoalID,
-		&out.Title,
-		&out.StimulusType,
-		&out.Content,
-		&out.IsActive,
-		&createdBy,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-	); err != nil {
+			code = $3,
+			name = $4
+		WHERE id = $1
+		  AND is_active = TRUE
+		  AND ($5 <= 0 OR created_by = $5)
+		RETURNING id, subject_id, code, name, is_active, created_by, created_at, updated_at
+	`, in.ID, in.SubjectID, in.Code, in.Name, ownerFilter)
+	out, err := scanQuestionCode(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrStimulusNotFound
+			if in.EnforceOwner {
+				return nil, ErrForbidden
+			}
+			return nil, ErrQuestionCodeNotFound
 		}
-		return nil, fmt.Errorf("update stimulus: %w", err)
+		if strings.Contains(strings.ToLower(err.Error()), "question_codes_subject_id_code_key") {
+			return nil, ErrQuestionCodeExists
+		}
+		return nil, fmt.Errorf("update question code: %w", err)
 	}
-	if createdBy.Valid {
-		out.CreatedBy = &createdBy.Int64
-	}
-	return &out, nil
+	return out, nil
 }
 
-func (s *Service) DeleteStimulus(ctx context.Context, stimulusID int64) error {
-	if stimulusID <= 0 {
+func (s *Service) DeleteQuestionCode(ctx context.Context, id int64, actorID int64, enforceOwner bool) error {
+	if id <= 0 {
 		return ErrInvalidInput
+	}
+	if enforceOwner && actorID <= 0 {
+		return ErrInvalidInput
+	}
+	var ownerFilter int64
+	if enforceOwner {
+		ownerFilter = actorID
 	}
 	var deletedID int64
 	if err := s.db.QueryRowContext(ctx, `
-		UPDATE stimuli
-		SET is_active = FALSE,
-			updated_at = now()
-		WHERE id = $1 AND is_active = TRUE
+		UPDATE question_codes
+		SET is_active = FALSE
+		WHERE id = $1
+		  AND is_active = TRUE
+		  AND ($2 <= 0 OR created_by = $2)
 		RETURNING id
-	`, stimulusID).Scan(&deletedID); err != nil {
+	`, id, ownerFilter).Scan(&deletedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrStimulusNotFound
+			if enforceOwner {
+				return ErrForbidden
+			}
+			return ErrQuestionCodeNotFound
 		}
-		return fmt.Errorf("delete stimulus: %w", err)
+		return fmt.Errorf("delete question code: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) AssignQuestionCode(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error) {
+	if in.QuestionID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if in.EnforceOwner && in.ActorID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin assign question code tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var subjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id
+		FROM questions
+		WHERE id = $1 AND is_active = TRUE
+	`, in.QuestionID).Scan(&subjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotFound
+		}
+		return nil, fmt.Errorf("load question subject: %w", err)
+	}
+
+	if in.EnforceOwner {
+		ok, err := s.canCreateVersionTx(ctx, tx, in.QuestionID, in.ActorID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrForbidden
+		}
+	}
+
+	var questionCodeID any
+	if in.QuestionCodeID != nil {
+		if *in.QuestionCodeID <= 0 {
+			return nil, ErrInvalidInput
+		}
+		var codeSubjectID int64
+		var codeCreatedBy sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT subject_id, created_by
+			FROM question_codes
+			WHERE id = $1
+			  AND is_active = TRUE
+		`, *in.QuestionCodeID).Scan(&codeSubjectID, &codeCreatedBy); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrQuestionCodeNotFound
+			}
+			return nil, fmt.Errorf("load question code for assign: %w", err)
+		}
+		if codeSubjectID != subjectID {
+			return nil, fmt.Errorf("%w: question_code subject mismatch", ErrInvalidInput)
+		}
+		if in.EnforceOwner && (!codeCreatedBy.Valid || codeCreatedBy.Int64 != in.ActorID) {
+			return nil, ErrForbidden
+		}
+		questionCodeID = *in.QuestionCodeID
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE questions
+		SET question_code_id = $2,
+			updated_at = now()
+		WHERE id = $1
+	`, in.QuestionID, questionCodeID); err != nil {
+		return nil, fmt.Errorf("assign question code: %w", err)
+	}
+
+	out, err := s.getQuestionBlueprintTx(ctx, tx, in.QuestionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit assign question code tx: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error) {
@@ -703,17 +761,31 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		}
 		return nil, fmt.Errorf("load question: %w", err)
 	}
+	if in.EnforceOwner {
+		if in.CreatedBy <= 0 {
+			return nil, ErrInvalidInput
+		}
+		ok, err := s.canCreateVersionTx(ctx, tx, in.QuestionID, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrForbidden
+		}
+	}
 
 	base, nextVersion, err := s.loadBaseVersionForCreate(ctx, tx, in.QuestionID, currentStem)
 	if err != nil {
 		return nil, err
 	}
 
-	if in.StimulusID != nil {
-		if *in.StimulusID <= 0 {
-			return nil, fmt.Errorf("%w: stimulus_id must be positive", ErrInvalidInput)
+	if in.StimulusHTML != nil {
+		v := strings.TrimSpace(*in.StimulusHTML)
+		if v == "" {
+			base.StimulusHTML = nil
+		} else {
+			base.StimulusHTML = &v
 		}
-		base.StimulusID = in.StimulusID
 	}
 	if in.StemHTML != nil {
 		v := strings.TrimSpace(*in.StemHTML)
@@ -768,18 +840,18 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	}
 
 	row := tx.QueryRowContext(ctx, `
-		INSERT INTO question_versions (
-			question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
-			created_by, created_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7::jsonb, 'draft', FALSE, TRUE, $8, $9, $10,
-			NULLIF($11, 0), now()
-		)
-		RETURNING id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, nextVersion, nullInt64Ptr(base.StimulusID), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), in.CreatedBy)
+			INSERT INTO question_versions (
+				question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+				answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
+				created_by, created_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6,
+				$7::jsonb, 'draft', FALSE, TRUE, $8, $9, $10,
+				NULLIF($11, 0), now()
+			)
+			RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), in.CreatedBy)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
@@ -810,8 +882,11 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	return out, nil
 }
 
-func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int) (*QuestionVersion, error) {
+func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error) {
 	if questionID <= 0 || versionNo <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if enforceOwner && actorID <= 0 {
 		return nil, ErrInvalidInput
 	}
 
@@ -822,12 +897,12 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		FROM question_versions
-		WHERE question_id = $1 AND version_no = $2
-		FOR UPDATE
-	`, questionID, versionNo)
+			SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+			FROM question_versions
+			WHERE question_id = $1 AND version_no = $2
+			FOR UPDATE
+		`, questionID, versionNo)
 
 	item, err := scanQuestionVersion(row)
 	if err != nil {
@@ -836,16 +911,8 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 		}
 		return nil, fmt.Errorf("load question version: %w", err)
 	}
-
-	var questionType string
-	if err := tx.QueryRowContext(ctx, `SELECT question_type FROM questions WHERE id = $1`, questionID).Scan(&questionType); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrQuestionNotFound
-		}
-		return nil, fmt.Errorf("load question type: %w", err)
-	}
-	if err := validateAnswerKey(questionType, item.AnswerKey); err != nil {
-		return nil, err
+	if enforceOwner && (item.CreatedBy == nil || *item.CreatedBy != actorID) {
+		return nil, ErrForbidden
 	}
 
 	if item.Status != "final" {
@@ -869,11 +936,11 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	}
 
 	refetch := tx.QueryRowContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		FROM question_versions
-		WHERE question_id = $1 AND version_no = $2
-	`, questionID, versionNo)
+			SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+			FROM question_versions
+			WHERE question_id = $1 AND version_no = $2
+		`, questionID, versionNo)
 	out, err := scanQuestionVersion(refetch)
 	if err != nil {
 		return nil, fmt.Errorf("reload question version: %w", err)
@@ -1075,18 +1142,23 @@ func (s *Service) ApproveReopenFinal(ctx context.Context, in ApproveReopenFinalI
 	return out, nil
 }
 
-func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64) ([]QuestionVersion, error) {
+func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error) {
 	if questionID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
+	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1
+		  AND ($2 <= 0 OR created_by = $2)
 		ORDER BY version_no DESC
-	`, questionID)
+	`, questionID, ownerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("query question versions: %w", err)
 	}
@@ -1117,6 +1189,9 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	if in.QuestionID <= 0 || in.VersionNo <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if in.EnforceOwner && in.ActorID <= 0 {
+		return nil, ErrInvalidInput
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1125,7 +1200,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
@@ -1138,10 +1213,9 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 		}
 		return nil, fmt.Errorf("load question version: %w", err)
 	}
-	if item.Status != "draft" && item.Status != "revisi" {
-		return nil, fmt.Errorf("%w: hanya versi draft/revisi yang boleh diubah", ErrInvalidInput)
+	if in.EnforceOwner && (item.CreatedBy == nil || *item.CreatedBy != in.ActorID) {
+		return nil, ErrForbidden
 	}
-
 	var questionType string
 	if err := tx.QueryRowContext(ctx, `SELECT question_type FROM questions WHERE id = $1`, in.QuestionID).Scan(&questionType); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1151,11 +1225,13 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	}
 
 	next := *item
-	if in.StimulusID != nil {
-		if *in.StimulusID <= 0 {
-			return nil, fmt.Errorf("%w: stimulus_id must be positive", ErrInvalidInput)
+	if in.StimulusHTML != nil {
+		v := strings.TrimSpace(*in.StimulusHTML)
+		if v == "" {
+			next.StimulusHTML = nil
+		} else {
+			next.StimulusHTML = &v
 		}
-		next.StimulusID = in.StimulusID
 	}
 	if in.StemHTML != nil {
 		v := strings.TrimSpace(*in.StemHTML)
@@ -1218,7 +1294,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 
 	updatedRow := tx.QueryRowContext(ctx, `
 		UPDATE question_versions
-		SET stimulus_id = $3,
+		SET stimulus_html = $3,
 			stem_html = $4,
 			explanation_html = $5,
 			hint_html = $6,
@@ -1227,9 +1303,9 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 			weight = $9,
 			change_note = $10
 		WHERE question_id = $1 AND version_no = $2
-		RETURNING id, question_id, version_no, stimulus_id, stem_html, explanation_html, hint_html,
+		RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, in.VersionNo, nullInt64Ptr(next.StimulusID), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote))
+	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote))
 	out, err := scanQuestionVersion(updatedRow)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1262,8 +1338,11 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	return out, nil
 }
 
-func (s *Service) DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int) error {
+func (s *Service) DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error {
 	if questionID <= 0 || versionNo <= 0 {
+		return ErrInvalidInput
+	}
+	if enforceOwner && actorID <= 0 {
 		return ErrInvalidInput
 	}
 
@@ -1273,22 +1352,21 @@ func (s *Service) DeleteQuestionVersion(ctx context.Context, questionID int64, v
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var status string
+	var createdBy sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT status
+		SELECT created_by
 		FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
 		FOR UPDATE
-	`, questionID, versionNo).Scan(&status); err != nil {
+	`, questionID, versionNo).Scan(&createdBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrVersionNotFound
 		}
 		return fmt.Errorf("load question version: %w", err)
 	}
-	if status != "draft" && status != "revisi" {
-		return fmt.Errorf("%w: hanya versi draft/revisi yang boleh dihapus", ErrInvalidInput)
+	if enforceOwner && (!createdBy.Valid || createdBy.Int64 != actorID) {
+		return ErrForbidden
 	}
-
 	res, err := tx.ExecContext(ctx, `
 		DELETE FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
@@ -1775,7 +1853,7 @@ func (s *Service) ensureExamAndQuestionLinked(ctx context.Context, examID, quest
 }
 
 type baseVersionData struct {
-	StimulusID      *int64
+	StimulusHTML    *string
 	StemHTML        string
 	ExplanationHTML *string
 	HintHTML        *string
@@ -1789,9 +1867,27 @@ type queryContextRunner interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
+func (s *Service) canCreateVersionTx(ctx context.Context, tx *sql.Tx, questionID int64, ownerID int64) (bool, error) {
+	var totalVersions int
+	var ownedVersions int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			COUNT(1) AS total_versions,
+			COUNT(1) FILTER (WHERE created_by = $2) AS owned_versions
+		FROM question_versions
+		WHERE question_id = $1
+	`, questionID, ownerID).Scan(&totalVersions, &ownedVersions); err != nil {
+		return false, fmt.Errorf("check question version ownership: %w", err)
+	}
+	if totalVersions == 0 {
+		return true, nil
+	}
+	return ownedVersions > 0, nil
+}
+
 func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, questionID int64, defaultStem string) (*baseVersionData, int, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT version_no, stimulus_id, stem_html, explanation_html, hint_html,
+		SELECT version_no, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, duration_seconds, weight, change_note
 		FROM question_versions
 		WHERE question_id = $1
@@ -1801,7 +1897,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	`, questionID)
 
 	var versionNo int
-	var stimulusID sql.NullInt64
+	var stimulusHTML sql.NullString
 	var stemHTML string
 	var explanation sql.NullString
 	var hint sql.NullString
@@ -1809,7 +1905,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	var duration sql.NullInt64
 	var weight float64
 	var change sql.NullString
-	if err := row.Scan(&versionNo, &stimulusID, &stemHTML, &explanation, &hint, &answerKey, &duration, &weight, &change); err != nil {
+	if err := row.Scan(&versionNo, &stimulusHTML, &stemHTML, &explanation, &hint, &answerKey, &duration, &weight, &change); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, fmt.Errorf("load latest version: %w", err)
 		}
@@ -1824,9 +1920,9 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 		}, 1, nil
 	}
 
-	var stimulusPtr *int64
-	if stimulusID.Valid {
-		stimulusPtr = &stimulusID.Int64
+	var stimulusHTMLPtr *string
+	if stimulusHTML.Valid {
+		stimulusHTMLPtr = &stimulusHTML.String
 	}
 	var explanationPtr *string
 	if explanation.Valid {
@@ -1853,7 +1949,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	}
 
 	return &baseVersionData{
-		StimulusID:      stimulusPtr,
+		StimulusHTML:    stimulusHTMLPtr,
 		StemHTML:        stemHTML,
 		ExplanationHTML: explanationPtr,
 		HintHTML:        hintPtr,
@@ -1888,42 +1984,6 @@ func (s *Service) listQuestionOptions(ctx context.Context, q queryContextRunner,
 		return nil, fmt.Errorf("iterate question options: %w", err)
 	}
 	return options, nil
-}
-
-func validateStimulusContent(stimulusType string, raw json.RawMessage) error {
-	var content map[string]any
-	if err := json.Unmarshal(raw, &content); err != nil {
-		return fmt.Errorf("%w: content must be valid JSON object", ErrInvalidInput)
-	}
-
-	switch stimulusType {
-	case "single":
-		body, ok := content["body"].(string)
-		if !ok || strings.TrimSpace(body) == "" {
-			return fmt.Errorf("%w: single content.body is required", ErrInvalidInput)
-		}
-	case "multiteks":
-		rawTabs, ok := content["tabs"]
-		if !ok {
-			return fmt.Errorf("%w: multiteks content.tabs is required", ErrInvalidInput)
-		}
-		tabs, ok := rawTabs.([]any)
-		if !ok || len(tabs) == 0 {
-			return fmt.Errorf("%w: multiteks content.tabs must be non-empty array", ErrInvalidInput)
-		}
-		for i, tabRaw := range tabs {
-			tab, ok := tabRaw.(map[string]any)
-			if !ok {
-				return fmt.Errorf("%w: tabs[%d] must be object", ErrInvalidInput, i)
-			}
-			title, _ := tab["title"].(string)
-			body, _ := tab["body"].(string)
-			if strings.TrimSpace(title) == "" || strings.TrimSpace(body) == "" {
-				return fmt.Errorf("%w: tabs[%d].title and tabs[%d].body are required", ErrInvalidInput, i, i)
-			}
-		}
-	}
-	return nil
 }
 
 func validateAnswerKey(questionType string, raw json.RawMessage) error {
@@ -2157,9 +2217,95 @@ func (s *Service) loadReopenRequestTx(ctx context.Context, tx *sql.Tx, requestID
 	return &out, nil
 }
 
+func (s *Service) getQuestionBlueprintTx(ctx context.Context, tx *sql.Tx, questionID int64) (*QuestionBlueprint, error) {
+	row := tx.QueryRowContext(ctx, `
+		SELECT
+			q.id,
+			q.subject_id,
+			q.learning_goal_id,
+			q.question_code_id,
+			qc.code,
+			s.education_level,
+			s.subject_type,
+			s.name,
+			q.question_type,
+			q.difficulty,
+			q.metadata,
+			q.created_at,
+			q.updated_at
+		FROM questions q
+		JOIN subjects s ON s.id = q.subject_id
+		LEFT JOIN question_codes qc ON qc.id = q.question_code_id
+		WHERE q.id = $1
+		  AND q.is_active = TRUE
+	`, questionID)
+
+	var out QuestionBlueprint
+	var questionCodeID sql.NullInt64
+	var questionCode sql.NullString
+	var difficulty sql.NullInt64
+	if err := row.Scan(
+		&out.ID,
+		&out.SubjectID,
+		&out.LearningGoalID,
+		&questionCodeID,
+		&questionCode,
+		&out.EducationLevel,
+		&out.SubjectType,
+		&out.SubjectName,
+		&out.QuestionType,
+		&difficulty,
+		&out.Metadata,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotFound
+		}
+		return nil, fmt.Errorf("load question blueprint: %w", err)
+	}
+	if difficulty.Valid {
+		d := int(difficulty.Int64)
+		out.Difficulty = &d
+	}
+	if questionCodeID.Valid {
+		out.QuestionCodeID = &questionCodeID.Int64
+	}
+	if questionCode.Valid {
+		out.QuestionCode = &questionCode.String
+	}
+	populateBlueprintMetadata(&out, out.Metadata)
+	return &out, nil
+}
+
+func scanQuestionCode(scanner interface{ Scan(dest ...any) error }) (*QuestionCode, error) {
+	var out QuestionCode
+	var createdBy sql.NullInt64
+	var updatedAt sql.NullTime
+	if err := scanner.Scan(
+		&out.ID,
+		&out.SubjectID,
+		&out.Code,
+		&out.Name,
+		&out.IsActive,
+		&createdBy,
+		&out.CreatedAt,
+		&updatedAt,
+	); err != nil {
+		return nil, err
+	}
+	if createdBy.Valid {
+		out.CreatedBy = &createdBy.Int64
+	}
+	if updatedAt.Valid {
+		out.UpdatedAt = &updatedAt.Time
+	}
+	return &out, nil
+}
+
 func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*QuestionVersion, error) {
 	var out QuestionVersion
-	var stimulusID sql.NullInt64
+	var stimulusHTML sql.NullString
 	var explanation sql.NullString
 	var hint sql.NullString
 	var duration sql.NullInt64
@@ -2169,7 +2315,7 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.ID,
 		&out.QuestionID,
 		&out.VersionNo,
-		&stimulusID,
+		&stimulusHTML,
 		&out.StemHTML,
 		&explanation,
 		&hint,
@@ -2185,8 +2331,8 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 	); err != nil {
 		return nil, err
 	}
-	if stimulusID.Valid {
-		out.StimulusID = &stimulusID.Int64
+	if stimulusHTML.Valid {
+		out.StimulusHTML = &stimulusHTML.String
 	}
 	if explanation.Valid {
 		out.ExplanationHTML = &explanation.String

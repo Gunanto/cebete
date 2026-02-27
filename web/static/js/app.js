@@ -639,6 +639,7 @@
     const pendingEvents = [];
     let flushingEvents = false;
     const fontStorageKey = "cbtlms_attempt_font_size";
+    let attemptMathReady = false;
 
     function formatRemain(secs) {
       const s = Math.max(0, Number(secs || 0));
@@ -937,6 +938,194 @@
       html(optionsBox, rows.join(""));
     }
 
+    function renderMathInContainer(el) {
+      if (!attemptMathReady || !el || !window.katex) return;
+      const formulaNodes = el.querySelectorAll(".ql-formula");
+      formulaNodes.forEach(function (node) {
+        const latex = String(node.getAttribute("data-value") || "").trim();
+        if (!latex) return;
+        try {
+          window.katex.render(latex, node, {
+            throwOnError: false,
+            displayMode: false,
+          });
+        } catch (_) {
+          // Keep original content if formula fails to render.
+        }
+      });
+    }
+
+    function renderLatexDelimiters(el) {
+      if (!el || !window.renderMathInElement) return;
+      try {
+        window.renderMathInElement(el, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\[", right: "\\]", display: true },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "$", right: "$", display: false },
+          ],
+          throwOnError: false,
+        });
+      } catch (_) {
+        // Ignore auto-render errors to keep content visible.
+      }
+    }
+
+    function containerHasMathML(el) {
+      if (!el) return false;
+      return el.querySelector("math") !== null;
+    }
+
+    function containerHasLatexDelimiters(el) {
+      if (!el) return false;
+      const text = String(el.textContent || "");
+      return (
+        text.indexOf("$$") !== -1 ||
+        text.indexOf("\\(") !== -1 ||
+        text.indexOf("\\)") !== -1 ||
+        text.indexOf("\\[") !== -1 ||
+        text.indexOf("\\]") !== -1 ||
+        text.indexOf("$") !== -1
+      );
+    }
+
+    async function ensureAttemptMathJaxReady() {
+      if (window.MathJax && window.MathJax.typesetPromise) return true;
+      const existing = document.getElementById("mathjax-js");
+      if (existing) {
+        await new Promise(function (resolve, reject) {
+          if (window.MathJax && window.MathJax.typesetPromise) {
+            resolve();
+            return;
+          }
+          existing.addEventListener("load", resolve, { once: true });
+          existing.addEventListener(
+            "error",
+            function () {
+              reject(new Error("Gagal memuat MathJax"));
+            },
+            { once: true },
+          );
+        });
+        return !!(window.MathJax && window.MathJax.typesetPromise);
+      }
+      window.MathJax = window.MathJax || {
+        tex: {
+          inlineMath: [
+            ["$", "$"],
+            ["\\(", "\\)"],
+          ],
+        },
+        options: { renderActions: { addMenu: [] } },
+      };
+      await new Promise(function (resolve, reject) {
+        const script = document.createElement("script");
+        script.id = "mathjax-js";
+        script.src =
+          "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js";
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = function () {
+          reject(new Error("Gagal memuat MathJax"));
+        };
+        document.head.appendChild(script);
+      });
+      return !!(window.MathJax && window.MathJax.typesetPromise);
+    }
+
+    async function renderAttemptMath() {
+      renderMathInContainer(stemBox);
+      renderMathInContainer(stimulusBox);
+      renderMathInContainer(optionsBox);
+      renderLatexDelimiters(stemBox);
+      renderLatexDelimiters(stimulusBox);
+      renderLatexDelimiters(optionsBox);
+      const hasMathML =
+        containerHasMathML(stemBox) ||
+        containerHasMathML(stimulusBox) ||
+        containerHasMathML(optionsBox);
+      const hasLatexDelimiters =
+        containerHasLatexDelimiters(stemBox) ||
+        containerHasLatexDelimiters(stimulusBox) ||
+        containerHasLatexDelimiters(optionsBox);
+      if (hasMathML || (!window.katex && hasLatexDelimiters)) {
+        try {
+          const ready = await ensureAttemptMathJaxReady();
+          if (ready && window.MathJax && window.MathJax.typesetPromise) {
+            await window.MathJax.typesetPromise([
+              stemBox,
+              stimulusBox,
+              optionsBox,
+            ]);
+          }
+        } catch (_) {
+          // Keep original MathML if MathJax fails to load.
+        }
+      }
+    }
+
+    async function ensureAttemptKatexReady() {
+      if (!document.getElementById("katex-css")) {
+        const css = document.createElement("link");
+        css.id = "katex-css";
+        css.rel = "stylesheet";
+        css.href =
+          "https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css";
+        document.head.appendChild(css);
+      }
+      if (window.katex) return true;
+      const existing = document.getElementById("katex-js");
+      if (existing) {
+        await new Promise(function (resolve, reject) {
+          if (window.katex) {
+            resolve();
+            return;
+          }
+          existing.addEventListener("load", resolve, { once: true });
+          existing.addEventListener(
+            "error",
+            function () {
+              reject(new Error("Gagal memuat KaTeX"));
+            },
+            { once: true },
+          );
+        });
+        return !!window.katex;
+      }
+      await new Promise(function (resolve, reject) {
+        const script = document.createElement("script");
+        script.id = "katex-js";
+        script.src =
+          "https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js";
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = function () {
+          reject(new Error("Gagal memuat KaTeX"));
+        };
+        document.head.appendChild(script);
+      });
+      if (!document.getElementById("katex-auto-render-js")) {
+        try {
+          await new Promise(function (resolve, reject) {
+            const script = document.createElement("script");
+            script.id = "katex-auto-render-js";
+            script.src =
+              "https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js";
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = function () {
+              reject(new Error("Gagal memuat KaTeX auto-render"));
+            };
+            document.head.appendChild(script);
+          });
+        } catch (_) {
+          // Auto-render is optional; KaTeX formula rendering can still work.
+        }
+      }
+      return !!window.katex;
+    }
+
     function collectPayload(q) {
       const qType = String(q.question_type || "").toLowerCase();
       if (qType === "benar_salah_pernyataan") {
@@ -1019,6 +1208,7 @@
       );
       doubtCheckbox.checked = !!q.is_doubt;
       renderOptions(q);
+      renderAttemptMath();
       if (!attemptEditable) {
         applyAttemptReadonlyState("final");
         return;
@@ -1309,6 +1499,11 @@
     });
 
     try {
+      try {
+        attemptMathReady = await ensureAttemptKatexReady();
+      } catch (_) {
+        attemptMathReady = false;
+      }
       applyFontSize(loadSavedFontSize());
       text(message, "Memuat attempt...");
       const summary = await loadSummary();
@@ -1392,13 +1587,28 @@
     const sendBtn = document.getElementById("home-ai-send");
     const input = document.getElementById("home-ai-input");
     const messages = document.getElementById("home-ai-messages");
+    let lastTrigger = null;
 
     if (!modal || !sendBtn || !input || !messages) return;
 
     function setOpen(open) {
+      if (!open) {
+        const active = document.activeElement;
+        if (
+          active &&
+          modal.contains(active) &&
+          typeof active.blur === "function"
+        ) {
+          active.blur();
+        }
+      }
       modal.classList.toggle("is-open", open);
       modal.setAttribute("aria-hidden", open ? "false" : "true");
-      if (open) input.focus();
+      if (open) {
+        input.focus();
+      } else if (lastTrigger && typeof lastTrigger.focus === "function") {
+        lastTrigger.focus();
+      }
       if (openBtn)
         openBtn.setAttribute("aria-expanded", open ? "true" : "false");
     }
@@ -1452,11 +1662,13 @@
 
     if (openBtn) {
       openBtn.addEventListener("click", function () {
+        lastTrigger = openBtn;
         setOpen(!modal.classList.contains("is-open"));
       });
     }
     if (fabBtn) {
       fabBtn.addEventListener("click", function () {
+        lastTrigger = fabBtn;
         setOpen(!modal.classList.contains("is-open"));
       });
     }
@@ -3294,6 +3506,9 @@
     const resultsAttemptForm = document.getElementById(
       "proktor-results-attempt-form",
     );
+    const resultsResetAttemptForm = document.getElementById(
+      "proktor-results-reset-attempt-form",
+    );
     const resultsSummary = document.getElementById("proktor-results-summary");
     const resultsExtra = document.getElementById("proktor-results-extra");
     const resultsReportBtn = document.getElementById(
@@ -3652,7 +3867,7 @@
       if (!examsBody) return;
       if (!Array.isArray(exams) || !exams.length) {
         examsBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Belum ada data ujian.</td></tr>';
+          '<tr><td colspan="8" class="muted">Belum ada data ujian.</td></tr>';
         return;
       }
       examsBody.innerHTML = "";
@@ -3667,6 +3882,7 @@
             "</small></td>",
           "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
           "<td>" + escapeHtml(String(it.duration_minutes || 0)) + " menit</td>",
+          "<td>" + escapeHtml(String(it.max_attempts || 1)) + "x</td>",
           "<td>" + escapeHtml(String(it.question_count || 0)) + "</td>",
           "<td>" + escapeHtml(String(it.assigned_count || 0)) + "</td>",
           '<td><span class="action-icons">' +
@@ -3708,8 +3924,8 @@
         tr.innerHTML = [
           "<td>" + escapeHtml(String(it.seq_no || "")) + "</td>",
           "<td>" + escapeHtml(String(it.question_id || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_type || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.stem_preview || "")) + "</td>",
+          "<td>" + escapeHtml(shortQuestionType(it.question_type)) + "</td>",
+          "<td>" + escapeHtml(cleanStemPreview(it.stem_preview)) + "</td>",
           "<td>" + escapeHtml(String(it.weight || 1)) + "</td>",
           '<td><button class="icon-only-btn danger" type="button" data-exam-question-del="' +
             escapeHtml(String(it.question_id || "")) +
@@ -4083,6 +4299,7 @@
           title: String(fd.get("title") || "").trim(),
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
+          max_attempts: Number(fd.get("max_attempts") || 1),
           review_policy: String(fd.get("review_policy") || "after_submit"),
           is_active: true,
         };
@@ -4477,6 +4694,48 @@
       });
     }
 
+    if (resultsResetAttemptForm) {
+      resultsResetAttemptForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const fd = new FormData(resultsResetAttemptForm);
+        const examID = Number(fd.get("exam_id") || 0);
+        const studentID = Number(fd.get("student_id") || 0);
+        if (examID <= 0 || studentID <= 0) {
+          setMsg("Exam ID dan Student ID wajib valid.");
+          return;
+        }
+        const ok = window.confirm(
+          "Reset attempt terbaru untuk peserta ini pada ujian terpilih?",
+        );
+        if (!ok) return;
+        const done = beginBusy(
+          resultsResetAttemptForm,
+          msg,
+          "Mereset attempt peserta...",
+        );
+        try {
+          const out = await api(
+            "/api/v1/admin/exams/" + examID + "/attempts/reset",
+            "POST",
+            { student_id: studentID },
+          );
+          setMsg(
+            "Reset attempt berhasil. Attempt ID: " +
+              String((out && out.attempt_id) || "-"),
+          );
+          latestResultData = null;
+          setResultsSummary("Belum ada data nilai.");
+          setResultsExtra(
+            "Muat ulang nilai jika peserta sudah memulai attempt baru.",
+          );
+        } catch (err) {
+          setMsg("Reset attempt gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
     if (resultsReportBtn) {
       resultsReportBtn.addEventListener("click", function () {
         summarizeAttemptResult("report");
@@ -4545,7 +4804,6 @@
       "guru-learning-goals-panel",
     );
     const blueprintsPanel = document.getElementById("guru-blueprints-panel");
-    const stimuliPanel = document.getElementById("guru-stimuli-panel");
     const manuscriptsPanel = document.getElementById("guru-manuscripts-panel");
     const subjectsPanel = document.getElementById("guru-subjects-panel");
     const examsPanel = document.getElementById("guru-exams-panel");
@@ -4634,111 +4892,6 @@
       "guru-learning-goal-view-content",
     );
 
-    const stimulusForm = document.getElementById("guru-stimulus-form");
-    const stimulusImportForm = document.getElementById(
-      "guru-stimulus-import-form",
-    );
-    const stimulusTemplateBtn = document.getElementById(
-      "guru-stimulus-template-btn",
-    );
-    const stimulusImportFileInput = document.getElementById(
-      "guru-stimulus-import-file",
-    );
-    const stimulusListForm = document.getElementById("guru-stimulus-list-form");
-    const stimulusRefreshBtn = document.getElementById(
-      "guru-stimulus-refresh-btn",
-    );
-    const stimulusBody = document.getElementById("guru-stimulus-body");
-    const stimulusInlineError = document.getElementById(
-      "guru-stimulus-inline-error",
-    );
-    const stimulusLivePreview = document.getElementById(
-      "guru-stimulus-live-preview",
-    );
-    const stimulusSubjectSelect = document.getElementById(
-      "guru-stimulus-subject-select",
-    );
-    const stimulusLearningGoalSelect = document.getElementById(
-      "guru-stimulus-learning-goal-select",
-    );
-    const stimulusLearningGoalEmpty = document.getElementById(
-      "guru-stimulus-learning-goal-empty",
-    );
-    const stimulusLearningGoalAddBtn = document.getElementById(
-      "guru-stimulus-learning-goal-add-btn",
-    );
-    const stimulusListSubject = document.getElementById(
-      "guru-stimulus-list-subject",
-    );
-    const stimulusSearchInput = document.getElementById("guru-stimulus-search");
-    const stimulusPageSizeSelect = document.getElementById(
-      "guru-stimulus-page-size",
-    );
-    const stimulusPrevBtn = document.getElementById("guru-stimulus-prev-btn");
-    const stimulusNextBtn = document.getElementById("guru-stimulus-next-btn");
-    const stimulusPageInfo = document.getElementById("guru-stimulus-page-info");
-    const stimulusTypeSelect =
-      stimulusForm && stimulusForm.elements.namedItem("stimulus_type");
-    const stimulusSinglePanel = document.getElementById(
-      "guru-stimulus-single-panel",
-    );
-    const stimulusSingleEditor = document.getElementById(
-      "guru-stimulus-single-editor",
-    );
-    const stimulusMultiteksPanel = document.getElementById(
-      "guru-stimulus-multiteks-panel",
-    );
-    const stimulusTabsContainer = document.getElementById("guru-stimulus-tabs");
-    const stimulusAddTabBtn = document.getElementById(
-      "guru-stimulus-add-tab-btn",
-    );
-    const stimulusPreviewDialog = document.getElementById(
-      "guru-stimulus-preview-dialog",
-    );
-    const stimulusPreviewTitle = document.getElementById(
-      "guru-stimulus-preview-title",
-    );
-    const stimulusPreviewContent = document.getElementById(
-      "guru-stimulus-preview-content",
-    );
-    const stimulusEditDialog = document.getElementById(
-      "guru-stimulus-edit-dialog",
-    );
-    const stimulusEditForm = document.getElementById("guru-stimulus-edit-form");
-    const stimulusEditSubject = document.getElementById(
-      "guru-stimulus-edit-subject",
-    );
-    const stimulusEditLearningGoal = document.getElementById(
-      "guru-stimulus-edit-learning-goal",
-    );
-    const stimulusEditCancelBtn = document.getElementById(
-      "guru-stimulus-edit-cancel-btn",
-    );
-    const stimulusDeleteDialog = document.getElementById(
-      "guru-stimulus-delete-dialog",
-    );
-    const stimulusDeleteForm = document.getElementById(
-      "guru-stimulus-delete-form",
-    );
-    const stimulusDeleteLabel = document.getElementById(
-      "guru-stimulus-delete-label",
-    );
-    const stimulusDeleteCancelBtn = document.getElementById(
-      "guru-stimulus-delete-cancel-btn",
-    );
-    const stimulusImportErrorDialog = document.getElementById(
-      "guru-stimulus-import-error-dialog",
-    );
-    const stimulusImportErrorOutput = document.getElementById(
-      "guru-stimulus-import-error-output",
-    );
-    const stimulusImportErrorCloseBtn = document.getElementById(
-      "guru-stimulus-import-error-close-btn",
-    );
-    const stimulusImportDownloadBtn = document.getElementById(
-      "guru-stimulus-import-download-btn",
-    );
-
     const manuscriptForm = document.getElementById("guru-manuscript-form");
     const manuscriptImportBtn = document.getElementById(
       "guru-manuscript-import-btn",
@@ -4767,13 +4920,16 @@
     const manuscriptRefreshBtn = document.getElementById(
       "guru-manuscript-refresh-btn",
     );
-    const manuscriptListForm = document.getElementById(
-      "guru-manuscript-list-form",
-    );
-    const manuscriptFinalizeForm = document.getElementById(
-      "guru-manuscript-finalize-form",
-    );
     const manuscriptBody = document.getElementById("guru-manuscript-body");
+    const manuscriptSelectAll = document.getElementById(
+      "guru-manuscript-select-all",
+    );
+    const manuscriptBulkDeleteBtn = document.getElementById(
+      "guru-manuscript-bulk-delete-btn",
+    );
+    const manuscriptDeleteAllBtn = document.getElementById(
+      "guru-manuscript-delete-all-btn",
+    );
     const manuscriptPageSizeSelect = document.getElementById(
       "guru-manuscript-page-size",
     );
@@ -4792,6 +4948,9 @@
     const manuscriptQuestionSelect = document.getElementById(
       "guru-manuscript-question-select",
     );
+    const manuscriptQuestionCodeSelect = document.getElementById(
+      "guru-manuscript-question-code-select",
+    );
     const manuscriptSubjectSelect = document.getElementById(
       "guru-manuscript-subject-select",
     );
@@ -4801,17 +4960,14 @@
     const manuscriptQuestionTypeUI = document.getElementById(
       "guru-manuscript-question-type-ui",
     );
-    const manuscriptStimulusSelect = document.getElementById(
-      "guru-manuscript-stimulus-select",
-    );
-    const manuscriptListQuestionSelect = document.getElementById(
-      "guru-manuscript-list-question-select",
-    );
-    const manuscriptFinalizeQuestionSelect = document.getElementById(
-      "guru-manuscript-finalize-question-select",
+    const manuscriptStimulusEditor = document.getElementById(
+      "guru-manuscript-stimulus-editor",
     );
     const manuscriptStemEditor = document.getElementById(
       "guru-manuscript-stem-editor",
+    );
+    const manuscriptStimulusHTMLInput = document.getElementById(
+      "guru-manuscript-stimulus-html",
     );
     const manuscriptStemHTMLInput = document.getElementById(
       "guru-manuscript-stem-html",
@@ -4873,6 +5029,17 @@
     const manuscriptPreviewContent = document.getElementById(
       "guru-manuscript-preview-content",
     );
+    const questionCodeForm = document.getElementById("guru-question-code-form");
+    const questionCodeRefreshBtn = document.getElementById(
+      "guru-question-code-refresh-btn",
+    );
+    const questionCodeCancelBtn = document.getElementById(
+      "guru-question-code-cancel-btn",
+    );
+    const questionCodeBody = document.getElementById("guru-question-code-body");
+    const questionCodeSubjectSelect = document.getElementById(
+      "guru-question-code-subject-select",
+    );
     const examsRefreshBtn = document.getElementById("guru-exams-refresh-btn");
     const examForm = document.getElementById("guru-exam-form");
     const examSubjectSelect = document.getElementById("guru-exam-subject");
@@ -4886,6 +5053,21 @@
     );
     const examQuestionsBody = document.getElementById(
       "guru-exam-questions-body",
+    );
+    const examQuestionCodeRuleForm = document.getElementById(
+      "guru-exam-question-code-rule-form",
+    );
+    const examQuestionCodeRuleExamIDInput = document.getElementById(
+      "guru-question-code-rule-exam-id",
+    );
+    const examQuestionCodeSelect = document.getElementById(
+      "guru-exam-question-code-select",
+    );
+    const examQuestionCodeRuleBody = document.getElementById(
+      "guru-exam-question-code-rule-body",
+    );
+    const examQuestionCodeSyncBtn = document.getElementById(
+      "guru-exam-question-code-sync-btn",
     );
     const resultsRefreshBtn = document.getElementById(
       "guru-results-refresh-btn",
@@ -4909,10 +5091,10 @@
     let subjectsCache = [];
     let learningGoalsCache = [];
     let blueprintsCache = [];
-    const stimuliBySubject = {};
-    let currentStimulusTableSubjectID = 0;
-    let stimulusSingleQuill = null;
+    let examsManageCache = [];
+    let questionCodesCache = [];
     const tabQuillByWrap = new WeakMap();
+    let manuscriptStimulusQuill = null;
     let manuscriptStemQuill = null;
     let manuscriptExplanationQuill = null;
     let manuscriptHintQuill = null;
@@ -4923,19 +5105,15 @@
     let manuscriptPage = 1;
     let manuscriptPageSize = 15;
     let manuscriptEditingQuestionID = 0;
-    let currentStimulusItems = [];
     let educationLevelsCache = [];
-    let currentStimulusAllItems = [];
-    let stimulusListPage = 1;
-    let stimulusListPageSize = 10;
-    let stimulusListSearch = "";
-    let lastStimulusImportErrors = [];
     let examFormSubmitting = false;
     let latestResultData = null;
     let learningGoalEditingID = 0;
     let learningGoalPage = 1;
     let learningGoalPageSize = 10;
     let learningGoalSearch = "";
+    let questionCodeEditingID = 0;
+    let resultsAssignmentsCount = 0;
 
     const setMsg = function (value) {
       text(msg, value);
@@ -5088,36 +5266,6 @@
       return fallback;
     }
 
-    async function downloadStimulusTemplateCSV() {
-      const res = await fetch("/api/v1/stimuli/import-template", {
-        method: "GET",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const errJSON = await res.json().catch(function () {
-          return {};
-        });
-        const msg = extractAPIError(
-          errJSON,
-          res.statusText || "Request failed",
-        );
-        throw new Error(msg);
-      }
-      const blob = await res.blob();
-      const filename = parseDownloadFilenameLite(
-        res.headers.get("Content-Disposition"),
-        "template_import_stimuli.csv",
-      );
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    }
-
     async function downloadLearningGoalsTemplateCSV() {
       const res = await fetch("/api/v1/learning-goals/import-template", {
         method: "GET",
@@ -5177,84 +5325,10 @@
         .join("\n");
     }
 
-    function formatStimulusImportErrors(errors) {
-      const rows = Array.isArray(errors) ? errors : [];
-      if (!rows.length) return "";
-      return rows
-        .slice(0, 10)
-        .map(function (it) {
-          const rowNo = Number(it && it.row) || 0;
-          const title = String((it && it.title) || "").trim();
-          const err = String((it && it.error) || "").trim();
-          if (title) {
-            return "Baris " + String(rowNo) + " (" + title + "): " + err;
-          }
-          return "Baris " + String(rowNo) + ": " + err;
-        })
-        .join(" | ");
-    }
-
-    function formatStimulusImportErrorsMultiline(errors) {
-      const rows = Array.isArray(errors) ? errors : [];
-      if (!rows.length) return "Tidak ada detail error.";
-      return rows
-        .map(function (it) {
-          const rowNo = Number(it && it.row) || 0;
-          const title = String((it && it.title) || "").trim();
-          const err = String(
-            (it && it.error) || "error tidak diketahui",
-          ).trim();
-          if (title) {
-            return (
-              "Baris " + String(rowNo) + " | judul: " + title + " | " + err
-            );
-          }
-          return "Baris " + String(rowNo) + " | " + err;
-        })
-        .join("\n");
-    }
-
     function csvEscape(value) {
       const s = String(value == null ? "" : value);
       if (!/[",\n]/.test(s)) return s;
       return '"' + s.replaceAll('"', '""') + '"';
-    }
-
-    function downloadStimulusImportErrorsCSV(errors) {
-      const rows = Array.isArray(errors) ? errors : [];
-      const lines = ["row,title,error"];
-      rows.forEach(function (it) {
-        lines.push(
-          [
-            csvEscape(Number(it && it.row) || 0),
-            csvEscape(String((it && it.title) || "").trim()),
-            csvEscape(String((it && it.error) || "").trim()),
-          ].join(","),
-        );
-      });
-      const now = new Date();
-      const pad = function (n) {
-        return String(n).padStart(2, "0");
-      };
-      const stamp =
-        String(now.getFullYear()) +
-        pad(now.getMonth() + 1) +
-        pad(now.getDate()) +
-        "_" +
-        pad(now.getHours()) +
-        pad(now.getMinutes()) +
-        pad(now.getSeconds());
-      const blob = new Blob([lines.join("\n") + "\n"], {
-        type: "text/csv;charset=utf-8",
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "laporan_gagal_import_stimuli_" + stamp + ".csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
     }
 
     function decodeImportWordCSVLine(rawLine) {
@@ -5266,6 +5340,113 @@
       return line.trim();
     }
 
+    function normalizeImportHeaderKey(raw) {
+      return String(raw || "")
+        .replace(/^\uFEFF/, "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+    }
+
+    function parseSimpleCSV(rawText) {
+      const text = String(rawText || "");
+      const rows = [];
+      let row = [];
+      let field = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        const next = i + 1 < text.length ? text[i + 1] : "";
+        if (ch === '"') {
+          if (inQuotes && next === '"') {
+            field += '"';
+            i += 1;
+            continue;
+          }
+          inQuotes = !inQuotes;
+          continue;
+        }
+        if (!inQuotes && ch === ",") {
+          row.push(field);
+          field = "";
+          continue;
+        }
+        if (!inQuotes && (ch === "\n" || ch === "\r")) {
+          if (ch === "\r" && next === "\n") i += 1;
+          row.push(field);
+          const allEmpty = row.every(function (v) {
+            return !String(v || "").trim();
+          });
+          if (!allEmpty) rows.push(row);
+          row = [];
+          field = "";
+          continue;
+        }
+        field += ch;
+      }
+      row.push(field);
+      const allEmpty = row.every(function (v) {
+        return !String(v || "").trim();
+      });
+      if (!allEmpty) rows.push(row);
+      return rows;
+    }
+
+    function parseImportTabularRows(rawText) {
+      const rows = parseSimpleCSV(rawText);
+      if (!rows.length) return [];
+      const header = (rows[0] || []).map(normalizeImportHeaderKey);
+      const col = {};
+      header.forEach(function (h, idx) {
+        if (!h || col[h] != null) return;
+        col[h] = idx;
+      });
+      const findIdx = function (keys) {
+        for (let i = 0; i < keys.length; i += 1) {
+          const key = normalizeImportHeaderKey(keys[i]);
+          if (col[key] != null) return col[key];
+        }
+        return -1;
+      };
+      const idxMapel = findIdx(["mapel", "matapelajaran", "subject"]);
+      const idxKode = findIdx(["kodesoal", "kode"]);
+      const idxNamaKode = findIdx(["namakode", "namakodesoal", "nama"]);
+      const idxStimulus = findIdx(["stimulus", "s"]);
+      const idxSoal = findIdx(["soal", "q", "question"]);
+      const idxOpsi = findIdx(["opsi", "pilihan", "options"]);
+      const idxKunci = findIdx(["kuncijawaban", "kunci", "answerkey"]);
+      const idxPenjelasan = findIdx(["penjelasan", "explanation", "e"]);
+      const idxType = findIdx(["type", "tipe", "questiontype"]);
+      if (idxSoal < 0 || idxKunci < 0) {
+        return [];
+      }
+      const out = [];
+      for (let r = 1; r < rows.length; r += 1) {
+        const row = rows[r] || [];
+        const get = function (idx) {
+          if (idx < 0) return "";
+          return String(row[idx] == null ? "" : row[idx]).trim();
+        };
+        const record = {
+          mapel: get(idxMapel),
+          kode_soal: get(idxKode),
+          nama_kode: get(idxNamaKode),
+          stimulus: get(idxStimulus),
+          soal: get(idxSoal),
+          opsi: get(idxOpsi),
+          kunci: get(idxKunci),
+          penjelasan: get(idxPenjelasan),
+          type: get(idxType),
+        };
+        const hasData = Object.values(record).some(function (v) {
+          return String(v || "").trim() !== "";
+        });
+        if (!hasData) continue;
+        out.push(record);
+      }
+      return out;
+    }
+
     function parseImportWordBlocks(rawText) {
       const lines = String(rawText || "")
         .split(/\r?\n/)
@@ -5273,128 +5454,113 @@
           return decodeImportWordCSVLine(line);
         });
       const blocks = [];
+      const globalMeta = [];
       let current = [];
+      let hasType = false;
       lines.forEach(function (line, idx) {
         const clean = String(line || "").trim();
         if (!clean) return;
         if (idx === 0 && clean.toLowerCase() === "content") return;
-        if (/^type\s*:/i.test(clean) && current.length) {
-          blocks.push(current);
-          current = [];
+        if (/^type\s*:/i.test(clean)) {
+          if (hasType && current.length) {
+            blocks.push(current);
+          }
+          current = [clean];
+          hasType = true;
+          return;
         }
-        current.push(clean);
+        if (hasType) {
+          current.push(clean);
+        } else {
+          globalMeta.push(clean);
+        }
       });
       if (current.length) blocks.push(current);
-      return blocks;
+      if (!globalMeta.length) return blocks;
+      return blocks.map(function (block) {
+        return globalMeta.concat(block);
+      });
+    }
+
+    function parseImportContent(rawText) {
+      const tabularRows = parseImportTabularRows(rawText);
+      if (tabularRows.length) {
+        return { mode: "tabular", items: tabularRows };
+      }
+      return { mode: "block", items: parseImportWordBlocks(rawText) };
     }
 
     function mapImportQuestionType(rawType) {
       const t = String(rawType || "")
         .trim()
-        .toUpperCase();
+        .toUpperCase()
+        .replace(/\s+/g, "_");
       if (t === "MC") return "pg_tunggal";
       if (t === "MR") return "multi_jawaban";
       if (t === "TF") return "benar_salah_pernyataan";
+      if (t === "PG_TUNGGAL") return "pg_tunggal";
+      if (t === "MULTI_JAWABAN") return "multi_jawaban";
+      if (t === "BENAR_SALAH_PERNYATAAN") return "benar_salah_pernyataan";
       return "";
     }
 
-    function normalizeTextKey(raw) {
-      return String(raw || "")
-        .replace(/<[^>]*>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/&amp;/gi, "&")
-        .replace(/&lt;/gi, "<")
-        .replace(/&gt;/gi, ">")
-        .replace(/&#39;/gi, "'")
-        .replace(/&quot;/gi, '"')
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
+    function splitImportValues(raw) {
+      const text = String(raw || "").trim();
+      if (!text) return [];
+      const base = text.includes("|")
+        ? text.split("|")
+        : text.includes(";")
+          ? text.split(";")
+          : text.split(/\r?\n/);
+      return base
+        .map(function (v) {
+          return String(v || "").trim();
+        })
+        .filter(Boolean);
     }
 
-    function buildAutoStimulusTitle(blockNo, qType) {
-      const now = new Date();
-      const pad = function (n) {
-        return String(n).padStart(2, "0");
-      };
-      const stamp =
-        String(now.getFullYear()) +
-        pad(now.getMonth() + 1) +
-        pad(now.getDate()) +
-        "_" +
-        pad(now.getHours()) +
-        pad(now.getMinutes());
-      const t = String(qType || "")
-        .trim()
-        .toUpperCase();
-      return (
-        "Stimulus Import " +
-        stamp +
-        " [" +
-        (t || "SOAL") +
-        "] #" +
-        String(blockNo)
-      ).slice(0, 200);
+    function inferImportQuestionType(item) {
+      const typed = mapImportQuestionType(item && item.type_raw);
+      if (typed) return typed;
+      const keys = String((item && item.key_raw) || "")
+        .split(",")
+        .map(function (v) {
+          return String(v || "")
+            .trim()
+            .toUpperCase();
+        })
+        .filter(Boolean);
+      if (
+        keys.length > 1 &&
+        keys.every(function (v) {
+          return v === "T" || v === "F";
+        })
+      ) {
+        return "benar_salah_pernyataan";
+      }
+      if (keys.length > 1) return "multi_jawaban";
+      return "pg_tunggal";
     }
 
-    function readStimulusBodyText(stimulusItem) {
-      const content = stimulusItem && stimulusItem.content;
-      if (!content || typeof content !== "object") return "";
-      return String(content.body || "").trim();
+    function buildExplanationHTML(rawExplanation) {
+      const text = String(rawExplanation || "").trim();
+      if (!text) return "";
+      const safe = escapeHtml(text).replace(/\r?\n/g, "<br>");
+      return "<p>" + safe + "</p>";
     }
 
-    function parseImportQuestionBlock(lines, blockNo) {
-      const item = {
-        type_raw: "",
-        question_type: "",
-        stimulus: "",
-        question: "",
-        options: [],
-        statements: [],
-        key_raw: "",
-      };
-      (Array.isArray(lines) ? lines : []).forEach(function (line) {
-        const m = String(line || "").match(/^([A-Za-z0-9_]+)\s*:\s*(.*)$/);
-        if (!m) return;
-        const key = String(m[1] || "")
-          .trim()
-          .toUpperCase();
-        const val = String(m[2] || "").trim();
-        if (!key) return;
-        if (key === "TYPE") {
-          item.type_raw = val;
-          item.question_type = mapImportQuestionType(val);
-          return;
-        }
-        if (key === "S" || key === "STIMULUS") {
-          item.stimulus = val;
-          return;
-        }
-        if (key === "Q") {
-          item.question = val;
-          return;
-        }
-        if (key === "KUNCI") {
-          item.key_raw = val;
-          return;
-        }
-        if (/^[A-Z]$/.test(key)) {
-          item.options.push({ option_key: key, option_html: val });
-          return;
-        }
-        if (/^P[0-9]+$/.test(key)) {
-          item.statements.push({ id: key, statement: val });
-        }
-      });
-
+    function parseImportQuestionFromParts(item, blockNo) {
+      item.question_type = inferImportQuestionType(item);
       if (!item.question_type) {
         throw new Error("Blok " + String(blockNo) + ": TYPE harus MC/MR/TF.");
       }
       if (!item.question) {
-        throw new Error("Blok " + String(blockNo) + ": Q wajib diisi.");
+        throw new Error("Blok " + String(blockNo) + ": soal wajib diisi.");
       }
       if (!item.key_raw) {
-        throw new Error("Blok " + String(blockNo) + ": Kunci wajib diisi.");
+        throw new Error(
+          "Blok " + String(blockNo) + ": kunci jawaban wajib diisi.",
+        );
       }
 
       let answerKey = {};
@@ -5523,9 +5689,316 @@
         cognitive_level: "C2",
         stimulus_text: String(item.stimulus || "").trim(),
         stem_html: stemHTML,
+        explanation_html: buildExplanationHTML(item.explanation || ""),
         answer_key: answerKey,
         options: optionsPayload,
+        mapel: String(item.mapel || "").trim(),
+        question_code_code: String(item.question_code_code || "").trim(),
+        question_code_name: String(item.question_code_name || "").trim(),
       };
+    }
+
+    function normalizeTextKey(raw) {
+      return String(raw || "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&#39;/gi, "'")
+        .replace(/&quot;/gi, '"')
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    }
+
+    function parseImportQuestionBlock(lines, blockNo) {
+      const item = {
+        type_raw: "",
+        mapel: "",
+        question_code_code: "",
+        question_code_name: "",
+        explanation: "",
+        question_type: "",
+        stimulus: "",
+        question: "",
+        options: [],
+        statements: [],
+        key_raw: "",
+      };
+      let lastField = "";
+      let lastOptionIdx = -1;
+      let lastStatementIdx = -1;
+      const appendContinuation = function (rawLine) {
+        const extra = String(rawLine || "").trim();
+        if (!extra) return;
+        if (lastField === "stimulus") {
+          item.stimulus = (item.stimulus ? item.stimulus + "\n" : "") + extra;
+          return;
+        }
+        if (lastField === "question") {
+          item.question = (item.question ? item.question + "\n" : "") + extra;
+          return;
+        }
+        if (lastField === "explanation") {
+          item.explanation =
+            (item.explanation ? item.explanation + "\n" : "") + extra;
+          return;
+        }
+        if (lastField === "option" && lastOptionIdx >= 0) {
+          const opt = item.options[lastOptionIdx];
+          if (opt) {
+            opt.option_html =
+              (opt.option_html ? opt.option_html + "\n" : "") + extra;
+          }
+          return;
+        }
+        if (lastField === "statement" && lastStatementIdx >= 0) {
+          const st = item.statements[lastStatementIdx];
+          if (st) {
+            st.statement = (st.statement ? st.statement + "\n" : "") + extra;
+          }
+          return;
+        }
+        if (lastField === "kunci") {
+          lastField = "explanation";
+          item.explanation =
+            (item.explanation ? item.explanation + "\n" : "") + extra;
+        }
+      };
+      (Array.isArray(lines) ? lines : []).forEach(function (line) {
+        const raw = String(line || "");
+        const idx = raw.indexOf(":");
+        if (idx < 0) {
+          appendContinuation(raw);
+          return;
+        }
+        const rawKey = raw.slice(0, idx).trim();
+        const val = raw.slice(idx + 1).trim();
+        if (!rawKey) return;
+        const keyCompact = rawKey.replace(/[\s_]+/g, "").toUpperCase();
+        const keyUpper = rawKey.trim().toUpperCase();
+        if (keyCompact === "TYPE") {
+          item.type_raw = val;
+          lastField = "type";
+          return;
+        }
+        if (keyCompact === "MAPEL" || keyCompact === "MATAPELAJARAN") {
+          item.mapel = val;
+          lastField = "mapel";
+          return;
+        }
+        if (keyCompact === "KODESOAL" || keyCompact === "KODE") {
+          item.question_code_code = val;
+          lastField = "kode";
+          return;
+        }
+        if (keyCompact === "NAMAKODE" || keyCompact === "NAMAKODESOAL") {
+          item.question_code_name = val;
+          lastField = "nama";
+          return;
+        }
+        if (
+          keyCompact === "PENJELASAN" ||
+          keyCompact === "EXPLANATION" ||
+          keyCompact === "E"
+        ) {
+          item.explanation = val;
+          lastField = "explanation";
+          return;
+        }
+        if (keyCompact === "S" || keyCompact === "STIMULUS") {
+          item.stimulus = val;
+          lastField = "stimulus";
+          return;
+        }
+        if (keyCompact === "Q" || keyCompact === "SOAL") {
+          item.question = val;
+          lastField = "question";
+          return;
+        }
+        if (keyCompact === "KUNCI" || keyCompact === "KUNCIJAWABAN") {
+          item.key_raw = val;
+          lastField = "kunci";
+          return;
+        }
+        if (/^[A-Z]$/.test(keyUpper)) {
+          item.options.push({ option_key: keyUpper, option_html: val });
+          lastField = "option";
+          lastOptionIdx = item.options.length - 1;
+          return;
+        }
+        if (/^P[0-9]+$/.test(keyUpper)) {
+          item.statements.push({ id: keyUpper, statement: val });
+          lastField = "statement";
+          lastStatementIdx = item.statements.length - 1;
+          return;
+        }
+        appendContinuation(raw);
+      });
+      return parseImportQuestionFromParts(item, blockNo);
+    }
+
+    function parseImportQuestionRow(record, blockNo) {
+      const item = {
+        type_raw: String((record && record.type) || "").trim(),
+        mapel: String((record && record.mapel) || "").trim(),
+        question_code_code: String((record && record.kode_soal) || "").trim(),
+        question_code_name: String((record && record.nama_kode) || "").trim(),
+        explanation: String((record && record.penjelasan) || "").trim(),
+        stimulus: String((record && record.stimulus) || "").trim(),
+        question: String((record && record.soal) || "").trim(),
+        key_raw: String((record && record.kunci) || "").trim(),
+        options: [],
+        statements: [],
+      };
+      const parts = splitImportValues(String((record && record.opsi) || ""));
+      const keyTokens = String(item.key_raw || "")
+        .split(",")
+        .map(function (v) {
+          return String(v || "")
+            .trim()
+            .toUpperCase();
+        })
+        .filter(Boolean);
+      const inferredType =
+        mapImportQuestionType(item.type_raw) || inferImportQuestionType(item);
+      if (inferredType === "benar_salah_pernyataan") {
+        item.statements = parts
+          .map(function (line, idx) {
+            const cleaned = String(line || "").trim();
+            if (!cleaned) return null;
+            const withId = cleaned.match(/^P?([0-9]+)[\.\):\-\s]+(.+)$/i);
+            const statement = withId ? String(withId[2] || "").trim() : cleaned;
+            const id = "P" + String(idx + 1);
+            if (!statement) return null;
+            return { id: id, statement: statement };
+          })
+          .filter(Boolean);
+      } else {
+        item.options = parts
+          .map(function (line, idx) {
+            const cleaned = String(line || "").trim();
+            if (!cleaned) return null;
+            const m = cleaned.match(/^([A-Z])[\.\):\-\s]+(.+)$/i);
+            const optionKey = (
+              m && m[1] ? m[1] : String.fromCharCode(65 + idx)
+            ).toUpperCase();
+            const optionText = m && m[2] ? String(m[2] || "").trim() : cleaned;
+            if (!optionText) return null;
+            return { option_key: optionKey, option_html: optionText };
+          })
+          .filter(Boolean);
+      }
+      if (!item.key_raw && keyTokens.length) {
+        item.key_raw = keyTokens.join(",");
+      }
+      return parseImportQuestionFromParts(item, blockNo);
+    }
+
+    function normalizeImportMapelValue(raw) {
+      return String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+    }
+
+    function resolveImportSubjectID(mapelFromFile, fallbackSubjectID, blockNo) {
+      const fallbackID = Number(fallbackSubjectID || 0);
+      const mapel = normalizeImportMapelValue(mapelFromFile);
+      if (!mapel) {
+        if (fallbackID > 0) return fallbackID;
+        throw new Error(
+          "Blok " +
+            String(blockNo) +
+            ": Mapel wajib ada di file per soal jika tidak memilih Mapel default.",
+        );
+      }
+      const rows = Array.isArray(subjectsCache) ? subjectsCache : [];
+      const exactByName = rows.filter(function (it) {
+        return (
+          normalizeImportMapelValue(String((it && it.name) || "")) === mapel
+        );
+      });
+      let matches = exactByName;
+      if (!matches.length) {
+        const exactByLabel = rows.filter(function (it) {
+          return normalizeImportMapelValue(subjectLabel(it)) === mapel;
+        });
+        matches = exactByLabel;
+      }
+      if (!matches.length && mapel.indexOf("|") >= 0) {
+        const parts = mapel
+          .split("|")
+          .map(function (v) {
+            return normalizeImportMapelValue(v);
+          })
+          .filter(Boolean);
+        const last = parts.length ? parts[parts.length - 1] : "";
+        if (last) {
+          matches = rows.filter(function (it) {
+            return (
+              normalizeImportMapelValue(String((it && it.name) || "")) === last
+            );
+          });
+        }
+      }
+      if (!matches.length) {
+        throw new Error(
+          "Blok " +
+            String(blockNo) +
+            ': Mapel "' +
+            String(mapelFromFile || "") +
+            '" tidak ditemukan.',
+        );
+      }
+      if (matches.length > 1) {
+        const picked = matches.find(function (it) {
+          return Number((it && it.id) || 0) === fallbackID;
+        });
+        if (picked) return Number((picked && picked.id) || 0);
+        throw new Error(
+          "Blok " +
+            String(blockNo) +
+            ': Mapel "' +
+            String(mapelFromFile || "") +
+            '" ambigu. Gunakan format "Jenjang | Tipe | Nama" atau pilih Mapel default.',
+        );
+      }
+      return Number((matches[0] && matches[0].id) || 0);
+    }
+
+    async function ensureQuestionCodeForImport(subjectID, codeRaw, nameRaw) {
+      const code = String(codeRaw || "").trim();
+      const name = String(nameRaw || "").trim();
+      if (!code && !name) return null;
+      if (!code) {
+        throw new Error("Kode Soal wajib diisi jika Nama Kode tersedia.");
+      }
+      const codeNorm = code.toLowerCase();
+      const existing = (
+        Array.isArray(questionCodesCache) ? questionCodesCache : []
+      ).find(function (it) {
+        return (
+          Number((it && it.subject_id) || 0) === Number(subjectID || 0) &&
+          String((it && it.code) || "")
+            .trim()
+            .toLowerCase() === codeNorm
+        );
+      });
+      if (existing && Number((existing && existing.id) || 0) > 0) {
+        return Number(existing.id || 0);
+      }
+      const created = await api("/api/v1/question-codes", "POST", {
+        subject_id: Number(subjectID || 0),
+        code: code,
+        name: name || code,
+      });
+      const id = Number((created && created.id) || 0);
+      if (id > 0) {
+        questionCodesCache.push(created);
+      }
+      return id > 0 ? id : null;
     }
 
     async function loadScriptOnce(id, src) {
@@ -5553,108 +6026,125 @@
       document.head.appendChild(l);
     }
 
-    async function ensureQuillReady() {
-      if (window.Quill) return;
-      loadStyleOnce(
-        "quill-snow-css",
-        "https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css",
-      );
+    async function ensureKatexReady() {
       loadStyleOnce(
         "katex-css",
         "https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css",
       );
+      if (window.katex) return;
       await loadScriptOnce(
         "katex-js",
         "https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js",
       );
-      await loadScriptOnce(
-        "quill-js",
-        "https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js",
+    }
+
+    async function ensureQuillReady() {
+      loadStyleOnce(
+        "quill-snow-css",
+        "https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css",
       );
-    }
-
-    function createQuillEditor(hostEl, placeholder) {
-      if (!hostEl || !window.Quill) return null;
-      return new window.Quill(hostEl, {
-        theme: "snow",
-        placeholder: placeholder || "",
-        modules: {
-          toolbar: {
-            container: [
-              [{ header: [false, 2, 3] }],
-              ["bold", "italic", "underline"],
-              [{ align: [] }],
-              [{ list: "ordered" }, { list: "bullet" }],
-              ["link", "image", "formula"],
-              ["clean"],
-            ],
-            handlers: {
-              image: function () {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.onchange = function () {
-                  const file = input.files && input.files[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = function () {
-                    const base64 = String(reader.result || "");
-                    if (!base64) return;
-                    const range = this.quill.getSelection(true);
-                    const index = range ? range.index : this.quill.getLength();
-                    this.quill.insertEmbed(index, "image", base64, "user");
-                    this.quill.setSelection(index + 1, 0, "silent");
-                  }.bind(this);
-                  reader.readAsDataURL(file);
-                }.bind(this);
-                input.click();
-              },
-            },
-          },
-        },
-      });
-    }
-
-    function buildStimulusTabEditor() {
-      if (!stimulusTabsContainer) return null;
-      const wrap = document.createElement("section");
-      wrap.className = "panel mt stimulus-tab-item";
-      wrap.innerHTML = [
-        '<label>Judul Tab <input type="text" class="stimulus-tab-title" placeholder="Judul tab" required /></label>',
-        '<div class="quill-editor-shell mt"><div class="stimulus-tab-editor"></div></div>',
-        '<div class="mt"><button type="button" class="btn btn-secondary btn-inline" data-editor-action="remove-tab">Hapus Tab</button></div>',
-      ].join("");
-      stimulusTabsContainer.appendChild(wrap);
-      const host = wrap.querySelector(".stimulus-tab-editor");
-      const quill = createQuillEditor(host, "Isi konten tab...");
-      if (quill) {
-        tabQuillByWrap.set(wrap, quill);
-        quill.on("text-change", function () {
-          renderLiveStimulusPreview();
-          clearStimulusInlineError();
-        });
+      await ensureKatexReady();
+      if (!window.Quill) {
+        await loadScriptOnce(
+          "quill-js",
+          "https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js",
+        );
       }
-      return wrap;
-    }
-
-    function currentStimulusType() {
-      if (!stimulusTypeSelect) return "single";
-      const v = String(stimulusTypeSelect.value || "")
-        .trim()
-        .toLowerCase();
-      return v === "multiteks" ? "multiteks" : "single";
-    }
-
-    function switchStimulusEditorByType() {
-      const t = currentStimulusType();
-      if (stimulusSinglePanel) stimulusSinglePanel.hidden = t !== "single";
-      if (stimulusMultiteksPanel)
-        stimulusMultiteksPanel.hidden = t !== "multiteks";
-      if (t === "multiteks" && stimulusTabsContainer) {
-        if (!stimulusTabsContainer.querySelector(".stimulus-tab-item")) {
-          buildStimulusTabEditor();
+      if (!window.__cbtQuillImageResizeRegistered) {
+        try {
+          await loadScriptOnce(
+            "quill-image-resize-js",
+            "https://cdn.jsdelivr.net/npm/quill-image-resize-module@3.0.0/image-resize.min.js",
+          );
+          const alreadyRegistered =
+            window.Quill &&
+            window.Quill.imports &&
+            window.Quill.imports["modules/imageResize"];
+          if (alreadyRegistered) {
+            window.__cbtQuillImageResizeRegistered = true;
+          } else if (window.Quill && window.ImageResize) {
+            window.Quill.register("modules/imageResize", window.ImageResize);
+            window.__cbtQuillImageResizeRegistered = true;
+          }
+        } catch (_) {
+          window.__cbtQuillImageResizeRegistered = false;
         }
       }
+    }
+
+    function createQuillEditor(hostEl, placeholder, options) {
+      if (!hostEl || !window.Quill) return null;
+      const originalConsoleLog = console.log;
+      const filteredConsoleLog = function () {
+        if (
+          arguments.length > 0 &&
+          String(arguments[0] || "") === "this.options.modules"
+        ) {
+          return;
+        }
+        return originalConsoleLog.apply(console, arguments);
+      };
+      let quill = null;
+      try {
+        if (typeof originalConsoleLog === "function") {
+          console.log = filteredConsoleLog;
+        }
+        quill = new window.Quill(hostEl, {
+          theme: "snow",
+          placeholder: placeholder || "",
+          modules: {
+            toolbar: {
+              container: [
+                [{ header: [false, 2, 3] }],
+                ["bold", "italic", "underline"],
+                [{ script: "sub" }, { script: "super" }],
+                [{ align: [] }],
+                [{ list: "ordered" }, { list: "bullet" }],
+                ["link", "image", "formula"],
+                ["clean"],
+              ],
+              handlers: {
+                image: function () {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = function () {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                      const base64 = String(reader.result || "");
+                      if (!base64) return;
+                      const range = this.quill.getSelection(true);
+                      const index = range
+                        ? range.index
+                        : this.quill.getLength();
+                      this.quill.insertEmbed(index, "image", base64, "user");
+                      this.quill.setSelection(index + 1, 0, "silent");
+                    }.bind(this);
+                    reader.readAsDataURL(file);
+                  }.bind(this);
+                  input.click();
+                },
+              },
+            },
+            imageResize: {
+              modules: ["Resize", "DisplaySize", "Toolbar"],
+            },
+          },
+        });
+      } finally {
+        if (typeof originalConsoleLog === "function") {
+          console.log = originalConsoleLog;
+        }
+      }
+      const fontSize = String(
+        (options && options.defaultFontSize) || "",
+      ).trim();
+      if (fontSize && quill.root && quill.root.style) {
+        quill.root.style.fontSize = fontSize;
+      }
+      return quill;
     }
 
     function getQuillHTML(quill) {
@@ -5663,6 +6153,11 @@
     }
 
     function syncManuscriptHiddenInputs() {
+      if (manuscriptStimulusHTMLInput) {
+        manuscriptStimulusHTMLInput.value = getQuillHTML(
+          manuscriptStimulusQuill,
+        );
+      }
       if (manuscriptStemHTMLInput) {
         manuscriptStemHTMLInput.value = getQuillHTML(manuscriptStemQuill);
       }
@@ -5677,6 +6172,7 @@
     }
 
     function resetManuscriptEditors() {
+      if (manuscriptStimulusQuill) manuscriptStimulusQuill.setContents([]);
       if (manuscriptStemQuill) manuscriptStemQuill.setContents([]);
       if (manuscriptExplanationQuill)
         manuscriptExplanationQuill.setContents([]);
@@ -5710,7 +6206,9 @@
       const hidden = row.querySelector("[data-option-html]");
       if (!host || !hidden) return;
       const initialHTML = String(hidden.value || "").trim();
-      const quill = createQuillEditor(host, "Isi opsi jawaban...");
+      const quill = createQuillEditor(host, "Isi opsi jawaban...", {
+        defaultFontSize: "12pt",
+      });
       if (!quill) return;
       if (initialHTML) {
         quill.clipboard.dangerouslyPasteHTML(initialHTML);
@@ -5912,6 +6410,19 @@
           manuscriptLearningGoalSelect.value = String(selectedQuestionGoalID);
           manuscriptLearningGoalSelect.disabled = true;
         }
+        fillQuestionCodeSelect(
+          manuscriptQuestionCodeSelect,
+          questionSubjectID,
+          true,
+        );
+        if (manuscriptQuestionCodeSelect) {
+          manuscriptQuestionCodeSelect.value = String(
+            Number(
+              (selectedQuestion && selectedQuestion.question_code_id) || 0,
+            ) || "",
+          );
+          manuscriptQuestionCodeSelect.disabled = false;
+        }
         return;
       }
       manuscriptSubjectSelect.disabled = false;
@@ -5921,6 +6432,14 @@
       );
       if (manuscriptLearningGoalSelect) {
         manuscriptLearningGoalSelect.disabled = false;
+      }
+      fillQuestionCodeSelect(
+        manuscriptQuestionCodeSelect,
+        Number((manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0),
+        true,
+      );
+      if (manuscriptQuestionCodeSelect) {
+        manuscriptQuestionCodeSelect.disabled = false;
       }
     }
 
@@ -6074,7 +6593,7 @@
       }
       if (manuscriptSubmitBtn) {
         manuscriptSubmitBtn.textContent =
-          "Simpan Perubahan Draft (v" + String(versionNo || "") + ")";
+          "Simpan Perubahan (v" + String(versionNo || "") + ")";
       }
       if (manuscriptCancelEditBtn) {
         manuscriptCancelEditBtn.hidden = false;
@@ -6086,7 +6605,7 @@
       if (manuscriptEditingVersionNoInput)
         manuscriptEditingVersionNoInput.value = "";
       if (manuscriptSubmitBtn)
-        manuscriptSubmitBtn.textContent = "Simpan Draft Naskah";
+        manuscriptSubmitBtn.textContent = "Simpan Naskah";
       if (manuscriptCancelEditBtn) manuscriptCancelEditBtn.hidden = true;
     }
 
@@ -6105,6 +6624,95 @@
       } catch (_) {
         return {};
       }
+    }
+
+    function cleanStemPreview(raw) {
+      const text = String(raw || "").trim();
+      if (!text) return "";
+      const plain = toPlainText(text);
+      if (!plain) return "";
+      return plain.replace(/^draft naskah soal:\s*/i, "").trim();
+    }
+
+    function toPlainText(html) {
+      const raw = String(html || "").trim();
+      if (!raw) return "";
+      const container = document.createElement("div");
+      container.innerHTML = raw;
+      return String(container.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function previewText(html, maxLen) {
+      const text = toPlainText(html);
+      if (!text) return "-";
+      const limit = Math.max(20, Number(maxLen) || 80);
+      if (text.length <= limit) return text;
+      return text.slice(0, limit - 1).trim() + "…";
+    }
+
+    function shortQuestionType(rawType) {
+      const t = String(rawType || "")
+        .trim()
+        .toLowerCase();
+      if (t === "pg_tunggal") return "MC";
+      if (t === "multi_jawaban") return "MR";
+      if (t === "benar_salah_pernyataan") return "TF";
+      return t ? t.toUpperCase() : "-";
+    }
+
+    function resolveManuscriptQuestionType(item) {
+      if (!item) return "";
+      if (item.question_type) return String(item.question_type || "");
+      const qid = Number(item.question_id || 0);
+      if (qid > 0 && Array.isArray(blueprintsCache)) {
+        const found = blueprintsCache.find(function (q) {
+          return Number((q && q.id) || 0) === qid;
+        });
+        if (found && found.question_type) return String(found.question_type);
+      }
+      return "";
+    }
+
+    function resolveManuscriptQuestionCode(item) {
+      if (!item) return "";
+      const qid = Number(item.question_id || 0);
+      if (qid > 0 && Array.isArray(blueprintsCache)) {
+        const found = blueprintsCache.find(function (q) {
+          return Number((q && q.id) || 0) === qid;
+        });
+        if (found) return questionCodeLabel(found);
+      }
+      return "";
+    }
+
+    function resolveManuscriptLearningGoal(item) {
+      if (!item) return "";
+      const qid = Number(item.question_id || 0);
+      if (qid > 0 && Array.isArray(blueprintsCache)) {
+        const found = blueprintsCache.find(function (q) {
+          return Number((q && q.id) || 0) === qid;
+        });
+        if (found && found.learning_goal_id) {
+          const goal = findLearningGoalByID(found.learning_goal_id);
+          if (goal) return learningGoalLabel(goal);
+        }
+      }
+      return "";
+    }
+
+    function learningGoalLabel(it) {
+      if (!it) return "-";
+      const id = String((it && it.id) || "").trim();
+      const semester = String((it && it.semester) || "").trim();
+      const tujuan = String((it && it.tujuan_pembelajaran) || "").trim();
+      if (!id && !tujuan) return "-";
+      const parts = [];
+      if (id) parts.push("TP-" + id);
+      if (semester) parts.push("Smt-" + semester);
+      if (tujuan) parts.push(tujuan);
+      return parts.join(" | ");
     }
 
     function renderManuscriptOptionsFromData(options) {
@@ -6192,11 +6800,7 @@
       }
       syncManuscriptSubjectState();
       applyManuscriptTypeUI(true);
-      await refreshStimuliSelectByQuestion();
-
-      if (manuscriptStimulusSelect) {
-        manuscriptStimulusSelect.value = String(Number(item.stimulus_id || 0));
-      }
+      setQuillHTMLValue(manuscriptStimulusQuill, item.stimulus_html);
       setQuillHTMLValue(manuscriptStemQuill, item.stem_html);
       setQuillHTMLValue(manuscriptExplanationQuill, item.explanation_html);
       setQuillHTMLValue(manuscriptHintQuill, item.hint_html);
@@ -6215,7 +6819,7 @@
       manuscriptForm.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    function previewManuscriptVersion(item) {
+    async function previewManuscriptVersion(item) {
       if (!item || !manuscriptPreviewContent) return;
       const keyObj = parseAnswerKeyObject(item.answer_key);
       const safeJSON = escapeHtml(JSON.stringify(keyObj, null, 2));
@@ -6223,6 +6827,9 @@
       const explanation = String(item.explanation_html || "").trim();
       const hint = String(item.hint_html || "").trim();
       const options = Array.isArray(item.options) ? item.options : [];
+      const stimulusHTML = String(item.stimulus_html || "").trim()
+        ? String(item.stimulus_html || "").trim()
+        : '<div class="muted">(tanpa stimulus)</div>';
       const optionsHTML = options.length
         ? options
             .map(function (it) {
@@ -6246,24 +6853,30 @@
         );
       }
       manuscriptPreviewContent.innerHTML = [
-        "<div><strong>Status:</strong> " +
-          escapeHtml(String(item.status || "")) +
-          "</div>",
-        '<div class="mt"><strong>Stem:</strong><div class="box mt">' +
+        '<div class="mt preview-grid">' +
+          '<div class="preview-col">' +
+          '<div><strong>Stimulus:</strong><div class="box mt">' +
+          stimulusHTML +
+          "</div></div>" +
+          '<div class="mt"><strong>Stem:</strong><div class="box mt">' +
           (stem || '<span class="muted">(kosong)</span>') +
-          "</div></div>",
+          "</div></div>" +
+          "</div>" +
+          '<div class="preview-col">' +
+          '<div><strong>Opsi:</strong><div class="box mt">' +
+          optionsHTML +
+          "</div></div>" +
+          '<div class="mt"><strong>Answer Key:</strong><pre class="code-box">' +
+          safeJSON +
+          "</pre></div>" +
+          "</div>" +
+          "</div>",
         '<div class="mt"><strong>Penjelasan:</strong><div class="box mt">' +
           (explanation || '<span class="muted">(kosong)</span>') +
           "</div></div>",
         '<div class="mt"><strong>Hint:</strong><div class="box mt">' +
           (hint || '<span class="muted">(kosong)</span>') +
           "</div></div>",
-        '<div class="mt"><strong>Opsi:</strong><div class="box mt">' +
-          optionsHTML +
-          "</div></div>",
-        '<div class="mt"><strong>Answer Key:</strong><pre class="code-box">' +
-          safeJSON +
-          "</pre></div>",
       ].join("");
       if (
         manuscriptPreviewDialog &&
@@ -6284,124 +6897,78 @@
       return !plain;
     }
 
-    function clearStimulusInlineError() {
-      if (!stimulusInlineError) return;
-      stimulusInlineError.hidden = true;
-      stimulusInlineError.textContent = "";
-    }
-
-    function showStimulusInlineError(errors) {
-      if (!stimulusInlineError) return;
-      const rows = Array.isArray(errors) ? errors : [String(errors || "")];
-      stimulusInlineError.textContent = rows.filter(Boolean).join(" | ");
-      stimulusInlineError.hidden = rows.length === 0;
-    }
-
-    function collectStimulusContentPayload() {
-      const t = currentStimulusType();
-      if (t === "single") {
-        return { body: getQuillHTML(stimulusSingleQuill) };
-      }
-      const tabs = [];
-      if (stimulusTabsContainer) {
-        stimulusTabsContainer
-          .querySelectorAll(".stimulus-tab-item")
-          .forEach(function (row) {
-            const title = String(
-              (row.querySelector(".stimulus-tab-title") || {}).value || "",
-            ).trim();
-            const quill = tabQuillByWrap.get(row);
-            const body = getQuillHTML(quill);
-            if (title || body) tabs.push({ title: title, body: body });
-          });
-      }
-      return { tabs: tabs };
-    }
-
-    function validateStimulusFormPayload(fd, content) {
-      const errors = [];
-      const subjectID = Number(fd.get("subject_id") || 0);
-      const learningGoalID = Number(fd.get("learning_goal_id") || 0);
-      const title = String(fd.get("title") || "").trim();
-      const stimulusType = String(fd.get("stimulus_type") || "").trim();
-      if (subjectID <= 0) errors.push("Mapel wajib dipilih.");
-      if (learningGoalID <= 0)
-        errors.push("Tujuan Pembelajaran wajib dipilih.");
-      if (!title) errors.push("Judul stimulus wajib diisi.");
-      if (stimulusType === "single" && !String(content.body || "").trim()) {
-        errors.push("Konten single wajib diisi.");
-      }
-      if (stimulusType === "multiteks") {
-        const tabs = Array.isArray(content.tabs) ? content.tabs : [];
-        if (!tabs.length) errors.push("Tambahkan minimal 1 tab multiteks.");
-        const hasIncomplete = tabs.some(function (tab) {
-          const title = String((tab && tab.title) || "").trim();
-          const body = String((tab && tab.body) || "").trim();
-          return (title && !body) || (!title && body);
-        });
-        if (hasIncomplete) {
-          errors.push("Setiap tab multiteks harus berisi Judul dan Konten.");
-        }
-      }
-      return errors;
-    }
-
-    function renderLiveStimulusPreview() {
-      if (!stimulusLivePreview || !stimulusForm) return;
-      const fd = new FormData(stimulusForm);
-      const title = String(fd.get("title") || "").trim();
-      const stimulusType = String(fd.get("stimulus_type") || "single").trim();
-      const content = collectStimulusContentPayload();
-      let html = '<div class="muted">Konten preview kosong.</div>';
-      if (stimulusType === "single") {
-        const body = String(content.body || "").trim();
-        if (body) html = body;
-      } else {
-        const tabs = Array.isArray(content.tabs) ? content.tabs : [];
-        if (tabs.length) {
-          html = tabs
-            .map(function (tab, idx) {
-              const tabTitle = String((tab && tab.title) || "").trim();
-              const tabBody = String((tab && tab.body) || "").trim();
-              return (
-                '<section class="panel mt"><h4>' +
-                escapeHtml(tabTitle || "Tab " + String(idx + 1)) +
-                '</h4><div class="box mt">' +
-                (tabBody || '<span class="muted">(konten kosong)</span>') +
-                "</div></section>"
-              );
-            })
-            .join("");
-        }
-      }
-      stimulusLivePreview.innerHTML =
-        "<strong>" +
-        escapeHtml(title || "Tanpa Judul") +
-        "</strong>" +
-        '<div class="mt">' +
-        html +
-        "</div>";
-    }
-
-    function resetStimulusEditors() {
-      if (stimulusSingleQuill) stimulusSingleQuill.setContents([]);
-      if (stimulusTabsContainer) stimulusTabsContainer.innerHTML = "";
-      if (currentStimulusType() === "multiteks") buildStimulusTabEditor();
-    }
-
     function activateGuruMenu(menu) {
       const allowed = [
         "dashboard",
         "reviews",
         "learning-goals",
         "blueprints",
-        "stimuli",
         "manuscripts",
         "exams",
         "results",
         "subjects",
       ];
       const key = allowed.includes(menu) ? menu : "dashboard";
+      const buildCountDesc = function (base, noun, total) {
+        if (total <= 0) return base + " Anda belum membuat " + noun + ".";
+        return (
+          base + " Saat ini ada " + String(total) + " " + String(noun) + "."
+        );
+      };
+      const buildSubjectsDesc = function () {
+        const total = Number(
+          Array.isArray(subjectsCache) ? subjectsCache.length : 0,
+        );
+        return buildCountDesc(
+          "Kelola daftar mapel yang tersedia.",
+          "mapel",
+          total,
+        );
+      };
+      const buildLearningGoalsDesc = function () {
+        const total = Number(
+          Array.isArray(learningGoalsCache) ? learningGoalsCache.length : 0,
+        );
+        return buildCountDesc(
+          "Kelola tujuan pembelajaran per mapel dan jenjang.",
+          "tujuan pembelajaran",
+          total,
+        );
+      };
+      const buildManuscriptsDesc = function () {
+        const total = Number(
+          Array.isArray(manuscriptAllItems) ? manuscriptAllItems.length : 0,
+        );
+        if (total <= 0) {
+          return "Kelola naskah soal berbasis blueprint. Belum ada versi naskah.";
+        }
+        return (
+          "Kelola naskah soal berbasis blueprint. Saat ini ada " +
+          String(total) +
+          " versi naskah."
+        );
+      };
+      const buildExamsDesc = function () {
+        const total = Number(
+          Array.isArray(examsManageCache) ? examsManageCache.length : 0,
+        );
+        return buildCountDesc(
+          "Kelola paket ujian dan jadwal pelaksanaan.",
+          "ujian",
+          total,
+        );
+      };
+      const buildResultsDesc = function () {
+        const total = Number(resultsAssignmentsCount || 0);
+        if (total <= 0) {
+          return "Lihat hasil dan performa peserta. Belum ada peserta ujian yang dimuat.";
+        }
+        return (
+          "Lihat hasil dan performa peserta. Saat ini ada " +
+          String(total) +
+          " peserta terdaftar pada ujian terpilih."
+        );
+      };
       menuButtons.forEach(function (btn) {
         const active = btn.getAttribute("data-guru-menu") === key;
         btn.classList.toggle("active", active);
@@ -6411,7 +6978,6 @@
       if (learningGoalsPanel)
         learningGoalsPanel.hidden = key !== "learning-goals";
       if (blueprintsPanel) blueprintsPanel.hidden = key !== "blueprints";
-      if (stimuliPanel) stimuliPanel.hidden = key !== "stimuli";
       if (manuscriptsPanel) manuscriptsPanel.hidden = key !== "manuscripts";
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
@@ -6419,7 +6985,7 @@
       const guruTitles = {
         dashboard: {
           title: "Dashboard Guru",
-          desc: "Ringkasan workflow penyusunan stimulus dan naskah soal.",
+          desc: "Ringkasan workflow penyusunan naskah soal dan ujian.",
         },
         reviews: {
           title: "Review Soal",
@@ -6427,31 +6993,27 @@
         },
         "learning-goals": {
           title: "Tujuan Pembelajaran",
-          desc: "Kelola tujuan pembelajaran per mapel dan jenjang.",
+          desc: buildLearningGoalsDesc(),
         },
         blueprints: {
           title: "Blueprint",
           desc: "Susun blueprint sebagai kerangka penyusunan soal.",
         },
-        stimuli: {
-          title: "Stimuli",
-          desc: "Kelola stimulus pendukung untuk soal.",
-        },
         manuscripts: {
           title: "Naskah Soal",
-          desc: "Kelola naskah soal berbasis blueprint dan stimulus.",
+          desc: buildManuscriptsDesc(),
         },
         exams: {
           title: "Ujian",
-          desc: "Kelola paket ujian dan jadwal pelaksanaan.",
+          desc: buildExamsDesc(),
         },
         results: {
           title: "Hasil Ujian",
-          desc: "Lihat hasil dan performa peserta.",
+          desc: buildResultsDesc(),
         },
         subjects: {
           title: "Mata Pelajaran",
-          desc: "Kelola daftar mapel yang tersedia.",
+          desc: buildSubjectsDesc(),
         },
       };
       const info = guruTitles[key] || guruTitles.dashboard;
@@ -6547,9 +7109,9 @@
         const opt = document.createElement("option");
         opt.value = String((it && it.id) || "");
         opt.textContent =
-          "LG-" +
+          "TP-" +
           String((it && it.id) || "") +
-          " | S" +
+          " | Smt-" +
           String((it && it.semester) || "") +
           " | " +
           String((it && it.tujuan_pembelajaran) || "");
@@ -6557,32 +7119,6 @@
         selectEl.appendChild(opt);
       });
       if (!selectEl.value) selectEl.selectedIndex = 0;
-      if (selectEl === stimulusLearningGoalSelect) {
-        updateStimulusLearningGoalEmptyState(subjectID);
-      }
-    }
-
-    function updateStimulusLearningGoalEmptyState(subjectID) {
-      if (!stimulusLearningGoalSelect) return;
-      const hasItems = stimulusLearningGoalSelect.options.length > 1;
-      if (stimulusLearningGoalEmpty) {
-        if (hasItems) {
-          stimulusLearningGoalEmpty.hidden = true;
-        } else {
-          const subject = findSubjectByID(subjectID);
-          const label = subject ? String(subject.name || "") : "";
-          text(
-            stimulusLearningGoalEmpty,
-            label
-              ? "Belum ada tujuan pembelajaran untuk mapel " + label + "."
-              : "Belum ada tujuan pembelajaran untuk mapel ini.",
-          );
-          stimulusLearningGoalEmpty.hidden = false;
-        }
-      }
-      if (stimulusLearningGoalAddBtn) {
-        stimulusLearningGoalAddBtn.hidden = hasItems;
-      }
     }
 
     function renderLearningGoals(items) {
@@ -6786,31 +7322,258 @@
     async function loadLearningGoals() {
       const items = await api("/api/v1/learning-goals", "GET");
       learningGoalsCache = Array.isArray(items) ? items : [];
+      if (learningGoalsPanel && !learningGoalsPanel.hidden) {
+        activateGuruMenu("learning-goals");
+      }
       renderLearningGoals(getFilteredLearningGoals());
-      fillLearningGoalSelect(
-        stimulusLearningGoalSelect,
-        Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
-      );
       fillLearningGoalSelect(
         manuscriptLearningGoalSelect,
         getManuscriptTargetSubjectID(),
       );
-      fillLearningGoalSelect(
-        stimulusEditLearningGoal,
-        Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
-      );
       return learningGoalsCache;
+    }
+
+    function questionCodeLabel(it) {
+      const code = String(
+        (it && (it.code || it.question_code || it.question_code_code)) || "",
+      ).trim();
+      const name = String(
+        (it && (it.name || it.question_code_name)) || "",
+      ).trim();
+      if (code && name) return code + " - " + name;
+      if (code || name) return code || name;
+      const id = Number((it && (it.question_code_id || it.id)) || 0);
+      if (id > 0) {
+        const cached = findQuestionCodeByID(id);
+        if (cached && cached !== it) {
+          const cachedCode = String(
+            (cached &&
+              (cached.code ||
+                cached.question_code ||
+                cached.question_code_code)) ||
+              "",
+          ).trim();
+          const cachedName = String(
+            (cached && (cached.name || cached.question_code_name)) || "",
+          ).trim();
+          if (cachedCode && cachedName) return cachedCode + " - " + cachedName;
+          if (cachedCode || cachedName) return cachedCode || cachedName;
+        }
+      }
+      return "-";
+    }
+
+    function findQuestionCodeByID(id) {
+      return (Array.isArray(questionCodesCache) ? questionCodesCache : []).find(
+        function (it) {
+          return Number((it && it.id) || 0) === Number(id || 0);
+        },
+      );
+    }
+
+    function resetQuestionCodeFormMode() {
+      questionCodeEditingID = 0;
+      if (!questionCodeForm) return;
+      const idField = questionCodeForm.elements.namedItem("id");
+      if (idField) idField.value = "";
+      const submitBtn = document.getElementById(
+        "guru-question-code-submit-btn",
+      );
+      if (submitBtn) submitBtn.textContent = "Simpan Kode Soal";
+      if (questionCodeCancelBtn) questionCodeCancelBtn.hidden = true;
+    }
+
+    function fillQuestionCodeSubjectSelect(selectedID) {
+      if (!questionCodeSubjectSelect) return;
+      const selected = Number(selectedID || 0);
+      questionCodeSubjectSelect.innerHTML =
+        '<option value="">Pilih mapel</option>';
+      subjectsCache.forEach(function (it) {
+        const id = Number((it && it.id) || 0);
+        if (id <= 0) return;
+        const opt = document.createElement("option");
+        opt.value = String(id);
+        opt.textContent = subjectLabel(it);
+        if (selected > 0 && selected === id) opt.selected = true;
+        questionCodeSubjectSelect.appendChild(opt);
+      });
+    }
+
+    function fillQuestionCodeSelect(selectEl, subjectID, includeEmpty) {
+      if (!selectEl) return;
+      const current = String(selectEl.value || "");
+      const sid = Number(subjectID || 0);
+      const list = (Array.isArray(questionCodesCache) ? questionCodesCache : [])
+        .filter(function (it) {
+          const rowSubjectID = Number((it && it.subject_id) || 0);
+          return sid <= 0 || rowSubjectID === sid;
+        })
+        .sort(function (a, b) {
+          return String((a && a.code) || "").localeCompare(
+            String((b && b.code) || ""),
+            "id",
+          );
+        });
+      selectEl.innerHTML = "";
+      if (includeEmpty !== false) {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Tanpa kode soal";
+        selectEl.appendChild(empty);
+      }
+      list.forEach(function (it) {
+        const opt = document.createElement("option");
+        opt.value = String(it.id || "");
+        opt.textContent = questionCodeLabel(it);
+        if (current && current === String(it.id || "")) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+    }
+
+    function renderQuestionCodes(items) {
+      if (!questionCodeBody) return;
+      if (!Array.isArray(items) || !items.length) {
+        questionCodeBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Belum ada data kode soal.</td></tr>';
+        return;
+      }
+      questionCodeBody.innerHTML = "";
+      items.forEach(function (it) {
+        const subject = subjectsCache.find(function (row) {
+          return Number((row && row.id) || 0) === Number(it.subject_id || 0);
+        });
+        const tr = document.createElement("tr");
+        tr.innerHTML = [
+          "<td>" + escapeHtml(String(it.id || "")) + "</td>",
+          "<td>" + escapeHtml(subjectLabel(subject || {})) + "</td>",
+          "<td>" + escapeHtml(String(it.code || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.name || "-")) + "</td>",
+          '<td><span class="action-icons">' +
+            '<button class="icon-only-btn" type="button" data-question-code-action="edit" data-id="' +
+            escapeHtml(String(it.id || "")) +
+            '" title="Ubah" aria-label="Ubah">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25z"/><path d="M14.05 6.2l3.75 3.75"/></svg>' +
+            "</button>" +
+            '<button class="icon-only-btn danger" type="button" data-question-code-action="delete" data-id="' +
+            escapeHtml(String(it.id || "")) +
+            '" title="Hapus" aria-label="Hapus">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>' +
+            "</button>" +
+            "</span></td>",
+        ].join("");
+        questionCodeBody.appendChild(tr);
+      });
+    }
+
+    async function loadQuestionCodes(subjectID) {
+      const items = await api("/api/v1/question-codes", "GET");
+      questionCodesCache = Array.isArray(items) ? items : [];
+      const sid = Number(subjectID || 0);
+      const rows =
+        sid > 0
+          ? questionCodesCache.filter(function (it) {
+              return Number((it && it.subject_id) || 0) === sid;
+            })
+          : questionCodesCache;
+      renderQuestionCodes(rows);
+      fillQuestionCodeSelect(
+        manuscriptQuestionCodeSelect,
+        getManuscriptTargetSubjectID(),
+        true,
+      );
+      fillExamQuestionCodeSelectByExam(
+        Number(
+          (examQuestionCodeRuleExamIDInput &&
+            examQuestionCodeRuleExamIDInput.value) ||
+            (questionExamIDInput && questionExamIDInput.value) ||
+            0,
+        ),
+      );
+      return questionCodesCache;
+    }
+
+    function getExamManageByID(examID) {
+      return (Array.isArray(examsManageCache) ? examsManageCache : []).find(
+        function (it) {
+          return Number((it && it.id) || 0) === Number(examID || 0);
+        },
+      );
+    }
+
+    function fillExamQuestionCodeSelectByExam(examID) {
+      const id = Number(examID || 0);
+      const exam = getExamManageByID(id);
+      const subjectID = Number((exam && exam.subject_id) || 0);
+      fillQuestionCodeSelect(examQuestionCodeSelect, subjectID, false);
+      if (
+        examQuestionCodeSelect &&
+        examQuestionCodeSelect.options.length === 0
+      ) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Belum ada kode soal mapel ini";
+        examQuestionCodeSelect.appendChild(opt);
+      }
+    }
+
+    function renderExamQuestionCodeRules(items) {
+      if (!examQuestionCodeRuleBody) return;
+      if (!Array.isArray(items) || !items.length) {
+        examQuestionCodeRuleBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Belum ada rule kode soal untuk ujian ini.</td></tr>';
+        return;
+      }
+      examQuestionCodeRuleBody.innerHTML = "";
+      items.forEach(function (it) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = [
+          "<td>" + escapeHtml(questionCodeLabel(it)) + "</td>",
+          "<td>" + escapeHtml(String(it.strategy || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.pick_count || "-")) + "</td>",
+          "<td>" + escapeHtml(String(it.weight || 1)) + "</td>",
+          '<td><button class="icon-only-btn danger" type="button" data-exam-code-rule-del="' +
+            escapeHtml(String(it.question_code_id || "")) +
+            '" title="Hapus rule" aria-label="Hapus rule">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>' +
+            "</button></td>",
+        ].join("");
+        examQuestionCodeRuleBody.appendChild(tr);
+      });
+    }
+
+    async function loadExamQuestionCodeRules(examID) {
+      if (!examQuestionCodeRuleBody) return [];
+      const id = Number(examID || 0);
+      if (id <= 0) {
+        renderExamQuestionCodeRules([]);
+        return [];
+      }
+      const rows = await api(
+        "/api/v1/admin/exams/" + id + "/question-codes",
+        "GET",
+      );
+      const items = Array.isArray(rows) ? rows : [];
+      renderExamQuestionCodeRules(items);
+      return items;
     }
 
     function blueprintLabel(it) {
       const title = String((it && it.title) || "").trim();
       const subject = String((it && it.subject_name) || "").trim();
+      const code = String((it && it.question_code) || "").trim();
       if (!title && !subject) return String((it && it.id) || "");
       if (!subject) return title;
       if (!title) return "#" + String((it && it.id) || "") + " - " + subject;
-      return (
-        "#" + String((it && it.id) || "") + " - " + title + " (" + subject + ")"
-      );
+      const base =
+        "#" +
+        String((it && it.id) || "") +
+        " - " +
+        title +
+        " (" +
+        subject +
+        ")";
+      if (!code) return base;
+      return base + " [" + code + "]";
     }
 
     function fillBlueprintSelect(selectEl) {
@@ -6828,13 +7591,10 @@
         if (current && current === String(it.id || "")) opt.selected = true;
         selectEl.appendChild(opt);
       });
-      if (
-        (selectEl === manuscriptListQuestionSelect ||
-          selectEl === manuscriptFinalizeQuestionSelect) &&
-        !selectEl.value &&
-        selectEl.options.length > 1
-      ) {
-        selectEl.selectedIndex = 1;
+      if (selectEl === manuscriptQuestionSelect) {
+        if (!selectEl.value && selectEl.options.length > 1) {
+          selectEl.selectedIndex = 1;
+        }
       }
     }
 
@@ -6875,24 +7635,6 @@
             Number((b && b.version_no) || 0) - Number((a && a.version_no) || 0)
           );
         });
-    }
-
-    function fillStimulusSelect(selectEl, items) {
-      if (!selectEl) return;
-      const current = String(selectEl.value || "");
-      selectEl.innerHTML = "";
-      const firstOpt = document.createElement("option");
-      firstOpt.value = "";
-      firstOpt.textContent = "Pilih Stimulus";
-      selectEl.appendChild(firstOpt);
-      (items || []).forEach(function (it) {
-        const opt = document.createElement("option");
-        opt.value = String(it.id || "");
-        opt.textContent =
-          "#" + String(it.id || "") + " - " + String(it.title || "");
-        if (current && current === String(it.id || "")) opt.selected = true;
-        selectEl.appendChild(opt);
-      });
     }
 
     function openSubjectDialog(editItem) {
@@ -6946,7 +7688,7 @@
         tr.innerHTML = [
           "<td>" + escapeHtml(String(it.id || "")) + "</td>",
           "<td>" + escapeHtml(String(it.subject_name || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_type || "")) + "</td>",
+          "<td>" + escapeHtml(shortQuestionType(it.question_type)) + "</td>",
           "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
           "<td>" + escapeHtml(String(it.indicator || "-")) + "</td>",
           "<td>" + escapeHtml(String(it.material || "-")) + "</td>",
@@ -6957,116 +7699,86 @@
       });
     }
 
-    function getFilteredStimulusItems() {
-      const q = String(stimulusListSearch || "")
-        .trim()
-        .toLowerCase();
-      if (!q) return currentStimulusAllItems.slice();
-      return currentStimulusAllItems.filter(function (it) {
-        return String((it && it.title) || "")
-          .toLowerCase()
-          .includes(q);
-      });
+    function isManuscriptDeletable(item) {
+      return !!item;
     }
 
-    function renderStimuliRows(rows) {
-      if (!stimulusBody) return;
-      if (!rows.length) {
-        stimulusBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Tidak ada data stimuli.</td></tr>';
+    function manuscriptRowKey(item) {
+      const qid = Number((item && item.question_id) || 0);
+      const ver = Number((item && item.version_no) || 0);
+      return String(qid) + ":" + String(ver);
+    }
+
+    const manuscriptSelectedKeys = new Set();
+
+    function updateManuscriptBulkState(items) {
+      if (!manuscriptBulkDeleteBtn || !manuscriptSelectAll) return;
+      const rows = Array.isArray(items) ? items : [];
+      const deletableRows = rows.filter(isManuscriptDeletable);
+      const selectableCount = deletableRows.length;
+      const selectedCount = deletableRows.filter(function (it) {
+        return manuscriptSelectedKeys.has(manuscriptRowKey(it));
+      }).length;
+      manuscriptBulkDeleteBtn.disabled = selectedCount === 0;
+      if (manuscriptDeleteAllBtn) {
+        manuscriptDeleteAllBtn.disabled = selectableCount === 0;
+      }
+      if (selectableCount === 0) {
+        manuscriptSelectAll.checked = false;
+        manuscriptSelectAll.indeterminate = false;
+        manuscriptSelectAll.disabled = true;
         return;
       }
-      stimulusBody.innerHTML = "";
-      rows.forEach(function (it) {
-        const subject = subjectsCache.find(function (x) {
-          return Number(x.id) === Number(it.subject_id);
-        });
-        const tr = document.createElement("tr");
-        tr.innerHTML = [
-          "<td>" + escapeHtml(String(it.id || "")) + "</td>",
-          "<td>" +
-            escapeHtml(subject ? String(subject.name || "") : "-") +
-            "</td>",
-          "<td>" + escapeHtml(String(it.title || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.stimulus_type || "")) + "</td>",
-          "<td>" + escapeHtml(fmtDate(it.created_at)) + "</td>",
-          '<td><span class="action-icons">' +
-            '<button class="icon-only-btn" type="button" data-action="preview-stimulus" data-id="' +
-            escapeHtml(String(it.id || "")) +
-            '" title="Preview" aria-label="Preview">' +
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
-            "</button>" +
-            '<button class="icon-only-btn" type="button" data-action="edit-stimulus" data-id="' +
-            escapeHtml(String(it.id || "")) +
-            '" title="Ubah" aria-label="Ubah">' +
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25z"/><path d="M14.05 6.2l3.75 3.75"/></svg>' +
-            "</button>" +
-            '<button class="icon-only-btn danger" type="button" data-action="delete-stimulus" data-id="' +
-            escapeHtml(String(it.id || "")) +
-            '" title="Hapus" aria-label="Hapus">' +
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>' +
-            "</button>" +
-            "</span></td>",
-        ].join("");
-        stimulusBody.appendChild(tr);
+      manuscriptSelectAll.disabled = false;
+      manuscriptSelectAll.checked =
+        selectedCount > 0 && selectedCount === selectableCount;
+      manuscriptSelectAll.indeterminate =
+        selectedCount > 0 && selectedCount < selectableCount;
+    }
+
+    function pruneManuscriptSelections(items) {
+      const rows = Array.isArray(items) ? items : [];
+      const valid = new Set(
+        rows.map(function (it) {
+          return manuscriptRowKey(it);
+        }),
+      );
+      Array.from(manuscriptSelectedKeys).forEach(function (key) {
+        if (!valid.has(key)) manuscriptSelectedKeys.delete(key);
       });
-    }
-
-    function updateStimulusPaginationInfo(totalRows, pageRows) {
-      if (!stimulusPageInfo) return;
-      if (totalRows <= 0 || pageRows <= 0) {
-        stimulusPageInfo.textContent = "Baris 0 - 0";
-        return;
-      }
-      const from = (stimulusListPage - 1) * stimulusListPageSize + 1;
-      const to = from + pageRows - 1;
-      stimulusPageInfo.textContent =
-        "Baris " +
-        String(from) +
-        " - " +
-        String(to) +
-        " dari " +
-        String(totalRows);
-    }
-
-    function renderStimuli(items) {
-      currentStimulusAllItems = Array.isArray(items) ? items : [];
-      const filtered = getFilteredStimulusItems();
-      const total = filtered.length;
-      const totalPages = Math.max(
-        1,
-        Math.ceil(total / Math.max(1, stimulusListPageSize)),
-      );
-      if (stimulusListPage > totalPages) stimulusListPage = totalPages;
-      if (stimulusListPage < 1) stimulusListPage = 1;
-      const start = (stimulusListPage - 1) * stimulusListPageSize;
-      currentStimulusItems = filtered.slice(
-        start,
-        start + stimulusListPageSize,
-      );
-      renderStimuliRows(currentStimulusItems);
-      updateStimulusPaginationInfo(total, currentStimulusItems.length);
-      if (stimulusPrevBtn) stimulusPrevBtn.disabled = stimulusListPage <= 1;
-      if (stimulusNextBtn)
-        stimulusNextBtn.disabled = stimulusListPage >= totalPages;
     }
 
     function renderManuscriptRows(items) {
       if (!manuscriptBody) return;
       if (!Array.isArray(items) || items.length === 0) {
         manuscriptBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Belum ada data versi naskah.</td></tr>';
+          '<tr><td colspan="8" class="muted">Belum ada data versi naskah.</td></tr>';
+        updateManuscriptBulkState([]);
         return;
       }
       manuscriptBody.innerHTML = "";
       items.forEach(function (it) {
+        const key = manuscriptRowKey(it);
+        const deletable = isManuscriptDeletable(it);
         const tr = document.createElement("tr");
         tr.innerHTML = [
-          "<td>" + escapeHtml(String(it.id || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_id || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.version_no || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.stimulus_id || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.status || "")) + "</td>",
+          '<td><input type="checkbox" data-manuscript-select="' +
+            escapeHtml(key) +
+            '"' +
+            (deletable ? "" : ' disabled aria-disabled="true"') +
+            (manuscriptSelectedKeys.has(key) ? " checked" : "") +
+            " /></td>",
+          "<td>" +
+            escapeHtml(resolveManuscriptQuestionCode(it) || "-") +
+            "</td>",
+          "<td>" +
+            escapeHtml(resolveManuscriptLearningGoal(it) || "-") +
+            "</td>",
+          "<td>" + escapeHtml(previewText(it.stimulus_html, 70)) + "</td>",
+          "<td>" + escapeHtml(previewText(it.stem_html, 90)) + "</td>",
+          "<td>" +
+            escapeHtml(shortQuestionType(resolveManuscriptQuestionType(it))) +
+            "</td>",
           "<td>" + escapeHtml(fmtDate(it.created_at)) + "</td>",
         ].join("");
 
@@ -7082,14 +7794,11 @@
             '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.95l-3.75-3.75L3 17.25z"/><path d="M14.05 6.2l3.75 3.75"/></svg>',
           "delete-manuscript":
             '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
-          "finalize-manuscript":
-            '<svg viewBox="0 0 24 24" focusable="false"><path d="M20 6L9 17l-5-5"/></svg>',
         };
         [
           { action: "preview-manuscript", title: "Lihat", danger: false },
           { action: "edit-manuscript", title: "Ubah", danger: false },
           { action: "delete-manuscript", title: "Hapus", danger: true },
-          { action: "finalize-manuscript", title: "Finalize", danger: false },
         ].forEach(function (cfg) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -7106,6 +7815,7 @@
         tr.appendChild(tdAction);
         manuscriptBody.appendChild(tr);
       });
+      updateManuscriptBulkState(items);
     }
 
     function updateManuscriptPaginationInfo(totalRows, pageRows) {
@@ -7128,6 +7838,9 @@
     function renderManuscripts(items) {
       if (!manuscriptBody) return;
       manuscriptAllItems = Array.isArray(items) ? items.slice() : [];
+      if (manuscriptsPanel && !manuscriptsPanel.hidden) {
+        activateGuruMenu("manuscripts");
+      }
       manuscriptVersionsCache = manuscriptAllItems.slice();
       const total = manuscriptAllItems.length;
       const totalPages = Math.max(
@@ -7141,6 +7854,7 @@
         start,
         start + manuscriptPageSize,
       );
+      pruneManuscriptSelections(manuscriptAllItems);
       renderManuscriptRows(pageRows);
       updateManuscriptPaginationInfo(total, pageRows.length);
       if (manuscriptPrevBtn) manuscriptPrevBtn.disabled = manuscriptPage <= 1;
@@ -7166,8 +7880,7 @@
       if (!questionIDs.length) {
         const qid = Number(
           fallbackQuestionID ||
-            (manuscriptListQuestionSelect &&
-              manuscriptListQuestionSelect.value) ||
+            (manuscriptQuestionSelect && manuscriptQuestionSelect.value) ||
             0,
         );
         if (qid <= 0) {
@@ -7259,19 +7972,10 @@
       }
 
       if (action === "preview-manuscript") {
-        previewManuscriptVersion(item);
+        await previewManuscriptVersion(item);
         return;
       }
       if (action === "edit-manuscript") {
-        const status = String(item.status || "")
-          .trim()
-          .toLowerCase();
-        if (!(status === "draft" || status === "revisi")) {
-          setManuscriptMsg(
-            "Versi final tidak bisa diedit. Buat draft baru untuk revisi.",
-          );
-          return;
-        }
         const done = beginBusy(btn, msg, "Memuat naskah ke editor...");
         try {
           await beginManuscriptEdit(item);
@@ -7290,22 +7994,15 @@
         return;
       }
       if (action === "delete-manuscript") {
-        const status = String(item.status || "")
-          .trim()
-          .toLowerCase();
-        if (!(status === "draft" || status === "revisi")) {
-          setManuscriptMsg("Versi final tidak bisa dihapus.");
-          return;
-        }
         const ok = window.confirm(
-          "Hapus draft naskah versi " +
+          "Hapus naskah versi " +
             String(versionNo) +
             " untuk Question " +
             String(questionID) +
             "?",
         );
         if (!ok) return;
-        const done = beginBusy(btn, msg, "Menghapus draft naskah...");
+        const done = beginBusy(btn, msg, "Menghapus naskah...");
         try {
           await api(
             "/api/v1/questions/" + questionID + "/versions/" + versionNo,
@@ -7324,61 +8021,24 @@
             resetManuscriptEditors();
           }
           await reloadManuscriptsByCurrentTableScope(questionID);
-          setManuscriptMsg("Draft naskah berhasil dihapus.");
+          setManuscriptMsg("Naskah berhasil dihapus.");
         } catch (err) {
-          setManuscriptMsg("Hapus draft naskah gagal: " + err.message);
+          setManuscriptMsg("Hapus naskah gagal: " + err.message);
         } finally {
           done();
         }
         return;
       }
-      if (action === "finalize-manuscript") {
-        const status = String(item.status || "")
-          .trim()
-          .toLowerCase();
-        if (!(status === "draft" || status === "revisi")) {
-          setManuscriptMsg("Versi ini sudah final.");
-          return;
-        }
-        const ok = window.confirm(
-          "Finalize naskah versi " +
-            String(versionNo) +
-            " untuk Question " +
-            String(questionID) +
-            "?",
-        );
-        if (!ok) return;
-        const done = beginBusy(btn, msg, "Memfinalisasi versi naskah...");
-        try {
-          await api(
-            "/api/v1/questions/" +
-              questionID +
-              "/versions/" +
-              versionNo +
-              "/finalize",
-            "POST",
-          );
-          if (manuscriptFinalizeQuestionSelect) {
-            manuscriptFinalizeQuestionSelect.value = String(questionID);
-          }
-          const versionInput =
-            manuscriptFinalizeForm &&
-            manuscriptFinalizeForm.elements.namedItem("version_no");
-          if (versionInput) versionInput.value = String(versionNo);
-          await reloadManuscriptsByCurrentTableScope(questionID);
-          setManuscriptMsg("Versi naskah berhasil difinalkan.");
-        } catch (err) {
-          setManuscriptMsg("Finalize naskah gagal: " + err.message);
-        } finally {
-          done();
-        }
-      }
+      return;
     }
 
     async function loadSubjects() {
       const items = await api("/api/v1/subjects", "GET");
       const subjectItems = Array.isArray(items) ? items : [];
       subjectsCache = subjectItems;
+      if (subjectsPanel && !subjectsPanel.hidden) {
+        activateGuruMenu("subjects");
+      }
       const levels = {};
       subjectItems.forEach(function (it) {
         const lvl = String(it.education_level || "").trim();
@@ -7424,22 +8084,18 @@
 
       fillSubjectSelect(blueprintSubjectSelect, false);
       fillSubjectSelect(blueprintFilterSubject, true);
-      fillSubjectSelect(stimulusSubjectSelect, false);
-      fillSubjectSelect(stimulusListSubject, false);
       fillSubjectSelect(manuscriptSubjectSelect, false);
       fillSubjectSelect(examSubjectSelect, false);
-      fillSubjectSelect(stimulusEditSubject, false);
-      fillLearningGoalSelect(
-        stimulusLearningGoalSelect,
-        Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
+      fillQuestionCodeSubjectSelect(
+        Number(
+          (questionCodeSubjectSelect && questionCodeSubjectSelect.value) ||
+            (manuscriptSubjectSelect && manuscriptSubjectSelect.value) ||
+            0,
+        ),
       );
       fillLearningGoalSelect(
         manuscriptLearningGoalSelect,
         getManuscriptTargetSubjectID(),
-      );
-      fillLearningGoalSelect(
-        stimulusEditLearningGoal,
-        Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
       );
       if (learningGoalMapelInput || learningGoalKelasInput) {
         const defaultSubject = findSubjectByID(
@@ -7473,93 +8129,9 @@
       blueprintsCache = Array.isArray(items) ? items : [];
       renderBlueprints(blueprintsCache);
       fillBlueprintSelect(manuscriptQuestionSelect);
-      fillBlueprintSelect(manuscriptListQuestionSelect);
-      fillBlueprintSelect(manuscriptFinalizeQuestionSelect);
       syncManuscriptSubjectState();
       applyManuscriptTypeUI(true);
       return blueprintsCache;
-    }
-
-    async function ensureStimuliBySubject(subjectID) {
-      const id = Number(subjectID || 0);
-      if (id <= 0) return [];
-      if (Array.isArray(stimuliBySubject[id])) return stimuliBySubject[id];
-      const items = await api(
-        "/api/v1/stimuli?subject_id=" + encodeURIComponent(String(id)),
-        "GET",
-      );
-      const rows = Array.isArray(items) ? items : [];
-      stimuliBySubject[id] = rows;
-      return rows;
-    }
-
-    async function loadStimuliTable(subjectID) {
-      const id = Number(subjectID || 0);
-      if (id <= 0) {
-        renderStimuli([]);
-        return [];
-      }
-      const rows = await ensureStimuliBySubject(id);
-      currentStimulusTableSubjectID = id;
-      renderStimuli(rows);
-      return rows;
-    }
-
-    async function reloadCurrentStimuli() {
-      const subjectID = Number(
-        (stimulusListSubject && stimulusListSubject.value) ||
-          currentStimulusTableSubjectID,
-      );
-      if (subjectID > 0) delete stimuliBySubject[subjectID];
-      await loadStimuliTable(subjectID);
-      await refreshStimuliSelectByQuestion();
-    }
-
-    function findStimulusByID(id) {
-      return currentStimulusAllItems.find(function (it) {
-        return Number(it.id) === Number(id);
-      });
-    }
-
-    function renderStimulusPreviewHTML(stimulus) {
-      if (!stimulus || typeof stimulus !== "object") {
-        return '<p class="muted">Data stimulus tidak ditemukan.</p>';
-      }
-      const content = stimulus.content || {};
-      if (String(stimulus.stimulus_type || "") === "multiteks") {
-        const tabs = Array.isArray(content.tabs) ? content.tabs : [];
-        if (!tabs.length) return '<p class="muted">Konten tab kosong.</p>';
-        return tabs
-          .map(function (tab, idx) {
-            const title = String((tab && tab.title) || "").trim();
-            const body = String((tab && tab.body) || "").trim();
-            return [
-              '<section class="panel mt">',
-              "<h4>" + escapeHtml(title || "Tab " + String(idx + 1)) + "</h4>",
-              '<div class="box mt">' +
-                (body || '<span class="muted">(konten kosong)</span>') +
-                "</div>",
-              "</section>",
-            ].join("");
-          })
-          .join("");
-      }
-      const body = String(content.body || "").trim();
-      return (
-        '<div class="box mt">' +
-        (body || '<span class="muted">(konten kosong)</span>') +
-        "</div>"
-      );
-    }
-
-    async function refreshStimuliSelectByQuestion() {
-      const subjectID = getManuscriptTargetSubjectID();
-      const items = await ensureStimuliBySubject(subjectID);
-      fillStimulusSelect(manuscriptStimulusSelect, items);
-      if (manuscriptStimulusSelect) {
-        manuscriptStimulusSelect.disabled = subjectID <= 0;
-      }
-      return items;
     }
 
     function buildManuscriptAutoQuestionTitle(stemHTML) {
@@ -7582,6 +8154,7 @@
       if (questionID > 0) return questionID;
       const subjectID = Number((payload && payload.subject_id) || 0);
       const learningGoalID = Number((payload && payload.learning_goal_id) || 0);
+      const questionCodeID = Number((payload && payload.question_code_id) || 0);
       const questionType = String((payload && payload.question_type) || "")
         .trim()
         .toLowerCase();
@@ -7599,6 +8172,7 @@
       const created = await api("/api/v1/questions", "POST", {
         subject_id: subjectID,
         learning_goal_id: learningGoalID,
+        question_code_id: questionCodeID > 0 ? questionCodeID : null,
         question_type: questionType,
         title: buildManuscriptAutoQuestionTitle(payload.stem_html),
         indicator: "",
@@ -7633,10 +8207,14 @@
 
     async function loadGuruExamManageTable() {
       const exams = await api("/api/v1/admin/exams/manage", "GET");
+      examsManageCache = Array.isArray(exams) ? exams : [];
+      if (examsPanel && !examsPanel.hidden) {
+        activateGuruMenu("exams");
+      }
       if (!examsBody) return;
       if (!Array.isArray(exams) || !exams.length) {
         examsBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Belum ada data ujian.</td></tr>';
+          '<tr><td colspan="8" class="muted">Belum ada data ujian.</td></tr>';
         return;
       }
       examsBody.innerHTML = "";
@@ -7651,6 +8229,7 @@
             "</small></td>",
           "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
           "<td>" + escapeHtml(String(it.duration_minutes || 0)) + " menit</td>",
+          "<td>" + escapeHtml(String(it.max_attempts || 1)) + "x</td>",
           "<td>" + escapeHtml(String(it.question_count || 0)) + "</td>",
           "<td>" + escapeHtml(String(it.assigned_count || 0)) + "</td>",
           '<td><span class="action-icons">' +
@@ -7674,7 +8253,7 @@
       if (!examQuestionsBody) return;
       if (!examID || examID <= 0) {
         examQuestionsBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Pilih exam lalu muat soal ujian.</td></tr>';
+          '<tr><td colspan="5" class="muted">Pilih exam lalu muat soal ujian.</td></tr>';
         return;
       }
       const items = await api(
@@ -7683,7 +8262,7 @@
       );
       if (!Array.isArray(items) || !items.length) {
         examQuestionsBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Belum ada soal di ujian ini.</td></tr>';
+          '<tr><td colspan="5" class="muted">Belum ada soal di ujian ini.</td></tr>';
         return;
       }
       examQuestionsBody.innerHTML = "";
@@ -7691,9 +8270,8 @@
         const tr = document.createElement("tr");
         tr.innerHTML = [
           "<td>" + escapeHtml(String(it.seq_no || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_id || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.question_type || "")) + "</td>",
-          "<td>" + escapeHtml(String(it.stem_preview || "")) + "</td>",
+          "<td>" + escapeHtml(shortQuestionType(it.question_type)) + "</td>",
+          "<td>" + escapeHtml(cleanStemPreview(it.stem_preview)) + "</td>",
           "<td>" + escapeHtml(String(it.weight || 1)) + "</td>",
           '<td><button class="icon-only-btn danger" type="button" data-exam-question-del="' +
             escapeHtml(String(it.question_id || "")) +
@@ -7708,6 +8286,10 @@
     async function loadGuruExamAssignments(examID) {
       if (!resultsAssignmentBody) return;
       if (!examID || examID <= 0) {
+        resultsAssignmentsCount = 0;
+        if (resultsPanel && !resultsPanel.hidden) {
+          activateGuruMenu("results");
+        }
         resultsAssignmentBody.innerHTML =
           '<tr><td colspan="6" class="muted">Isi Exam ID lalu muat peserta ujian.</td></tr>';
         return;
@@ -7716,6 +8298,10 @@
         "/api/v1/admin/exams/" + Number(examID) + "/assignments",
         "GET",
       );
+      resultsAssignmentsCount = Array.isArray(items) ? items.length : 0;
+      if (resultsPanel && !resultsPanel.hidden) {
+        activateGuruMenu("results");
+      }
       if (!Array.isArray(items) || !items.length) {
         resultsAssignmentBody.innerHTML =
           '<tr><td colspan="6" class="muted">Belum ada peserta terdaftar.</td></tr>';
@@ -7745,15 +8331,16 @@
         loadGuruExamSubjectOptions(),
         loadGuruExamManageTable(),
       ]);
-      fillLearningGoalSubjectSelect();
-      const defaultSubjectID = Number(
-        (stimulusListSubject && stimulusListSubject.value) || 0,
+      await loadQuestionCodes(
+        Number(
+          (questionCodeSubjectSelect && questionCodeSubjectSelect.value) || 0,
+        ),
       );
+      fillLearningGoalSubjectSelect();
       await Promise.all([
         loadBlueprints(
           Number((blueprintFilterSubject && blueprintFilterSubject.value) || 0),
         ),
-        loadStimuliTable(defaultSubjectID),
       ]);
       try {
         const initialVersions = await loadAllManuscriptVersionsFromBlueprints();
@@ -7761,30 +8348,11 @@
       } catch (_) {
         renderManuscripts([]);
       }
-      await refreshStimuliSelectByQuestion();
       fillSubjectEducationLevelSelect("");
     }
 
     try {
       await ensureQuillReady();
-      if (stimulusSingleEditor && !stimulusSingleQuill) {
-        stimulusSingleQuill = createQuillEditor(
-          stimulusSingleEditor,
-          "Tulis konten stimulus...",
-        );
-        if (stimulusSingleQuill) {
-          stimulusSingleQuill.on("text-change", function () {
-            renderLiveStimulusPreview();
-            clearStimulusInlineError();
-          });
-        }
-      }
-      if (stimulusPageSizeSelect) {
-        stimulusListPageSize = Math.max(
-          1,
-          Number(stimulusPageSizeSelect.value) || 10,
-        );
-      }
       if (learningGoalPageSizeSelect) {
         learningGoalPageSize = Math.max(
           1,
@@ -7803,10 +8371,23 @@
           .toLowerCase();
         questionOwnerScopeSelect.value = role === "admin" ? "all" : "mine";
       }
+      if (manuscriptStimulusEditor && !manuscriptStimulusQuill) {
+        manuscriptStimulusQuill = createQuillEditor(
+          manuscriptStimulusEditor,
+          "Tulis stimulus...",
+          { defaultFontSize: "12pt" },
+        );
+        if (manuscriptStimulusQuill) {
+          manuscriptStimulusQuill.on("text-change", function () {
+            syncManuscriptHiddenInputs();
+          });
+        }
+      }
       if (manuscriptStemEditor && !manuscriptStemQuill) {
         manuscriptStemQuill = createQuillEditor(
           manuscriptStemEditor,
           "Tulis naskah soal...",
+          { defaultFontSize: "12pt" },
         );
         if (manuscriptStemQuill) {
           manuscriptStemQuill.on("text-change", function () {
@@ -7818,6 +8399,7 @@
         manuscriptExplanationQuill = createQuillEditor(
           manuscriptExplanationEditor,
           "Tulis penjelasan...",
+          { defaultFontSize: "12pt" },
         );
         if (manuscriptExplanationQuill) {
           manuscriptExplanationQuill.on("text-change", function () {
@@ -7829,6 +8411,7 @@
         manuscriptHintQuill = createQuillEditor(
           manuscriptHintEditor,
           "Tulis hint...",
+          { defaultFontSize: "12pt" },
         );
         if (manuscriptHintQuill) {
           manuscriptHintQuill.on("text-change", function () {
@@ -7837,8 +8420,6 @@
         }
       }
       syncManuscriptHiddenInputs();
-      switchStimulusEditorByType();
-      resetStimulusEditors();
       const firstMenu =
         (menuButtons &&
           menuButtons.length > 0 &&
@@ -7846,7 +8427,6 @@
         "dashboard";
       activateGuruMenu(firstMenu);
       await loadGuruDashboard();
-      renderLiveStimulusPreview();
       setMsg("Dashboard guru siap.");
     } catch (err) {
       setMsg("Gagal memuat dashboard guru: " + err.message);
@@ -8114,7 +8694,7 @@
           if (learningGoalViewTitle) {
             text(
               learningGoalViewTitle,
-              "Detail Tujuan Pembelajaran: LG-" + String(id),
+              "Detail Tujuan Pembelajaran: TP-" + String(id),
             );
           }
           fillLearningGoalViewPopup(item);
@@ -8153,256 +8733,6 @@
       });
     }
 
-    if (stimulusTypeSelect) {
-      stimulusTypeSelect.addEventListener("change", function () {
-        switchStimulusEditorByType();
-        if (currentStimulusType() === "multiteks" && stimulusTabsContainer) {
-          if (!stimulusTabsContainer.querySelector(".stimulus-tab-item")) {
-            buildStimulusTabEditor();
-          }
-        }
-        renderLiveStimulusPreview();
-        clearStimulusInlineError();
-      });
-    }
-
-    if (stimulusAddTabBtn) {
-      stimulusAddTabBtn.addEventListener("click", function () {
-        buildStimulusTabEditor();
-        renderLiveStimulusPreview();
-        clearStimulusInlineError();
-      });
-    }
-
-    if (stimulusSubjectSelect) {
-      stimulusSubjectSelect.addEventListener("change", function () {
-        fillLearningGoalSelect(
-          stimulusLearningGoalSelect,
-          Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
-        );
-      });
-    }
-
-    if (stimulusEditSubject) {
-      stimulusEditSubject.addEventListener("change", function () {
-        fillLearningGoalSelect(
-          stimulusEditLearningGoal,
-          Number((stimulusEditSubject && stimulusEditSubject.value) || 0),
-        );
-      });
-    }
-
-    if (stimulusForm) {
-      stimulusForm.addEventListener("click", function (e) {
-        const btn = e.target && e.target.closest("button[data-editor-action]");
-        if (!btn) return;
-        const action = String(btn.getAttribute("data-editor-action") || "");
-        if (action !== "remove-tab") return;
-        e.preventDefault();
-        const row = btn.closest(".stimulus-tab-item");
-        if (!row || !stimulusTabsContainer) return;
-        row.remove();
-        if (!stimulusTabsContainer.querySelector(".stimulus-tab-item")) {
-          buildStimulusTabEditor();
-        }
-        renderLiveStimulusPreview();
-        clearStimulusInlineError();
-      });
-    }
-
-    if (stimulusForm) {
-      stimulusForm.addEventListener("input", function () {
-        renderLiveStimulusPreview();
-        clearStimulusInlineError();
-      });
-      stimulusForm.addEventListener("change", function () {
-        renderLiveStimulusPreview();
-        clearStimulusInlineError();
-      });
-    }
-
-    if (stimulusTabsContainer) {
-      stimulusTabsContainer.addEventListener("input", function () {
-        renderLiveStimulusPreview();
-      });
-    }
-
-    if (stimulusBody) {
-      stimulusBody.addEventListener("click", function (e) {
-        const btn =
-          e.target && e.target.closest("button[data-action][data-id]");
-        if (!btn) return;
-        const action = String(btn.getAttribute("data-action") || "");
-        const id = Number(btn.getAttribute("data-id") || 0);
-        if (!id) return;
-        const item = findStimulusByID(id);
-        if (!item) {
-          setMsg("Data stimulus tidak ditemukan.");
-          return;
-        }
-
-        if (action === "preview-stimulus") {
-          if (stimulusPreviewTitle) {
-            text(
-              stimulusPreviewTitle,
-              "Preview Stimulus: " + String(item.title || "Tanpa Judul"),
-            );
-          }
-          if (stimulusPreviewContent) {
-            stimulusPreviewContent.innerHTML = renderStimulusPreviewHTML(item);
-          }
-          if (
-            stimulusPreviewDialog &&
-            typeof stimulusPreviewDialog.showModal === "function"
-          ) {
-            stimulusPreviewDialog.showModal();
-          }
-          return;
-        }
-
-        if (action === "edit-stimulus") {
-          if (!stimulusEditForm) return;
-          const idField = stimulusEditForm.elements.namedItem("id");
-          const subjectField =
-            stimulusEditForm.elements.namedItem("subject_id");
-          const titleField = stimulusEditForm.elements.namedItem("title");
-          const typeField =
-            stimulusEditForm.elements.namedItem("stimulus_type");
-          const learningGoalField =
-            stimulusEditForm.elements.namedItem("learning_goal_id");
-          const contentField =
-            stimulusEditForm.elements.namedItem("content_raw");
-          fillSubjectSelect(stimulusEditSubject, false);
-          if (idField) idField.value = String(item.id || "");
-          if (subjectField) subjectField.value = String(item.subject_id || "");
-          fillLearningGoalSelect(
-            stimulusEditLearningGoal,
-            Number(item.subject_id || 0),
-          );
-          if (learningGoalField) {
-            learningGoalField.value = String(item.learning_goal_id || "");
-          }
-          if (titleField) titleField.value = String(item.title || "");
-          if (typeField)
-            typeField.value = String(item.stimulus_type || "single");
-          if (contentField) {
-            contentField.value = JSON.stringify(item.content || {}, null, 2);
-          }
-          if (
-            stimulusEditDialog &&
-            typeof stimulusEditDialog.showModal === "function"
-          ) {
-            stimulusEditDialog.showModal();
-          }
-          return;
-        }
-
-        if (action === "delete-stimulus") {
-          if (!stimulusDeleteForm) return;
-          const idField = stimulusDeleteForm.elements.namedItem("id");
-          if (idField) idField.value = String(item.id || "");
-          if (stimulusDeleteLabel) {
-            text(
-              stimulusDeleteLabel,
-              "Stimulus '" +
-                String(item.title || "Tanpa Judul") +
-                "' akan dihapus.",
-            );
-          }
-          if (
-            stimulusDeleteDialog &&
-            typeof stimulusDeleteDialog.showModal === "function"
-          ) {
-            stimulusDeleteDialog.showModal();
-          }
-        }
-      });
-    }
-
-    if (stimulusEditCancelBtn) {
-      stimulusEditCancelBtn.addEventListener("click", function () {
-        if (
-          stimulusEditDialog &&
-          typeof stimulusEditDialog.close === "function"
-        ) {
-          stimulusEditDialog.close();
-        }
-      });
-    }
-
-    if (stimulusDeleteCancelBtn) {
-      stimulusDeleteCancelBtn.addEventListener("click", function () {
-        if (
-          stimulusDeleteDialog &&
-          typeof stimulusDeleteDialog.close === "function"
-        ) {
-          stimulusDeleteDialog.close();
-        }
-      });
-    }
-
-    if (stimulusEditForm) {
-      stimulusEditForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(stimulusEditForm);
-        const id = Number(fd.get("id") || 0);
-        const done = beginBusy(
-          stimulusEditForm,
-          msg,
-          "Menyimpan perubahan stimulus...",
-        );
-        try {
-          await api("/api/v1/stimuli/" + id, "PUT", {
-            subject_id: Number(fd.get("subject_id") || 0),
-            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
-            title: String(fd.get("title") || "").trim(),
-            stimulus_type: String(fd.get("stimulus_type") || "").trim(),
-            content: JSON.parse(String(fd.get("content_raw") || "{}")),
-          });
-          if (
-            stimulusEditDialog &&
-            typeof stimulusEditDialog.close === "function"
-          ) {
-            stimulusEditDialog.close();
-          }
-          await reloadCurrentStimuli();
-          setMsg("Stimulus berhasil diperbarui.");
-        } catch (err) {
-          setMsg("Ubah stimulus gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusDeleteForm) {
-      stimulusDeleteForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(stimulusDeleteForm);
-        const id = Number(fd.get("id") || 0);
-        const done = beginBusy(
-          stimulusDeleteForm,
-          msg,
-          "Menghapus stimulus...",
-        );
-        try {
-          await api("/api/v1/stimuli/" + id, "DELETE");
-          if (
-            stimulusDeleteDialog &&
-            typeof stimulusDeleteDialog.close === "function"
-          ) {
-            stimulusDeleteDialog.close();
-          }
-          await reloadCurrentStimuli();
-          setMsg("Stimulus berhasil dihapus.");
-        } catch (err) {
-          setMsg("Hapus stimulus gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
     if (blueprintForm) {
       blueprintForm.addEventListener("submit", async function (e) {
         e.preventDefault();
@@ -8425,7 +8755,6 @@
               (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
             ),
           );
-          await refreshStimuliSelectByQuestion();
           blueprintForm.reset();
           fillSubjectSelect(blueprintSubjectSelect, false);
           setMsg("Kisi-kisi berhasil disimpan.");
@@ -8447,7 +8776,6 @@
               (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
             ),
           );
-          await refreshStimuliSelectByQuestion();
           setMsg("Data kisi-kisi berhasil dimuat.");
         } catch (err) {
           setMsg("Gagal memuat kisi-kisi: " + err.message);
@@ -8470,263 +8798,9 @@
               (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
             ),
           );
-          await refreshStimuliSelectByQuestion();
           setMsg("Kisi-kisi berhasil dimuat ulang.");
         } catch (err) {
           setMsg("Gagal muat ulang kisi-kisi: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusForm) {
-      stimulusForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(stimulusForm);
-        const content = collectStimulusContentPayload();
-        const errors = validateStimulusFormPayload(fd, content);
-        if (errors.length) {
-          showStimulusInlineError(errors);
-          setMsg("Validasi gagal. Periksa form stimulus.");
-          return;
-        }
-        const done = beginBusy(stimulusForm, msg, "Menyimpan stimulus...");
-        try {
-          const subjectID = Number(fd.get("subject_id") || 0);
-          const stimulusType = String(fd.get("stimulus_type") || "").trim();
-          const payload = {
-            subject_id: subjectID,
-            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
-            title: String(fd.get("title") || "").trim(),
-            stimulus_type: stimulusType,
-            content: content,
-          };
-          await api("/api/v1/stimuli", "POST", payload);
-          delete stimuliBySubject[subjectID];
-          await loadStimuliTable(subjectID);
-          await refreshStimuliSelectByQuestion();
-          stimulusForm.reset();
-          clearStimulusInlineError();
-          fillSubjectSelect(stimulusSubjectSelect, false);
-          fillLearningGoalSelect(
-            stimulusLearningGoalSelect,
-            Number((stimulusSubjectSelect && stimulusSubjectSelect.value) || 0),
-          );
-          switchStimulusEditorByType();
-          resetStimulusEditors();
-          renderLiveStimulusPreview();
-          setMsg("Stimulus berhasil disimpan.");
-        } catch (err) {
-          showStimulusInlineError(String(err.message || "Simpan gagal."));
-          setMsg("Simpan stimulus gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusListForm) {
-      stimulusListForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        stimulusListSearch = String(
-          (stimulusSearchInput && stimulusSearchInput.value) || "",
-        ).trim();
-        stimulusListPageSize = Math.max(
-          1,
-          Number(
-            (stimulusPageSizeSelect && stimulusPageSizeSelect.value) || 10,
-          ),
-        );
-        stimulusListPage = 1;
-        const done = beginBusy(stimulusListForm, msg, "Memuat stimuli...");
-        try {
-          const subjectID = Number(
-            (stimulusListSubject && stimulusListSubject.value) || 0,
-          );
-          await loadStimuliTable(subjectID);
-          setMsg("Data stimuli berhasil dimuat.");
-        } catch (err) {
-          setMsg("Gagal memuat stimuli: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusSearchInput) {
-      stimulusSearchInput.addEventListener("input", function () {
-        stimulusListSearch = String(stimulusSearchInput.value || "").trim();
-        stimulusListPage = 1;
-        renderStimuli(currentStimulusAllItems);
-      });
-    }
-
-    if (stimulusPageSizeSelect) {
-      stimulusPageSizeSelect.addEventListener("change", function () {
-        stimulusListPageSize = Math.max(
-          1,
-          Number(stimulusPageSizeSelect.value) || 10,
-        );
-        stimulusListPage = 1;
-        renderStimuli(currentStimulusAllItems);
-      });
-    }
-
-    if (stimulusPrevBtn) {
-      stimulusPrevBtn.addEventListener("click", function () {
-        stimulusListPage = Math.max(1, stimulusListPage - 1);
-        renderStimuli(currentStimulusAllItems);
-      });
-    }
-
-    if (stimulusNextBtn) {
-      stimulusNextBtn.addEventListener("click", function () {
-        stimulusListPage += 1;
-        renderStimuli(currentStimulusAllItems);
-      });
-    }
-
-    if (stimulusTemplateBtn) {
-      stimulusTemplateBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          stimulusTemplateBtn,
-          msg,
-          "Menyiapkan template stimuli...",
-        );
-        try {
-          await downloadStimulusTemplateCSV();
-          setMsg("Template import stimuli berhasil diunduh.");
-        } catch (err) {
-          setMsg("Gagal mengunduh template stimuli: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusImportForm) {
-      stimulusImportForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const file =
-          stimulusImportFileInput &&
-          stimulusImportFileInput.files &&
-          stimulusImportFileInput.files[0];
-        if (!file) {
-          setMsg("Pilih file CSV terlebih dahulu.");
-          return;
-        }
-        const fd = new FormData();
-        fd.append("file", file);
-        const done = beginBusy(
-          stimulusImportForm,
-          msg,
-          "Mengimpor stimuli dari CSV...",
-        );
-        try {
-          const out = await apiMultipart("/api/v1/stimuli/import", "POST", fd);
-          const report = (out && out.report) || {};
-          const total = Number(report.total_rows || 0);
-          const okRows = Number(report.success_rows || 0);
-          const failRows = Number(report.failed_rows || 0);
-          const errors = Array.isArray(report.errors) ? report.errors : [];
-          lastStimulusImportErrors = errors;
-          const details = formatStimulusImportErrors(report.errors);
-          if (failRows > 0) {
-            if (stimulusImportErrorOutput) {
-              stimulusImportErrorOutput.textContent =
-                formatStimulusImportErrorsMultiline(errors);
-            }
-            if (
-              stimulusImportErrorDialog &&
-              typeof stimulusImportErrorDialog.showModal === "function"
-            ) {
-              stimulusImportErrorDialog.showModal();
-            }
-            setMsg(
-              "Import stimuli selesai. Total: " +
-                String(total) +
-                ", berhasil: " +
-                String(okRows) +
-                ", gagal: " +
-                String(failRows) +
-                (details ? " | " + details : ""),
-            );
-          } else {
-            setMsg(
-              "Import stimuli berhasil. Total: " +
-                String(total) +
-                ", berhasil: " +
-                String(okRows),
-            );
-          }
-          stimulusImportForm.reset();
-          await loadStimuliTable(
-            Number(
-              (stimulusListSubject && stimulusListSubject.value) ||
-                currentStimulusTableSubjectID,
-            ),
-          );
-          await refreshStimuliSelectByQuestion();
-        } catch (err) {
-          lastStimulusImportErrors = [];
-          if (stimulusImportErrorOutput) {
-            stimulusImportErrorOutput.textContent =
-              "Import gagal:\n" + String(err.message || "Request failed");
-          }
-          if (
-            stimulusImportErrorDialog &&
-            typeof stimulusImportErrorDialog.showModal === "function"
-          ) {
-            stimulusImportErrorDialog.showModal();
-          }
-          setMsg("Import stimuli gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (stimulusImportDownloadBtn) {
-      stimulusImportDownloadBtn.addEventListener("click", function () {
-        if (!lastStimulusImportErrors.length) {
-          setMsg("Tidak ada data error untuk diunduh.");
-          return;
-        }
-        downloadStimulusImportErrorsCSV(lastStimulusImportErrors);
-        setMsg("Laporan gagal import stimuli berhasil diunduh.");
-      });
-    }
-
-    if (stimulusImportErrorCloseBtn) {
-      stimulusImportErrorCloseBtn.addEventListener("click", function () {
-        if (
-          stimulusImportErrorDialog &&
-          typeof stimulusImportErrorDialog.close === "function"
-        ) {
-          stimulusImportErrorDialog.close();
-        }
-      });
-    }
-
-    if (stimulusRefreshBtn) {
-      stimulusRefreshBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          stimulusRefreshBtn,
-          msg,
-          "Muat ulang stimuli...",
-        );
-        try {
-          const subjectID = Number(
-            (stimulusListSubject && stimulusListSubject.value) ||
-              currentStimulusTableSubjectID,
-          );
-          if (subjectID > 0) delete stimuliBySubject[subjectID];
-          await loadStimuliTable(subjectID);
-          await refreshStimuliSelectByQuestion();
-          setMsg("Stimuli berhasil dimuat ulang.");
-        } catch (err) {
-          setMsg("Gagal muat ulang stimuli: " + err.message);
         } finally {
           done();
         }
@@ -8738,11 +8812,6 @@
         clearManuscriptEditMode();
         syncManuscriptSubjectState();
         applyManuscriptTypeUI(true);
-        try {
-          await refreshStimuliSelectByQuestion();
-        } catch (err) {
-          setMsg("Gagal memuat stimulus naskah: " + err.message);
-        }
       });
     }
 
@@ -8758,11 +8827,13 @@
             (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
           ),
         );
-        try {
-          await refreshStimuliSelectByQuestion();
-        } catch (err) {
-          setMsg("Gagal memuat stimulus naskah: " + err.message);
-        }
+        fillQuestionCodeSelect(
+          manuscriptQuestionCodeSelect,
+          Number(
+            (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
+          ),
+          true,
+        );
       });
     }
 
@@ -8873,11 +8944,19 @@
 
     if (manuscriptImportBtn) {
       manuscriptImportBtn.addEventListener("click", function () {
-        fillSubjectSelect(manuscriptImportSubjectSelect, false);
+        fillSubjectSelect(manuscriptImportSubjectSelect, true);
+        if (
+          manuscriptImportSubjectSelect &&
+          manuscriptImportSubjectSelect.options &&
+          manuscriptImportSubjectSelect.options.length > 0
+        ) {
+          manuscriptImportSubjectSelect.options[0].textContent =
+            "(Opsional) Gunakan Mapel di file";
+        }
         if (manuscriptImportForm) manuscriptImportForm.reset();
         if (manuscriptImportOutput) {
           manuscriptImportOutput.textContent =
-            "Gunakan format TYPE / Stimulus / Q / Opsi / Kunci.";
+            "Format didukung: (1) TYPE/Stimulus/Q/Opsi/Kunci, atau (2) CSV header Mapel,Kode Soal,Nama Kode,stimulus,soal,opsi,kunci jawaban,Penjelasan.";
         }
         if (
           manuscriptImportDialog &&
@@ -8902,7 +8981,7 @@
     if (manuscriptImportForm) {
       manuscriptImportForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const subjectID = Number(
+        const fallbackSubjectID = Number(
           (manuscriptImportSubjectSelect &&
             manuscriptImportSubjectSelect.value) ||
             0,
@@ -8911,10 +8990,6 @@
           manuscriptImportFileInput &&
           manuscriptImportFileInput.files &&
           manuscriptImportFileInput.files[0];
-        if (subjectID <= 0) {
-          setMsg("Mapel import soal wajib dipilih.");
-          return;
-        }
         if (!file) {
           setMsg("Pilih file CSV/TXT untuk import soal.");
           return;
@@ -8926,80 +9001,66 @@
         );
         try {
           const rawText = await file.text();
-          const blocks = parseImportWordBlocks(rawText);
-          if (!blocks.length) {
+          const parsedImport = parseImportContent(rawText);
+          const importItems = Array.isArray(parsedImport.items)
+            ? parsedImport.items
+            : [];
+          if (!importItems.length) {
             throw new Error("File tidak berisi blok soal yang valid.");
           }
           const report = {
-            total_blocks: blocks.length,
+            total_blocks: importItems.length,
             success_blocks: 0,
             failed_blocks: 0,
             errors: [],
             imported_question_ids: [],
           };
-          const knownStimuli = await ensureStimuliBySubject(subjectID);
-          const defaultLearningGoalID = resolveDefaultLearningGoalID(subjectID);
-          if (defaultLearningGoalID <= 0) {
-            throw new Error(
-              "Tujuan Pembelajaran untuk mapel ini belum tersedia. Buat Tujuan Pembelajaran dulu.",
-            );
-          }
-          const stimulusByKey = {};
-          knownStimuli.forEach(function (it) {
-            if (String((it && it.stimulus_type) || "") !== "single") return;
-            const key = normalizeTextKey(readStimulusBodyText(it));
-            if (!key) return;
-            if (!stimulusByKey[key]) stimulusByKey[key] = it;
-          });
-          for (let i = 0; i < blocks.length; i += 1) {
+          const defaultLearningGoalBySubject = {};
+          await loadQuestionCodes(fallbackSubjectID || 0);
+          for (let i = 0; i < importItems.length; i += 1) {
             const blockNo = i + 1;
             try {
-              const parsed = parseImportQuestionBlock(blocks[i], blockNo);
-              let stimulusID = null;
-              let learningGoalID = defaultLearningGoalID;
-              if (parsed.stimulus_text) {
-                const stimulusKey = normalizeTextKey(parsed.stimulus_text);
-                const existingStimulus =
-                  stimulusKey && stimulusByKey[stimulusKey]
-                    ? stimulusByKey[stimulusKey]
-                    : null;
-                if (existingStimulus && Number(existingStimulus.id || 0) > 0) {
-                  stimulusID = Number(existingStimulus.id || 0);
-                  learningGoalID = Number(
-                    (existingStimulus && existingStimulus.learning_goal_id) ||
-                      0,
+              const parsed =
+                parsedImport.mode === "tabular"
+                  ? parseImportQuestionRow(importItems[i], blockNo)
+                  : parseImportQuestionBlock(importItems[i], blockNo);
+              const subjectID = resolveImportSubjectID(
+                parsed.mapel,
+                fallbackSubjectID,
+                blockNo,
+              );
+              if (!defaultLearningGoalBySubject[subjectID]) {
+                const resolved = resolveDefaultLearningGoalID(subjectID);
+                if (resolved <= 0) {
+                  const sub = findSubjectByID(subjectID);
+                  const label = sub
+                    ? String(sub.name || "")
+                    : "#" + String(subjectID);
+                  throw new Error(
+                    "Blok " +
+                      String(blockNo) +
+                      ': tujuan pembelajaran mapel "' +
+                      label +
+                      '" belum tersedia.',
                   );
-                  if (learningGoalID <= 0) {
-                    learningGoalID = defaultLearningGoalID;
-                  }
-                } else {
-                  const labelMap = {
-                    pg_tunggal: "MC",
-                    multi_jawaban: "MR",
-                    benar_salah_pernyataan: "TF",
-                  };
-                  const autoTitle = buildAutoStimulusTitle(
-                    blockNo,
-                    labelMap[parsed.question_type] || "",
-                  );
-                  const safeStimulus = escapeHtml(parsed.stimulus_text);
-                  const stim = await api("/api/v1/stimuli", "POST", {
-                    subject_id: subjectID,
-                    learning_goal_id: defaultLearningGoalID,
-                    title: autoTitle,
-                    stimulus_type: "single",
-                    content: { body: "<p>" + safeStimulus + "</p>" },
-                  });
-                  const sid = Number((stim && stim.id) || 0);
-                  if (sid > 0) {
-                    stimulusID = sid;
-                    if (stimulusKey) stimulusByKey[stimulusKey] = stim;
-                  }
                 }
+                defaultLearningGoalBySubject[subjectID] = resolved;
+              }
+              let learningGoalID = defaultLearningGoalBySubject[subjectID];
+              let stimulusHTML = "";
+              const questionCodeID = await ensureQuestionCodeForImport(
+                subjectID,
+                parsed.question_code_code,
+                parsed.question_code_name,
+              );
+              if (parsed.stimulus_text) {
+                const safeStimulus = escapeHtml(parsed.stimulus_text);
+                stimulusHTML = "<p>" + safeStimulus + "</p>";
               }
               const blueprint = await api("/api/v1/questions", "POST", {
                 subject_id: subjectID,
                 learning_goal_id: learningGoalID,
+                question_code_id: questionCodeID,
                 question_type: parsed.question_type,
                 title: parsed.title,
                 indicator: parsed.indicator,
@@ -9012,8 +9073,9 @@
                 throw new Error("gagal membuat soal.");
               }
               await api("/api/v1/questions/" + qid + "/versions", "POST", {
-                stimulus_id: stimulusID,
+                stimulus_html: stimulusHTML,
                 stem_html: parsed.stem_html,
+                explanation_html: parsed.explanation_html || "",
                 answer_key: parsed.answer_key,
                 options: parsed.options,
               });
@@ -9034,10 +9096,7 @@
               2,
             );
           }
-          await Promise.all([
-            loadBlueprints(subjectID),
-            loadStimuliTable(subjectID),
-          ]);
+          await Promise.all([loadBlueprints(fallbackSubjectID || 0)]);
           if (
             manuscriptImportDialog &&
             typeof manuscriptImportDialog.close === "function"
@@ -9087,30 +9146,6 @@
                 );
               });
             renderManuscripts(mergedVersions);
-            if (manuscriptListQuestionSelect) {
-              manuscriptListQuestionSelect.value = String(
-                importedQuestionIDs[0],
-              );
-            }
-            if (manuscriptFinalizeQuestionSelect) {
-              manuscriptFinalizeQuestionSelect.value = String(
-                importedQuestionIDs[0],
-              );
-            }
-            if (!mergedVersions.length && manuscriptListQuestionSelect) {
-              const fallbackQID = Number(
-                manuscriptListQuestionSelect.value || 0,
-              );
-              if (fallbackQID > 0) {
-                const fallbackVersions = await api(
-                  "/api/v1/questions/" + fallbackQID + "/versions",
-                  "GET",
-                );
-                renderManuscripts(
-                  Array.isArray(fallbackVersions) ? fallbackVersions : [],
-                );
-              }
-            }
           }
           const maxErrorPreview = 8;
           const errorPreview = report.errors.slice(0, maxErrorPreview);
@@ -9206,19 +9241,21 @@
         const done = beginBusy(
           manuscriptForm,
           msg,
-          isEditMode
-            ? "Menyimpan perubahan naskah..."
-            : "Menyimpan draft naskah...",
+          isEditMode ? "Menyimpan perubahan naskah..." : "Menyimpan naskah...",
         );
         try {
           let questionID = isEditMode
             ? manuscriptEditingQuestionID
             : Number(fd.get("question_id") || 0);
+          const selectedQuestionCodeID = Number(
+            fd.get("question_code_id") || 0,
+          );
           if (!isEditMode) {
             questionID = await ensureQuestionForManuscriptSubmission({
               question_id: questionID,
               subject_id: Number(fd.get("subject_id") || 0),
               learning_goal_id: Number(fd.get("learning_goal_id") || 0),
+              question_code_id: selectedQuestionCodeID,
               question_type: selectedType,
               stem_html: stemHTML,
             });
@@ -9226,23 +9263,23 @@
             if (manuscriptQuestionSelect) {
               manuscriptQuestionSelect.value = String(questionID);
             }
-            if (manuscriptListQuestionSelect) {
-              manuscriptListQuestionSelect.value = String(questionID);
-            }
-            if (manuscriptFinalizeQuestionSelect) {
-              manuscriptFinalizeQuestionSelect.value = String(questionID);
-            }
             syncManuscriptSubjectState();
           }
-          const stimulusID = Number(fd.get("stimulus_id") || 0);
+          const stimulusHTML = String(fd.get("stimulus_html") || "").trim();
           const payload = {
-            stimulus_id: stimulusID,
+            stimulus_html: stimulusHTML,
             stem_html: stemHTML.trim(),
             answer_key: answerKeyObj,
             options: optionsPayload,
             explanation_html: String(fd.get("explanation_html") || "").trim(),
             hint_html: String(fd.get("hint_html") || "").trim(),
           };
+          if (questionID > 0) {
+            await api("/api/v1/questions/" + questionID + "/code", "PUT", {
+              question_code_id:
+                selectedQuestionCodeID > 0 ? selectedQuestionCodeID : null,
+            });
+          }
           const endpoint = isEditMode
             ? "/api/v1/questions/" +
               questionID +
@@ -9256,20 +9293,10 @@
             "GET",
           );
           renderManuscripts(versions);
-          if (manuscriptListQuestionSelect) {
-            manuscriptListQuestionSelect.value = String(questionID);
-          }
-          if (manuscriptFinalizeQuestionSelect) {
-            manuscriptFinalizeQuestionSelect.value = String(questionID);
-          }
           resetManuscriptEditors();
           manuscriptForm.reset();
           syncManuscriptSubjectState();
           fillBlueprintSelect(manuscriptQuestionSelect);
-          fillStimulusSelect(manuscriptStimulusSelect, []);
-          if (manuscriptStimulusSelect) {
-            manuscriptStimulusSelect.disabled = true;
-          }
           if (manuscriptStatementsWrap) {
             manuscriptStatementsWrap.innerHTML = "";
           }
@@ -9282,80 +9309,15 @@
           clearManuscriptEditMode();
           setMsg(
             isEditMode
-              ? "Draft naskah soal berhasil diperbarui."
-              : "Draft naskah soal berhasil disimpan.",
+              ? "Naskah soal berhasil diperbarui."
+              : "Naskah soal berhasil disimpan.",
           );
         } catch (err) {
           setMsg(
             (isEditMode
               ? "Simpan perubahan naskah gagal: "
-              : "Simpan draft naskah gagal: ") + err.message,
+              : "Simpan naskah gagal: ") + err.message,
           );
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (manuscriptListForm) {
-      manuscriptListForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const done = beginBusy(
-          manuscriptListForm,
-          msg,
-          "Memuat versi naskah...",
-        );
-        try {
-          const questionID = Number(
-            (manuscriptListQuestionSelect &&
-              manuscriptListQuestionSelect.value) ||
-              0,
-          );
-          const versions =
-            questionID > 0
-              ? await api(
-                  "/api/v1/questions/" + questionID + "/versions",
-                  "GET",
-                )
-              : await loadAllManuscriptVersionsFromBlueprints();
-          renderManuscripts(versions);
-          setMsg("Versi naskah berhasil dimuat.");
-        } catch (err) {
-          setMsg("Gagal memuat versi naskah: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (manuscriptFinalizeForm) {
-      manuscriptFinalizeForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(manuscriptFinalizeForm);
-        const done = beginBusy(
-          manuscriptFinalizeForm,
-          msg,
-          "Memfinalisasi versi naskah...",
-        );
-        try {
-          const questionID = Number(fd.get("question_id") || 0);
-          const versionNo = Number(fd.get("version_no") || 0);
-          await api(
-            "/api/v1/questions/" +
-              questionID +
-              "/versions/" +
-              versionNo +
-              "/finalize",
-            "POST",
-          );
-          const versions = await api(
-            "/api/v1/questions/" + questionID + "/versions",
-            "GET",
-          );
-          renderManuscripts(versions);
-          setMsg("Versi naskah berhasil difinalkan.");
-        } catch (err) {
-          setMsg("Finalize naskah gagal: " + err.message);
         } finally {
           done();
         }
@@ -9371,9 +9333,7 @@
         );
         try {
           const questionID = Number(
-            (manuscriptListQuestionSelect &&
-              manuscriptListQuestionSelect.value) ||
-              0,
+            (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
           );
           const versions =
             questionID > 0
@@ -9469,8 +9429,7 @@
         if (
           action !== "preview-manuscript" &&
           action !== "edit-manuscript" &&
-          action !== "delete-manuscript" &&
-          action !== "finalize-manuscript"
+          action !== "delete-manuscript"
         ) {
           return;
         }
@@ -9485,6 +9444,297 @@
         e.preventDefault();
         await runManuscriptRowAction(btn, action, questionID, versionNo);
       });
+
+      manuscriptBody.addEventListener("change", function (e) {
+        const input = e.target;
+        if (!input || input.type !== "checkbox") return;
+        const key = String(input.getAttribute("data-manuscript-select") || "");
+        if (!key) return;
+        if (input.checked) {
+          manuscriptSelectedKeys.add(key);
+        } else {
+          manuscriptSelectedKeys.delete(key);
+        }
+        updateManuscriptBulkState(
+          Array.isArray(manuscriptAllItems) ? manuscriptAllItems : [],
+        );
+      });
+    }
+
+    if (manuscriptSelectAll) {
+      manuscriptSelectAll.addEventListener("change", function () {
+        const checked = !!manuscriptSelectAll.checked;
+        const rows = Array.isArray(manuscriptAllItems)
+          ? manuscriptAllItems
+          : [];
+        rows.forEach(function (it) {
+          if (!isManuscriptDeletable(it)) return;
+          const key = manuscriptRowKey(it);
+          if (checked) {
+            manuscriptSelectedKeys.add(key);
+          } else {
+            manuscriptSelectedKeys.delete(key);
+          }
+        });
+        renderManuscriptRows(
+          manuscriptAllItems.slice(
+            (manuscriptPage - 1) * manuscriptPageSize,
+            (manuscriptPage - 1) * manuscriptPageSize + manuscriptPageSize,
+          ),
+        );
+      });
+    }
+
+    if (manuscriptBulkDeleteBtn) {
+      manuscriptBulkDeleteBtn.addEventListener("click", async function () {
+        const rows = Array.isArray(manuscriptAllItems)
+          ? manuscriptAllItems
+          : [];
+        const targets = rows.filter(function (it) {
+          return (
+            isManuscriptDeletable(it) &&
+            manuscriptSelectedKeys.has(manuscriptRowKey(it))
+          );
+        });
+        if (!targets.length) return;
+        const ok = window.confirm(
+          "Hapus " + String(targets.length) + " naskah terpilih?",
+        );
+        if (!ok) return;
+        const done = beginBusy(
+          manuscriptBulkDeleteBtn,
+          msg,
+          "Menghapus naskah terpilih...",
+        );
+        try {
+          for (let i = 0; i < targets.length; i += 1) {
+            const it = targets[i];
+            await api(
+              "/api/v1/questions/" +
+                String(it.question_id) +
+                "/versions/" +
+                String(it.version_no),
+              "DELETE",
+            );
+            manuscriptSelectedKeys.delete(manuscriptRowKey(it));
+          }
+          await reloadManuscriptsByCurrentTableScope(
+            Number(
+              (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
+            ),
+          );
+          setManuscriptMsg("Naskah terpilih berhasil dihapus.");
+        } catch (err) {
+          setManuscriptMsg("Hapus naskah terpilih gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (manuscriptDeleteAllBtn) {
+      manuscriptDeleteAllBtn.addEventListener("click", async function () {
+        const rows = Array.isArray(manuscriptAllItems)
+          ? manuscriptAllItems
+          : [];
+        const targets = rows.filter(isManuscriptDeletable);
+        if (!targets.length) return;
+        const ok = window.confirm(
+          "Hapus semua naskah pada scope ini? Total: " + String(targets.length),
+        );
+        if (!ok) return;
+        const done = beginBusy(
+          manuscriptDeleteAllBtn,
+          msg,
+          "Menghapus semua naskah...",
+        );
+        try {
+          for (let i = 0; i < targets.length; i += 1) {
+            const it = targets[i];
+            await api(
+              "/api/v1/questions/" +
+                String(it.question_id) +
+                "/versions/" +
+                String(it.version_no),
+              "DELETE",
+            );
+          }
+          manuscriptSelectedKeys.clear();
+          await reloadManuscriptsByCurrentTableScope(
+            Number(
+              (manuscriptQuestionSelect && manuscriptQuestionSelect.value) || 0,
+            ),
+          );
+          setManuscriptMsg("Semua naskah pada scope ini dihapus.");
+        } catch (err) {
+          setManuscriptMsg("Hapus semua naskah gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (questionCodeSubjectSelect) {
+      questionCodeSubjectSelect.addEventListener("change", async function () {
+        const subjectID = Number(questionCodeSubjectSelect.value || 0);
+        const done = beginBusy(
+          questionCodeSubjectSelect,
+          msg,
+          "Memuat kode soal...",
+        );
+        try {
+          await loadQuestionCodes(subjectID);
+          setMsg("Kode soal berhasil dimuat.");
+        } catch (err) {
+          setMsg("Gagal memuat kode soal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (questionCodeRefreshBtn) {
+      questionCodeRefreshBtn.addEventListener("click", async function () {
+        const subjectID = Number(
+          (questionCodeSubjectSelect && questionCodeSubjectSelect.value) || 0,
+        );
+        const done = beginBusy(
+          questionCodeRefreshBtn,
+          msg,
+          "Memuat kode soal...",
+        );
+        try {
+          await loadQuestionCodes(subjectID);
+          setMsg("Kode soal berhasil dimuat.");
+        } catch (err) {
+          setMsg("Gagal memuat kode soal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (questionCodeCancelBtn) {
+      questionCodeCancelBtn.addEventListener("click", function () {
+        if (questionCodeForm) questionCodeForm.reset();
+        resetQuestionCodeFormMode();
+        setMsg("Mode edit kode soal dibatalkan.");
+      });
+    }
+
+    if (questionCodeForm) {
+      questionCodeForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const fd = new FormData(questionCodeForm);
+        const id = Number(fd.get("id") || questionCodeEditingID || 0);
+        const subjectID = Number(fd.get("subject_id") || 0);
+        const payload = {
+          subject_id: subjectID,
+          code: String(fd.get("code") || "").trim(),
+          name: String(fd.get("name") || "").trim(),
+        };
+        const done = beginBusy(
+          questionCodeForm,
+          msg,
+          id > 0
+            ? "Menyimpan perubahan kode soal..."
+            : "Menyimpan kode soal...",
+        );
+        try {
+          if (id > 0) {
+            await api("/api/v1/question-codes/" + id, "PUT", payload);
+          } else {
+            await api("/api/v1/question-codes", "POST", payload);
+          }
+          await loadQuestionCodes(subjectID);
+          await loadBlueprints(
+            Number(
+              (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
+            ),
+          );
+          questionCodeForm.reset();
+          resetQuestionCodeFormMode();
+          setMsg(
+            id > 0
+              ? "Kode soal berhasil diperbarui."
+              : "Kode soal berhasil disimpan.",
+          );
+        } catch (err) {
+          setMsg(
+            (id > 0
+              ? "Simpan perubahan kode soal gagal: "
+              : "Simpan kode soal gagal: ") + err.message,
+          );
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (questionCodeBody) {
+      questionCodeBody.addEventListener("click", async function (e) {
+        const btn =
+          e.target &&
+          e.target.closest("button[data-question-code-action][data-id]");
+        if (!btn) return;
+        const id = Number(btn.getAttribute("data-id") || 0);
+        if (id <= 0) return;
+        const action = String(
+          btn.getAttribute("data-question-code-action") || "",
+        );
+        const item = findQuestionCodeByID(id);
+        if (!item) {
+          setMsg("Data kode soal tidak ditemukan.");
+          return;
+        }
+        if (action === "edit") {
+          if (!questionCodeForm) return;
+          const idField = questionCodeForm.elements.namedItem("id");
+          const subjectField =
+            questionCodeForm.elements.namedItem("subject_id");
+          const codeField = questionCodeForm.elements.namedItem("code");
+          const nameField = questionCodeForm.elements.namedItem("name");
+          if (idField) idField.value = String(id);
+          if (subjectField) subjectField.value = String(item.subject_id || "");
+          if (codeField) codeField.value = String(item.code || "");
+          if (nameField) nameField.value = String(item.name || "");
+          questionCodeEditingID = id;
+          const submitBtn = document.getElementById(
+            "guru-question-code-submit-btn",
+          );
+          if (submitBtn) submitBtn.textContent = "Simpan Perubahan Kode";
+          if (questionCodeCancelBtn) questionCodeCancelBtn.hidden = false;
+          return;
+        }
+        if (action === "delete") {
+          if (
+            !window.confirm("Hapus kode soal " + String(item.code || "") + "?")
+          ) {
+            return;
+          }
+          const done = beginBusy(btn, msg, "Menghapus kode soal...");
+          try {
+            await api("/api/v1/question-codes/" + id, "DELETE", {});
+            await loadQuestionCodes(
+              Number(
+                (questionCodeSubjectSelect &&
+                  questionCodeSubjectSelect.value) ||
+                  0,
+              ),
+            );
+            await loadBlueprints(
+              Number(
+                (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
+              ),
+            );
+            setMsg("Kode soal berhasil dihapus.");
+          } catch (err) {
+            setMsg("Gagal menghapus kode soal: " + err.message);
+          } finally {
+            done();
+          }
+        }
+      });
     }
 
     if (examsRefreshBtn) {
@@ -9495,6 +9745,11 @@
             loadGuruExamManageTable(),
             loadGuruExamSubjectOptions(),
           ]);
+          const selectedExamID = Number(
+            (questionExamIDInput && questionExamIDInput.value) || 0,
+          );
+          fillExamQuestionCodeSelectByExam(selectedExamID);
+          await loadExamQuestionCodeRules(selectedExamID);
           setMsg("Data ujian berhasil dimuat.");
         } catch (err) {
           setMsg("Gagal memuat data ujian: " + err.message);
@@ -9518,6 +9773,7 @@
           title: String(fd.get("title") || "").trim(),
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
+          max_attempts: Number(fd.get("max_attempts") || 1),
           review_policy: String(fd.get("review_policy") || "after_submit"),
           is_active: true,
         };
@@ -9555,10 +9811,15 @@
         if (examID <= 0) return;
         if (action === "use") {
           if (questionExamIDInput) questionExamIDInput.value = String(examID);
+          if (examQuestionCodeRuleExamIDInput) {
+            examQuestionCodeRuleExamIDInput.value = String(examID);
+          }
           if (resultsExamIDInput) resultsExamIDInput.value = String(examID);
+          fillExamQuestionCodeSelectByExam(examID);
           try {
             await Promise.all([
               loadGuruExamQuestions(examID),
+              loadExamQuestionCodeRules(examID),
               loadGuruExamAssignments(examID),
             ]);
             setMsg("Exam ID " + examID + " dipilih.");
@@ -9621,6 +9882,118 @@
       });
     }
 
+    if (questionExamIDInput) {
+      questionExamIDInput.addEventListener("change", function () {
+        const examID = Number(questionExamIDInput.value || 0);
+        if (examQuestionCodeRuleExamIDInput) {
+          examQuestionCodeRuleExamIDInput.value =
+            examID > 0 ? String(examID) : "";
+        }
+        fillExamQuestionCodeSelectByExam(examID);
+      });
+    }
+
+    if (examQuestionCodeRuleExamIDInput) {
+      examQuestionCodeRuleExamIDInput.addEventListener(
+        "change",
+        async function () {
+          const examID = Number(examQuestionCodeRuleExamIDInput.value || 0);
+          fillExamQuestionCodeSelectByExam(examID);
+          try {
+            await loadExamQuestionCodeRules(examID);
+          } catch (_) {
+            // no-op
+          }
+        },
+      );
+    }
+
+    if (examQuestionCodeRuleForm) {
+      examQuestionCodeRuleForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const fd = new FormData(examQuestionCodeRuleForm);
+        const examID = Number(fd.get("exam_id") || 0);
+        if (examID <= 0) {
+          setMsg("Isi Exam ID untuk menyimpan rule kode soal.");
+          return;
+        }
+        const strategy = String(fd.get("strategy") || "")
+          .trim()
+          .toLowerCase();
+        const pickCountRaw = Number(fd.get("pick_count") || 0);
+        const payload = {
+          question_code_id: Number(fd.get("question_code_id") || 0),
+          strategy: strategy || "all",
+          weight: Number(fd.get("weight") || 1),
+        };
+        if (payload.strategy === "random" && pickCountRaw > 0) {
+          payload.pick_count = pickCountRaw;
+        }
+        const done = beginBusy(
+          examQuestionCodeRuleForm,
+          msg,
+          "Menyimpan rule kode soal...",
+        );
+        try {
+          await api(
+            "/api/v1/admin/exams/" + examID + "/question-codes",
+            "POST",
+            payload,
+          );
+          await Promise.all([
+            loadExamQuestionCodeRules(examID),
+            loadGuruExamManageTable(),
+          ]);
+          setMsg("Rule kode soal berhasil disimpan.");
+        } catch (err) {
+          setMsg("Gagal menyimpan rule kode soal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (examQuestionCodeSyncBtn) {
+      examQuestionCodeSyncBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (examQuestionCodeRuleExamIDInput &&
+            examQuestionCodeRuleExamIDInput.value) ||
+            (questionExamIDInput && questionExamIDInput.value) ||
+            0,
+        );
+        if (examID <= 0) {
+          setMsg("Pilih Exam ID sebelum sinkronisasi dari kode soal.");
+          return;
+        }
+        const done = beginBusy(
+          examQuestionCodeSyncBtn,
+          msg,
+          "Sinkronisasi soal ujian dari kode soal...",
+        );
+        try {
+          const out = await api(
+            "/api/v1/admin/exams/" + examID + "/question-codes/sync",
+            "POST",
+            {},
+          );
+          await Promise.all([
+            loadGuruExamQuestions(examID),
+            loadExamQuestionCodeRules(examID),
+            loadGuruExamManageTable(),
+          ]);
+          const count = Number((out && out.total_questions) || 0);
+          setMsg(
+            "Sinkronisasi soal dari kode berhasil. Total soal ujian: " +
+              String(count),
+          );
+        } catch (err) {
+          setMsg("Sinkronisasi soal dari kode gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
     if (examQuestionsLoadBtn) {
       examQuestionsLoadBtn.addEventListener("click", async function () {
         const examID = Number(
@@ -9669,6 +10042,45 @@
           setMsg("Soal berhasil dihapus dari ujian.");
         } catch (err) {
           setMsg("Gagal menghapus soal dari ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (examQuestionCodeRuleBody) {
+      examQuestionCodeRuleBody.addEventListener("click", async function (e) {
+        const btn =
+          e.target && e.target.closest("button[data-exam-code-rule-del]");
+        if (!btn) return;
+        const examID = Number(
+          (examQuestionCodeRuleExamIDInput &&
+            examQuestionCodeRuleExamIDInput.value) ||
+            (questionExamIDInput && questionExamIDInput.value) ||
+            0,
+        );
+        const questionCodeID = Number(
+          btn.getAttribute("data-exam-code-rule-del") || 0,
+        );
+        if (examID <= 0 || questionCodeID <= 0) return;
+        if (!window.confirm("Hapus rule kode soal ini dari ujian?")) return;
+        const done = beginBusy(btn, msg, "Menghapus rule kode soal...");
+        try {
+          await api(
+            "/api/v1/admin/exams/" +
+              examID +
+              "/question-codes/" +
+              questionCodeID,
+            "DELETE",
+            {},
+          );
+          await Promise.all([
+            loadExamQuestionCodeRules(examID),
+            loadGuruExamManageTable(),
+          ]);
+          setMsg("Rule kode soal berhasil dihapus.");
+        } catch (err) {
+          setMsg("Gagal menghapus rule kode soal: " + err.message);
         } finally {
           done();
         }
@@ -9915,7 +10327,6 @@
     }
 
     const message = document.getElementById("authoring-message");
-    const stimulusOut = document.getElementById("stimulus-output");
     const versionOut = document.getElementById("version-output");
     const parallelOut = document.getElementById("parallel-output");
     const reviewOut = document.getElementById("review-output");
@@ -9928,56 +10339,6 @@
       text(message, msg);
     }
 
-    const stimulusForm = document.getElementById("stimulus-form");
-    if (stimulusForm) {
-      stimulusForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(stimulusForm);
-        const done = beginBusy(stimulusForm, message, "Menyimpan stimulus...");
-        try {
-          const out = await api("/api/v1/stimuli", "POST", {
-            subject_id: Number(fd.get("subject_id") || 0),
-            learning_goal_id: Number(fd.get("learning_goal_id") || 0),
-            title: String(fd.get("title") || ""),
-            stimulus_type: String(fd.get("stimulus_type") || ""),
-            content: JSON.parse(String(fd.get("content_raw") || "{}")),
-          });
-          pretty(stimulusOut, out);
-          setMsg("Stimulus berhasil disimpan.");
-        } catch (err) {
-          setMsg("Gagal simpan stimulus: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    const stimulusListForm = document.getElementById("stimulus-list-form");
-    if (stimulusListForm) {
-      stimulusListForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(stimulusListForm);
-        const done = beginBusy(
-          stimulusListForm,
-          message,
-          "Memuat daftar stimulus...",
-        );
-        try {
-          const out = await api(
-            "/api/v1/stimuli?subject_id=" +
-              encodeURIComponent(String(fd.get("subject_id") || "")),
-            "GET",
-          );
-          pretty(stimulusOut, out);
-          setMsg("List stimulus berhasil dimuat.");
-        } catch (err) {
-          setMsg("Gagal list stimulus: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
     const versionCreateForm = document.getElementById("version-create-form");
     if (versionCreateForm) {
       versionCreateForm.addEventListener("submit", async function (e) {
@@ -9986,7 +10347,7 @@
         const done = beginBusy(
           versionCreateForm,
           message,
-          "Menyimpan draft versi soal...",
+          "Menyimpan versi soal...",
         );
         try {
           const qid = Number(fd.get("question_id") || 0);
@@ -9996,8 +10357,8 @@
             hint_html: String(fd.get("hint_html") || ""),
             answer_key: JSON.parse(String(fd.get("answer_key_raw") || "{}")),
           };
-          const stimulusID = Number(fd.get("stimulus_id") || 0);
-          if (stimulusID > 0) payload.stimulus_id = stimulusID;
+          const stimulusHTML = String(fd.get("stimulus_html") || "").trim();
+          if (stimulusHTML) payload.stimulus_html = stimulusHTML;
           const durationRaw = String(fd.get("duration_seconds") || "").trim();
           if (durationRaw !== "")
             payload.duration_seconds = Number(durationRaw);
@@ -10012,7 +10373,7 @@
             payload,
           );
           pretty(versionOut, out);
-          setMsg("Draft versi soal berhasil disimpan.");
+          setMsg("Versi soal berhasil disimpan.");
         } catch (err) {
           setMsg("Gagal simpan versi: " + err.message);
         } finally {

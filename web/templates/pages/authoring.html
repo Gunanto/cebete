@@ -2,67 +2,16 @@
 <section class="card">
     <section class="page-hero">
         <h2>Authoring Soal (Milestone B.1)</h2>
-        <p>Kelola stimulus, versi soal, dan paralel exam.</p>
+        <p>Kelola versi soal dan paralel exam.</p>
     </section>
 
     <div class="author-grid">
         <section class="panel">
-            <h3>Stimulus</h3>
-            <form id="stimulus-form" class="form-grid">
-                <label
-                    >Subject ID
-                    <input type="number" name="subject_id" min="1" required
-                /></label>
-                <label
-                    >Tujuan Pembelajaran ID
-                    <input
-                        type="number"
-                        name="learning_goal_id"
-                        min="1"
-                        required
-                /></label>
-                <label>Title <input type="text" name="title" required /></label>
-                <label
-                    >Type
-                    <select name="stimulus_type">
-                        <option value="single">single</option>
-                        <option value="multiteks">multiteks</option>
-                    </select>
-                </label>
-                <label
-                    >Body/Tabs JSON
-                    <textarea
-                        name="content_raw"
-                        rows="5"
-                        placeholder='{"body":"Isi stimulus"}'
-                        required
-                    ></textarea>
-                </label>
-                <button class="btn" type="submit">Simpan Stimulus</button>
-            </form>
-
-            <form id="stimulus-list-form" class="form-grid mt">
-                <label
-                    >List Stimulus by Subject ID
-                    <input type="number" name="subject_id" min="1" required
-                /></label>
-                <button class="btn btn-secondary" type="submit">
-                    Muat Stimuli
-                </button>
-            </form>
-            <pre id="stimulus-output" class="box code-box"></pre>
-        </section>
-
-        <section class="panel">
-            <h3>Versi Soal (Draft/Final)</h3>
+            <h3>Versi Soal</h3>
             <form id="version-create-form" class="form-grid">
                 <label
                     >Question ID
                     <input type="number" name="question_id" min="1" required
-                /></label>
-                <label
-                    >Stimulus ID (opsional)
-                    <input type="number" name="stimulus_id" min="1"
                 /></label>
                 <label
                     >Stem HTML <textarea name="stem_html" rows="4"></textarea>
@@ -94,7 +43,7 @@
                 <label
                     >Change Note <input type="text" name="change_note"
                 /></label>
-                <button class="btn" type="submit">Simpan Draft Versi</button>
+                <button class="btn" type="submit">Simpan Versi</button>
             </form>
 
             <form id="version-finalize-form" class="form-grid mt">

@@ -54,6 +54,9 @@ func (s *Service) Generate(ctx context.Context, query string) (Result, error) {
 	if len(q) > 1200 {
 		return Result{}, fmt.Errorf("query too long")
 	}
+	if isCheatingQuery(q) {
+		return Result{Reply: refusalReply(), Source: "policy"}, nil
+	}
 
 	if s.geminiAPIKey == "" {
 		return Result{Reply: localReply(q), Source: "local"}, nil
@@ -116,15 +119,24 @@ func (s *Service) generateWithGemini(ctx context.Context, query string) (string,
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return "", err
 	}
+	if out.hasIncompleteFinishReason() {
+		return "", fmt.Errorf("incomplete gemini response: %s", out.firstFinishReason())
+	}
 	reply := strings.TrimSpace(out.firstText())
 	if reply == "" {
 		return "", fmt.Errorf("empty gemini response")
+	}
+	if isLikelyTruncatedReply(reply) {
+		return "", fmt.Errorf("truncated gemini response")
 	}
 	return reply, nil
 }
 
 func localReply(query string) string {
 	q := strings.ToLower(strings.TrimSpace(query))
+	if isCheatingQuery(q) {
+		return refusalReply()
+	}
 	switch {
 	case strings.Contains(q, "login"), strings.Contains(q, "masuk"):
 		return "Klik Masuk ke Sistem Ujian, lalu login dengan akun resmi sekolah. Pastikan username/email dan password benar."
@@ -141,14 +153,95 @@ func localReply(query string) string {
 	}
 }
 
+func isCheatingQuery(query string) bool {
+	q := strings.ToLower(strings.TrimSpace(query))
+	keywords := []string{
+		"jawab soal",
+		"menjawab soal",
+		"jawaban soal",
+		"bantu jawab",
+		"membantu saya menjawab",
+		"kunci jawaban",
+		"contekan",
+		"cheat",
+		"bocoran",
+		"kerjain soal",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(q, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func refusalReply() string {
+	return "Saya tidak dapat membantu menjawab soal ujian secara langsung atau memberi kunci jawaban. Saya bisa bantu memahami materi, langkah penyelesaian, dan strategi belajar agar Anda bisa menjawab mandiri."
+}
+
+func isLikelyTruncatedReply(reply string) bool {
+	s := strings.TrimSpace(strings.ToLower(reply))
+	if s == "" {
+		return true
+	}
+	if strings.HasSuffix(s, ".") || strings.HasSuffix(s, "!") || strings.HasSuffix(s, "?") {
+		return false
+	}
+	if len(s) < 80 {
+		return true
+	}
+	badEndings := []string{
+		"dan",
+		"atau",
+		"karena",
+		"sebagai",
+		"adalah",
+		"untuk",
+		"dengan",
+		"yang",
+		"jika",
+		"agar",
+	}
+	for _, end := range badEndings {
+		if strings.HasSuffix(s, " "+end) || s == end {
+			return true
+		}
+	}
+	return false
+}
+
 type geminiGenerateResponse struct {
 	Candidates []struct {
-		Content struct {
+		FinishReason string `json:"finishReason"`
+		Content      struct {
 			Parts []struct {
 				Text string `json:"text"`
 			} `json:"parts"`
 		} `json:"content"`
 	} `json:"candidates"`
+}
+
+func (r geminiGenerateResponse) hasIncompleteFinishReason() bool {
+	for _, c := range r.Candidates {
+		reason := strings.ToUpper(strings.TrimSpace(c.FinishReason))
+		if reason == "" || reason == "STOP" {
+			continue
+		}
+		if reason == "MAX_TOKENS" || reason == "OTHER" || reason == "SAFETY" {
+			return true
+		}
+	}
+	return false
+}
+
+func (r geminiGenerateResponse) firstFinishReason() string {
+	for _, c := range r.Candidates {
+		reason := strings.TrimSpace(c.FinishReason)
+		if reason != "" {
+			return reason
+		}
+	}
+	return "unknown"
 }
 
 func (r geminiGenerateResponse) firstText() string {

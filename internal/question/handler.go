@@ -2,15 +2,11 @@ package question
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"cbtlms/internal/app/apiresp"
 	"cbtlms/internal/auth"
@@ -23,19 +19,20 @@ type Handler struct {
 }
 
 type questionService interface {
+	CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
+	ListQuestionCodes(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
+	UpdateQuestionCode(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
+	DeleteQuestionCode(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	CreateQuestion(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
+	AssignQuestionCode(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
 	ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
-	CreateStimulus(ctx context.Context, in CreateStimulusInput) (*Stimulus, error)
-	ListStimuliBySubject(ctx context.Context, subjectID int64) ([]Stimulus, error)
-	UpdateStimulus(ctx context.Context, in UpdateStimulusInput) (*Stimulus, error)
-	DeleteStimulus(ctx context.Context, stimulusID int64) error
 	CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
 	UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
-	DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int) error
-	FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int) (*QuestionVersion, error)
+	DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error
+	FinalizeQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error)
 	RequestReopenFinal(ctx context.Context, in RequestReopenFinalInput) (*ReopenFinalRequest, error)
 	ApproveReopenFinal(ctx context.Context, in ApproveReopenFinalInput) (*ReopenFinalRequest, error)
-	ListQuestionVersions(ctx context.Context, questionID int64) ([]QuestionVersion, error)
+	ListQuestionVersions(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error)
 	CreateQuestionParallel(ctx context.Context, in CreateQuestionParallelInput) (*QuestionParallel, error)
 	ListQuestionParallels(ctx context.Context, examID int64, parallelGroup string) ([]QuestionParallel, error)
 	UpdateQuestionParallel(ctx context.Context, in UpdateQuestionParallelInput) (*QuestionParallel, error)
@@ -52,25 +49,10 @@ type apiResponse struct {
 	Error string      `json:"error,omitempty"`
 }
 
-type createStimulusRequest struct {
-	SubjectID      int64           `json:"subject_id"`
-	LearningGoalID int64           `json:"learning_goal_id"`
-	Title          string          `json:"title"`
-	StimulusType   string          `json:"stimulus_type"`
-	Content        json.RawMessage `json:"content"`
-}
-
-type updateStimulusRequest struct {
-	SubjectID      int64           `json:"subject_id"`
-	LearningGoalID int64           `json:"learning_goal_id"`
-	Title          string          `json:"title"`
-	StimulusType   string          `json:"stimulus_type"`
-	Content        json.RawMessage `json:"content"`
-}
-
 type createQuestionRequest struct {
 	SubjectID      int64  `json:"subject_id"`
 	LearningGoalID int64  `json:"learning_goal_id"`
+	QuestionCodeID *int64 `json:"question_code_id"`
 	QuestionType   string `json:"question_type"`
 	Title          string `json:"title"`
 	Indicator      string `json:"indicator"`
@@ -80,8 +62,24 @@ type createQuestionRequest struct {
 	Difficulty     *int   `json:"difficulty"`
 }
 
+type createQuestionCodeRequest struct {
+	SubjectID int64  `json:"subject_id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+}
+
+type updateQuestionCodeRequest struct {
+	SubjectID int64  `json:"subject_id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+}
+
+type assignQuestionCodeRequest struct {
+	QuestionCodeID *int64 `json:"question_code_id"`
+}
+
 type createQuestionVersionRequest struct {
-	StimulusID      *int64                `json:"stimulus_id"`
+	StimulusHTML    *string               `json:"stimulus_html"`
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
 	HintHTML        *string               `json:"hint_html"`
@@ -93,7 +91,7 @@ type createQuestionVersionRequest struct {
 }
 
 type updateQuestionVersionRequest struct {
-	StimulusID      *int64                `json:"stimulus_id"`
+	StimulusHTML    *string               `json:"stimulus_html"`
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
 	HintHTML        *string               `json:"hint_html"`
@@ -131,57 +129,142 @@ type reviewDecisionRequest struct {
 	Note   string `json:"note"`
 }
 
-type stimulusImportRowError struct {
-	Row   int    `json:"row"`
-	Title string `json:"title,omitempty"`
-	Error string `json:"error"`
-}
-
-type stimulusImportReport struct {
-	TotalRows   int                      `json:"total_rows"`
-	SuccessRows int                      `json:"success_rows"`
-	FailedRows  int                      `json:"failed_rows"`
-	Errors      []stimulusImportRowError `json:"errors"`
-}
-
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-func (h *Handler) CreateStimulus(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ListQuestionCodes(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
 		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
 		return
 	}
 
-	var req createStimulusRequest
+	var subjectID int64
+	subjectIDRaw := strings.TrimSpace(r.URL.Query().Get("subject_id"))
+	if subjectIDRaw != "" {
+		parsed, err := strconv.ParseInt(subjectIDRaw, 10, 64)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "subject_id must be positive"})
+			return
+		}
+		subjectID = parsed
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+
+	items, err := h.svc.ListQuestionCodes(r.Context(), subjectID, q, ownerID)
+	if err != nil {
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
+}
+
+func (h *Handler) CreateQuestionCode(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	var req createQuestionCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
 		return
 	}
-
-	item, err := h.svc.CreateStimulus(r.Context(), CreateStimulusInput{
-		SubjectID:      req.SubjectID,
-		LearningGoalID: req.LearningGoalID,
-		Title:          req.Title,
-		StimulusType:   req.StimulusType,
-		Content:        req.Content,
-		CreatedBy:      user.ID,
+	item, err := h.svc.CreateQuestionCode(r.Context(), CreateQuestionCodeInput{
+		SubjectID: req.SubjectID,
+		Code:      req.Code,
+		Name:      req.Name,
+		CreatedBy: user.ID,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound):
+		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrQuestionCodeNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeExists):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, apiResponse{OK: true, Data: item})
+}
+
+func (h *Handler) UpdateQuestionCode(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question code id"})
+		return
+	}
+	var req updateQuestionCodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	item, err := h.svc.UpdateQuestionCode(r.Context(), UpdateQuestionCodeInput{
+		ID:           id,
+		SubjectID:    req.SubjectID,
+		Code:         req.Code,
+		Name:         req.Name,
+		ActorID:      user.ID,
+		EnforceOwner: strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeExists):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
+}
+
+func (h *Handler) DeleteQuestionCode(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question code id"})
+		return
+	}
+	if err := h.svc.DeleteQuestionCode(r.Context(), id, user.ID, strings.EqualFold(strings.TrimSpace(user.Role), "guru")); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		}
 		return
 	}
-
-	writeJSON(w, r, http.StatusCreated, apiResponse{OK: true, Data: item})
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{"deleted": true}})
 }
 
 func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +283,8 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	item, err := h.svc.CreateQuestion(r.Context(), CreateQuestionInput{
 		SubjectID:      req.SubjectID,
 		LearningGoalID: req.LearningGoalID,
+		QuestionCodeID: req.QuestionCodeID,
+		EnforceOwner:   strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
 		QuestionType:   req.QuestionType,
 		Title:          req.Title,
 		Indicator:      req.Indicator,
@@ -224,6 +309,47 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusCreated, apiResponse{OK: true, Data: item})
 }
 
+func (h *Handler) AssignQuestionCode(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || questionID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
+		return
+	}
+
+	var req assignQuestionCodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	item, err := h.svc.AssignQuestionCode(r.Context(), AssignQuestionCodeInput{
+		QuestionID:     questionID,
+		QuestionCodeID: req.QuestionCodeID,
+		ActorID:        user.ID,
+		EnforceOwner:   strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionNotFound), errors.Is(err, ErrQuestionCodeNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
+}
+
 func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
@@ -242,17 +368,19 @@ func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 		subjectID = parsed
 	}
 
-	ownerOnlyRaw := strings.TrimSpace(r.URL.Query().Get("owner_only"))
-	ownerOnly := false
-	if ownerOnlyRaw != "" {
-		parsed, err := strconv.ParseBool(ownerOnlyRaw)
-		if err != nil {
-			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "owner_only must be boolean"})
-			return
+	ownerOnly := strings.EqualFold(strings.TrimSpace(user.Role), "guru")
+	if !ownerOnly {
+		ownerOnlyRaw := strings.TrimSpace(r.URL.Query().Get("owner_only"))
+		if ownerOnlyRaw != "" {
+			parsed, err := strconv.ParseBool(ownerOnlyRaw)
+			if err != nil {
+				writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "owner_only must be boolean"})
+				return
+			}
+			ownerOnly = parsed
 		}
-		ownerOnly = parsed
-	} else if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
-		// Default mode guru: hanya soal milik sendiri.
+	}
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
 		ownerOnly = true
 	}
 
@@ -271,296 +399,6 @@ func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
-}
-
-func (h *Handler) ListStimuli(w http.ResponseWriter, r *http.Request) {
-	subjectIDRaw := strings.TrimSpace(r.URL.Query().Get("subject_id"))
-	subjectID, err := strconv.ParseInt(subjectIDRaw, 10, 64)
-	if err != nil || subjectID <= 0 {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "subject_id is required and must be positive"})
-		return
-	}
-
-	items, err := h.svc.ListStimuliBySubject(r.Context(), subjectID)
-	if err != nil {
-		if errors.Is(err, ErrInvalidInput) {
-			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-			return
-		}
-		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
-		return
-	}
-
-	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
-}
-
-func (h *Handler) UpdateStimulus(w http.ResponseWriter, r *http.Request) {
-	stimulusID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || stimulusID <= 0 {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid stimulus id"})
-		return
-	}
-
-	var req updateStimulusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
-		return
-	}
-
-	item, err := h.svc.UpdateStimulus(r.Context(), UpdateStimulusInput{
-		ID:             stimulusID,
-		SubjectID:      req.SubjectID,
-		LearningGoalID: req.LearningGoalID,
-		Title:          req.Title,
-		StimulusType:   req.StimulusType,
-		Content:        req.Content,
-	})
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrInvalidInput):
-			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrStimulusNotFound), errors.Is(err, ErrLearningGoalNotFound):
-			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
-		default:
-			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
-		}
-		return
-	}
-
-	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
-}
-
-func (h *Handler) DeleteStimulus(w http.ResponseWriter, r *http.Request) {
-	stimulusID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || stimulusID <= 0 {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid stimulus id"})
-		return
-	}
-	if err := h.svc.DeleteStimulus(r.Context(), stimulusID); err != nil {
-		switch {
-		case errors.Is(err, ErrInvalidInput):
-			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrStimulusNotFound):
-			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
-		default:
-			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
-		}
-		return
-	}
-	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"status": "deleted"}})
-}
-
-func (h *Handler) ExportStimuliImportTemplateCSV(w http.ResponseWriter, r *http.Request) {
-	filename := fmt.Sprintf("template_import_stimuli_%s.csv", time.Now().Format("20060102_150405"))
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(strings.Join([]string{
-		"subject_id,learning_goal_id,title,stimulus_type,body_html,tabs_json,content_json",
-		`1,1,"Stimulus Single Contoh",single,"<p>Isi konten single berbasis HTML.</p>",,`,
-		`1,1,"Stimulus Multiteks Contoh",multiteks,,"[{""title"":""Tab 1"",""body"":""<p>Konten tab 1</p>""},{""title"":""Tab 2"",""body"":""<p>Konten tab 2</p>""}]",`,
-		`1,1,"Stimulus dengan content_json",single,,,"{""body"":""<p>Alternatif isi via content_json</p>""}"`,
-		"",
-		"# Catatan:",
-		"# 1) Kolom wajib: subject_id,learning_goal_id,title,stimulus_type.",
-		"# 2) stimulus_type: single atau multiteks.",
-		"# 3) Untuk single, isi body_html ATAU content_json.",
-		"# 4) Untuk multiteks, isi tabs_json ATAU content_json.",
-	}, "\n")))
-}
-
-func (h *Handler) ImportStimuliCSV(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.CurrentUser(r.Context())
-	if !ok {
-		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
-		return
-	}
-
-	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid multipart form"})
-		return
-	}
-
-	file, hdr, err := r.FormFile("file")
-	if err != nil {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "file field is required"})
-		return
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	reader.TrimLeadingSpace = true
-
-	headerRow, err := reader.Read()
-	if err != nil {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "gagal membaca header csv"})
-		return
-	}
-	header := map[string]int{}
-	for i, raw := range headerRow {
-		k := strings.ToLower(strings.TrimSpace(raw))
-		if k != "" {
-			header[k] = i
-		}
-	}
-	required := []string{"subject_id", "learning_goal_id", "title", "stimulus_type"}
-	for _, col := range required {
-		if _, ok := header[col]; !ok {
-			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: fmt.Sprintf("kolom wajib tidak ditemukan: %s", col)})
-			return
-		}
-	}
-
-	get := func(row []string, key string) string {
-		idx, ok := header[key]
-		if !ok || idx < 0 || idx >= len(row) {
-			return ""
-		}
-		return strings.TrimSpace(row[idx])
-	}
-
-	report := &stimulusImportReport{Errors: make([]stimulusImportRowError, 0)}
-	rowNo := 1
-	for {
-		record, readErr := reader.Read()
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		rowNo++
-		if readErr != nil {
-			report.TotalRows++
-			report.FailedRows++
-			report.Errors = append(report.Errors, stimulusImportRowError{
-				Row:   rowNo,
-				Error: "format csv tidak valid",
-			})
-			continue
-		}
-		if isCSVRowEmpty(record) {
-			continue
-		}
-
-		report.TotalRows++
-
-		subjectIDRaw := get(record, "subject_id")
-		learningGoalIDRaw := get(record, "learning_goal_id")
-		title := get(record, "title")
-		stimulusType := strings.ToLower(get(record, "stimulus_type"))
-		bodyHTML := get(record, "body_html")
-		tabsJSON := get(record, "tabs_json")
-		contentJSON := get(record, "content_json")
-
-		subjectID, convErr := strconv.ParseInt(subjectIDRaw, 10, 64)
-		if convErr != nil || subjectID <= 0 {
-			report.FailedRows++
-			report.Errors = append(report.Errors, stimulusImportRowError{
-				Row:   rowNo,
-				Title: title,
-				Error: "subject_id harus angka positif",
-			})
-			continue
-		}
-		learningGoalID, convErr := strconv.ParseInt(learningGoalIDRaw, 10, 64)
-		if convErr != nil || learningGoalID <= 0 {
-			report.FailedRows++
-			report.Errors = append(report.Errors, stimulusImportRowError{
-				Row:   rowNo,
-				Title: title,
-				Error: "learning_goal_id harus angka positif",
-			})
-			continue
-		}
-
-		var content json.RawMessage
-		if strings.TrimSpace(contentJSON) != "" {
-			var parsed any
-			if err := json.Unmarshal([]byte(contentJSON), &parsed); err != nil {
-				report.FailedRows++
-				report.Errors = append(report.Errors, stimulusImportRowError{
-					Row:   rowNo,
-					Title: title,
-					Error: "content_json bukan JSON valid",
-				})
-				continue
-			}
-			content = json.RawMessage(contentJSON)
-		} else {
-			switch stimulusType {
-			case "single":
-				payload, _ := json.Marshal(map[string]any{
-					"body": bodyHTML,
-				})
-				content = payload
-			case "multiteks":
-				if strings.TrimSpace(tabsJSON) == "" {
-					report.FailedRows++
-					report.Errors = append(report.Errors, stimulusImportRowError{
-						Row:   rowNo,
-						Title: title,
-						Error: "tabs_json wajib diisi untuk stimulus multiteks",
-					})
-					continue
-				}
-				var tabs any
-				if err := json.Unmarshal([]byte(tabsJSON), &tabs); err != nil {
-					report.FailedRows++
-					report.Errors = append(report.Errors, stimulusImportRowError{
-						Row:   rowNo,
-						Title: title,
-						Error: "tabs_json bukan JSON valid",
-					})
-					continue
-				}
-				payload, _ := json.Marshal(map[string]any{
-					"tabs": tabs,
-				})
-				content = payload
-			default:
-				// Delegasikan pesan validasi final ke service.
-				content = json.RawMessage(`{}`)
-			}
-		}
-
-		_, createErr := h.svc.CreateStimulus(r.Context(), CreateStimulusInput{
-			SubjectID:      subjectID,
-			LearningGoalID: learningGoalID,
-			Title:          title,
-			StimulusType:   stimulusType,
-			Content:        content,
-			CreatedBy:      user.ID,
-		})
-		if createErr != nil {
-			report.FailedRows++
-			report.Errors = append(report.Errors, stimulusImportRowError{
-				Row:   rowNo,
-				Title: title,
-				Error: createErr.Error(),
-			})
-			continue
-		}
-		report.SuccessRows++
-	}
-
-	if report.TotalRows == 0 {
-		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "tidak ada baris data pada file csv"})
-		return
-	}
-
-	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{
-		"filename": hdr.Filename,
-		"report":   report,
-		"summary":  "import completed",
-	}})
-}
-
-func isCSVRowEmpty(row []string) bool {
-	for _, col := range row {
-		if strings.TrimSpace(col) != "" {
-			return false
-		}
-	}
-	return true
 }
 
 func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) {
@@ -584,7 +422,7 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 
 	item, err := h.svc.CreateQuestionVersion(r.Context(), CreateQuestionVersionInput{
 		QuestionID:      questionID,
-		StimulusID:      req.StimulusID,
+		StimulusHTML:    req.StimulusHTML,
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,
 		HintHTML:        req.HintHTML,
@@ -594,11 +432,14 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		Weight:          req.Weight,
 		ChangeNote:      req.ChangeNote,
 		CreatedBy:       user.ID,
+		EnforceOwner:    strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrQuestionNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
@@ -611,6 +452,12 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) FinalizeQuestionVersion(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
 	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || questionID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
@@ -622,11 +469,19 @@ func (h *Handler) FinalizeQuestionVersion(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	item, err := h.svc.FinalizeQuestionVersion(r.Context(), questionID, versionNo)
+	item, err := h.svc.FinalizeQuestionVersion(
+		r.Context(),
+		questionID,
+		versionNo,
+		user.ID,
+		strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrVersionNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
@@ -733,6 +588,12 @@ func (h *Handler) ApproveReopenFinal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
 	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || questionID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
@@ -753,7 +614,7 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 	item, err := h.svc.UpdateQuestionVersion(r.Context(), UpdateQuestionVersionInput{
 		QuestionID:      questionID,
 		VersionNo:       versionNo,
-		StimulusID:      req.StimulusID,
+		StimulusHTML:    req.StimulusHTML,
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,
 		HintHTML:        req.HintHTML,
@@ -762,11 +623,15 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		DurationSeconds: req.DurationSeconds,
 		Weight:          req.Weight,
 		ChangeNote:      req.ChangeNote,
+		ActorID:         user.ID,
+		EnforceOwner:    strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrQuestionNotFound), errors.Is(err, ErrVersionNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
@@ -779,6 +644,12 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) DeleteQuestionVersion(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
 	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || questionID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
@@ -790,10 +661,18 @@ func (h *Handler) DeleteQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.svc.DeleteQuestionVersion(r.Context(), questionID, versionNo); err != nil {
+	if err := h.svc.DeleteQuestionVersion(
+		r.Context(),
+		questionID,
+		versionNo,
+		user.ID,
+		strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrVersionNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
@@ -806,13 +685,24 @@ func (h *Handler) DeleteQuestionVersion(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) ListQuestionVersions(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
 	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || questionID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
 		return
 	}
 
-	items, err := h.svc.ListQuestionVersions(r.Context(), questionID)
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+
+	items, err := h.svc.ListQuestionVersions(r.Context(), questionID, ownerID)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})

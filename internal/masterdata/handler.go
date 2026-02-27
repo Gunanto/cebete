@@ -111,6 +111,12 @@ func (h *Handler) ListEducationLevels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListLearningGoals(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
 	mapel := strings.TrimSpace(r.URL.Query().Get("mata_pelajaran"))
 	kelas := strings.TrimSpace(r.URL.Query().Get("kelas"))
 	semester := int16(0)
@@ -123,7 +129,12 @@ func (h *Handler) ListLearningGoals(w http.ResponseWriter, r *http.Request) {
 		semester = int16(n)
 	}
 
-	items, err := h.svc.ListLearningGoals(r.Context(), mapel, kelas, semester)
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+
+	items, err := h.svc.ListLearningGoals(r.Context(), mapel, kelas, semester, ownerID)
 	if err != nil {
 		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		return
@@ -187,7 +198,7 @@ func (h *Handler) UpdateLearningGoal(w http.ResponseWriter, r *http.Request) {
 		MataPelajaran:      req.MataPelajaran,
 		Kelas:              req.Kelas,
 		Semester:           req.Semester,
-	})
+	}, ownerScopeByRole(user.Role, user.ID))
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
@@ -213,7 +224,7 @@ func (h *Handler) DeleteLearningGoal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid id"})
 		return
 	}
-	if err := h.svc.DeleteLearningGoal(r.Context(), user.ID, id); err != nil {
+	if err := h.svc.DeleteLearningGoal(r.Context(), user.ID, id, ownerScopeByRole(user.Role, user.ID)); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid id"})
@@ -225,6 +236,13 @@ func (h *Handler) DeleteLearningGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"status": "deleted"}})
+}
+
+func ownerScopeByRole(role string, userID int64) *int64 {
+	if strings.EqualFold(strings.TrimSpace(role), "guru") && userID > 0 {
+		return &userID
+	}
+	return nil
 }
 
 func (h *Handler) ExportLearningGoalsImportTemplateCSV(w http.ResponseWriter, r *http.Request) {

@@ -299,6 +299,16 @@
                         />
                     </label>
                     <label>
+                        Maks Attempt
+                        <input
+                            name="max_attempts"
+                            type="number"
+                            min="1"
+                            value="1"
+                            required
+                        />
+                    </label>
+                    <label>
                         Review Policy
                         <select name="review_policy">
                             <option value="after_submit">after_submit</option>
@@ -326,6 +336,7 @@
                                 <th>Kode/Judul</th>
                                 <th>Mapel</th>
                                 <th>Durasi</th>
+                                <th>Attempt</th>
                                 <th>Soal</th>
                                 <th>Peserta</th>
                                 <th>Aksi</th>
@@ -333,7 +344,7 @@
                         </thead>
                         <tbody id="proktor-exams-body">
                             <tr>
-                                <td colspan="7" class="muted">
+                                <td colspan="8" class="muted">
                                     Belum ada data ujian.
                                 </td>
                             </tr>
@@ -499,6 +510,28 @@
                     </label>
                     <button class="btn btn-secondary" type="submit">
                         Muat Nilai
+                    </button>
+                </form>
+
+                <form
+                    id="proktor-results-reset-attempt-form"
+                    class="form-grid mt"
+                >
+                    <label>
+                        Exam ID
+                        <input name="exam_id" type="number" min="1" required />
+                    </label>
+                    <label>
+                        Student ID
+                        <input
+                            name="student_id"
+                            type="number"
+                            min="1"
+                            required
+                        />
+                    </label>
+                    <button class="btn btn-secondary" type="submit">
+                        Reset Attempt Peserta
                     </button>
                 </form>
 

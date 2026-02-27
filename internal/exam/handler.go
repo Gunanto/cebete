@@ -25,6 +25,7 @@ type examService interface {
 	CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	DeleteExam(ctx context.Context, examID int64) error
+	ResetExamAttempt(ctx context.Context, examID, studentID, actorID int64) (int64, error)
 	ListSubjects(ctx context.Context, level, subjectType string) ([]SubjectOption, error)
 	CreateSubject(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
 	UpdateSubject(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
@@ -36,6 +37,10 @@ type examService interface {
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
+	ListExamQuestionCodeRules(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
+	UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
+	DeleteExamQuestionCodeRule(ctx context.Context, examID, questionCodeID int64) error
+	SyncExamQuestionsByCode(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error)
 	UpsertExamQuestion(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error)
 	UpsertExamQuestionIncident(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error)
 	DeleteExamQuestion(ctx context.Context, examID, questionID int64) error
@@ -87,10 +92,15 @@ type examManageRequest struct {
 	Title           string `json:"title"`
 	SubjectID       int64  `json:"subject_id"`
 	DurationMinutes int    `json:"duration_minutes"`
+	MaxAttempts     int    `json:"max_attempts"`
 	StartAt         string `json:"start_at"`
 	EndAt           string `json:"end_at"`
 	ReviewPolicy    string `json:"review_policy"`
 	IsActive        *bool  `json:"is_active"`
+}
+
+type resetExamAttemptRequest struct {
+	StudentID int64 `json:"student_id"`
 }
 
 type replaceExamAssignmentsRequest struct {
@@ -106,6 +116,13 @@ type upsertExamQuestionRequest struct {
 	QuestionID int64   `json:"question_id"`
 	SeqNo      int     `json:"seq_no"`
 	Weight     float64 `json:"weight"`
+}
+
+type upsertExamQuestionCodeRuleRequest struct {
+	QuestionCodeID int64   `json:"question_code_id"`
+	Strategy       string  `json:"strategy"`
+	PickCount      *int    `json:"pick_count"`
+	Weight         float64 `json:"weight"`
 }
 
 type upsertExamQuestionIncidentRequest struct {
@@ -157,6 +174,8 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrExamNotAssigned):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptLimitReached):
+			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrAttemptForbidden):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrStudentDataMissing):
@@ -314,6 +333,7 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 		Title:           req.Title,
 		SubjectID:       req.SubjectID,
 		DurationMinutes: req.DurationMinutes,
+		MaxAttempts:     req.MaxAttempts,
 		StartAt:         startAt,
 		EndAt:           endAt,
 		ReviewPolicy:    req.ReviewPolicy,
@@ -360,6 +380,7 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		Title:           req.Title,
 		SubjectID:       req.SubjectID,
 		DurationMinutes: req.DurationMinutes,
+		MaxAttempts:     req.MaxAttempts,
 		StartAt:         startAt,
 		EndAt:           endAt,
 		ReviewPolicy:    req.ReviewPolicy,
@@ -379,6 +400,47 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
+}
+
+func (h *Handler) ResetExamAttempt(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+
+	var req resetExamAttemptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
+		return
+	}
+	if req.StudentID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "student_id is required"})
+		return
+	}
+
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok || user.ID <= 0 {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	attemptID, err := h.svc.ResetExamAttempt(r.Context(), examID, req.StudentID, user.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotFound), errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{
+		"reset":      true,
+		"attempt_id": attemptID,
+	}})
 }
 
 func (h *Handler) DeleteExam(w http.ResponseWriter, r *http.Request) {
@@ -546,6 +608,114 @@ func (h *Handler) UpsertExamQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
+}
+
+func (h *Handler) ListExamQuestionCodeRules(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	items, err := h.svc.ListExamQuestionCodeRules(r.Context(), examID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) UpsertExamQuestionCodeRule(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+
+	var req upsertExamQuestionCodeRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
+		return
+	}
+	item, err := h.svc.UpsertExamQuestionCodeRule(r.Context(), UpsertExamQuestionCodeRuleInput{
+		ExamID:         examID,
+		QuestionCodeID: req.QuestionCodeID,
+		Strategy:       req.Strategy,
+		PickCount:      req.PickCount,
+		Weight:         req.Weight,
+		CreatedBy:      user.ID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
+}
+
+func (h *Handler) DeleteExamQuestionCodeRule(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	questionCodeID, err := strconv.ParseInt(chi.URLParam(r, "questionCodeID"), 10, 64)
+	if err != nil || questionCodeID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid question code id"})
+		return
+	}
+	if err := h.svc.DeleteExamQuestionCodeRule(r.Context(), examID, questionCodeID); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeRuleNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{"deleted": true}})
+}
+
+func (h *Handler) SyncExamQuestionsByCode(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	out, err := h.svc.SyncExamQuestionsByCode(r.Context(), SyncExamQuestionsByCodeInput{
+		ExamID: examID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
 }
 
 func (h *Handler) DeleteExamQuestion(w http.ResponseWriter, r *http.Request) {
