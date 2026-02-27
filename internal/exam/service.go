@@ -2187,8 +2187,6 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 				COALESCE(NULLIF(qv.stem_html, ''), q.stem_html) AS stem_html,
 				qv.stimulus_html AS version_stimulus_html,
 				q.stimulus_html AS legacy_stimulus_html,
-				st.stimulus_type,
-				st.content::text AS stimulus_content,
 				COALESCE(qv.answer_key, '{}'::jsonb) AS answer_key,
 			COALESCE(aa.answer_payload, '{}'::jsonb) AS answer_payload,
 			COALESCE(aa.is_doubt, FALSE) AS is_doubt
@@ -2201,7 +2199,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 			ON aa.attempt_id = a.id
 			AND aa.question_id = eq.question_id
 			LEFT JOIN LATERAL (
-				SELECT answer_key, stimulus_id, stimulus_html, stem_html
+				SELECT answer_key, stimulus_html, stem_html
 				FROM question_versions
 				WHERE question_id = q.id
 				  AND is_active = TRUE
@@ -2209,9 +2207,6 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 			ORDER BY version_no DESC
 			LIMIT 1
 		) qv ON TRUE
-		LEFT JOIN stimuli st
-			ON st.id = qv.stimulus_id
-		   AND st.is_active = TRUE
 		WHERE a.id = $1
 		  AND eq.seq_no = $2
 	`, attemptID, questionNo)
@@ -2219,8 +2214,6 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	var out AttemptQuestion
 	var versionStimulus sql.NullString
 	var legacyStimulus sql.NullString
-	var stimulusType sql.NullString
-	var stimulusContent sql.NullString
 	if err := r.Scan(
 		&out.AttemptID,
 		&out.QuestionID,
@@ -2229,8 +2222,6 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		&out.StemHTML,
 		&versionStimulus,
 		&legacyStimulus,
-		&stimulusType,
-		&stimulusContent,
 		&out.AnswerKey,
 		&out.AnswerPayload,
 		&out.IsDoubt,
@@ -2240,7 +2231,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 		return nil, fmt.Errorf("query attempt question: %w", err)
 	}
-	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, stimulusType, stimulusContent)
+	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus)
 
 	optRows, err := s.db.QueryContext(ctx, `
 		SELECT option_key, option_html
@@ -2267,16 +2258,10 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	return &out, nil
 }
 
-func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString, stimulusType sql.NullString, stimulusContent sql.NullString) *string {
+func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString) *string {
 	if version.Valid && strings.TrimSpace(version.String) != "" {
 		v := version.String
 		return &v
-	}
-	if stimulusType.Valid && stimulusContent.Valid {
-		rendered := renderStimulusHTML(stimulusType.String, stimulusContent.String)
-		if strings.TrimSpace(rendered) != "" {
-			return &rendered
-		}
 	}
 	if legacy.Valid && strings.TrimSpace(legacy.String) != "" {
 		v := legacy.String
