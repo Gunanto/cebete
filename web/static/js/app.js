@@ -915,6 +915,18 @@
     const infoSoalDialog = document.getElementById("info-soal-dialog");
     const infoSoalContent = document.getElementById("info-soal-content");
     const infoSoalCloseBtn = document.getElementById("info-soal-close-btn");
+    const attemptFinishDialog = document.getElementById(
+      "attempt-finish-dialog",
+    );
+    const attemptFinishContent = document.getElementById(
+      "attempt-finish-content",
+    );
+    const attemptFinishCloseBtn = document.getElementById(
+      "attempt-finish-close-btn",
+    );
+    const attemptFinishResultBtn = document.getElementById(
+      "attempt-finish-result-btn",
+    );
     const daftarSoalBtn = document.getElementById("daftar-soal-btn");
     const daftarSoalPanel = document.getElementById("daftar-soal-panel");
     const daftarSoalBody = document.getElementById("daftar-soal-body");
@@ -1124,6 +1136,31 @@
           encodeURIComponent(String(attemptID)) +
           '">halaman hasil</a>.',
       );
+    }
+
+    async function closeExamAndLogout() {
+      try {
+        await api("/api/v1/auth/logout", "POST");
+      } catch (_) {
+        // Ignore API error and still redirect to login.
+      }
+      window.location.href = "/login";
+    }
+
+    function showAttemptFinishDialog() {
+      const msgText =
+        'Ujian telah selesai, silakan mengakhiri dengan klik "Tutup" atau "Lihat Hasil Ujian".';
+      if (attemptFinishContent) {
+        attemptFinishContent.textContent = msgText;
+      }
+      if (
+        attemptFinishDialog &&
+        typeof attemptFinishDialog.showModal === "function"
+      ) {
+        attemptFinishDialog.showModal();
+        return;
+      }
+      window.alert(msgText);
     }
 
     function syncSubmitVisibility() {
@@ -1786,7 +1823,19 @@
           }
           if (!window.confirm("Yakin submit final?")) return;
           await api("/api/v1/attempts/" + attemptID + "/submit", "POST");
-          window.location.href = "/hasil/" + attemptID;
+          attemptEditable = false;
+          prevBtn.disabled = true;
+          nextBtn.disabled = true;
+          submitBtn.disabled = true;
+          submitBtn.hidden = true;
+          doubtCheckbox.disabled = true;
+          optionsBox
+            .querySelectorAll("input, button, select, textarea")
+            .forEach(function (el) {
+              el.disabled = true;
+            });
+          text(message, "Ujian telah disubmit.");
+          showAttemptFinishDialog();
         } catch (err) {
           if (String(err.message || "").includes("attempt is not editable")) {
             applyAttemptReadonlyState("submitted");
@@ -1797,6 +1846,18 @@
           done();
         }
       });
+
+    if (attemptFinishResultBtn) {
+      attemptFinishResultBtn.addEventListener("click", function () {
+        window.location.href = "/hasil/" + attemptID;
+      });
+    }
+
+    if (attemptFinishCloseBtn) {
+      attemptFinishCloseBtn.addEventListener("click", async function () {
+        await closeExamAndLogout();
+      });
+    }
 
     optionsBox.addEventListener("change", async function () {
       if (!attemptEditable) return;
@@ -1928,6 +1989,13 @@
     try {
       const out = await api("/api/v1/attempts/" + attemptID + "/result", "GET");
       const s = out.summary;
+      const scoreValue = Number((s && s.score) || 0);
+      const scoreLabel = Number.isFinite(scoreValue)
+        ? scoreValue.toLocaleString("id-ID", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        : String((s && s.score) || 0);
       const examTitle = String((s && s.title) || "").trim();
       if (resultPageTitle) {
         resultPageTitle.textContent = examTitle
@@ -1939,7 +2007,7 @@
         "<strong>Status:</strong> " +
           escapeHtml(s.status) +
           " | <strong>Skor:</strong> " +
-          escapeHtml(String(s.score)) +
+          escapeHtml(String(scoreLabel)) +
           " | <strong>Benar:</strong> " +
           escapeHtml(String(s.total_correct)) +
           " | <strong>Salah:</strong> " +
@@ -1949,6 +2017,19 @@
       );
 
       tbody.innerHTML = "";
+      if (out.score_only) {
+        html(
+          summaryBox,
+          "<strong>Nilai Akhir:</strong> Nilai Anda adalah " +
+            escapeHtml(String(scoreLabel)) +
+            ".",
+        );
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          '<td colspan="7" class="muted">Detail jawaban tidak ditampilkan untuk ujian ini.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
       out.items.forEach(function (it, idx) {
         const tr = document.createElement("tr");
         const breakdown =
@@ -4996,13 +5077,27 @@
         }
         const fd = new FormData(examForm);
         const examID = Number(fd.get("exam_id") || 0);
+        const nextRandomizeQuestions = fd.get("randomize_questions") !== null;
+        const nextRandomizeOptions = fd.get("randomize_options") !== null;
+        try {
+          const blocked = await preventRandomizeChangeIfExamRunning(
+            nextRandomizeQuestions,
+            nextRandomizeOptions,
+          );
+          if (blocked) return;
+        } catch (err) {
+          setMsg("Gagal memvalidasi status ujian berjalan: " + err.message);
+          return;
+        }
         const payload = {
           code: String(fd.get("code") || "").trim(),
           title: String(fd.get("title") || "").trim(),
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
-          review_policy: String(fd.get("review_policy") || "after_submit"),
+          review_policy: String(fd.get("review_policy") || "score_only"),
+          randomize_questions: nextRandomizeQuestions,
+          randomize_options: nextRandomizeOptions,
           is_active: true,
         };
         examFormSubmitting = true;
@@ -5039,6 +5134,34 @@
           window.setTimeout(function () {
             examFormSubmitting = false;
           }, 700);
+        }
+      });
+    }
+
+    if (examRandomizeQuestionsInput) {
+      examRandomizeQuestionsInput.addEventListener("change", async function () {
+        const nextQ = !!examRandomizeQuestionsInput.checked;
+        const nextO = !!(
+          examRandomizeOptionsInput && examRandomizeOptionsInput.checked
+        );
+        try {
+          await preventRandomizeChangeIfExamRunning(nextQ, nextO);
+        } catch (err) {
+          setMsg("Gagal memvalidasi status ujian berjalan: " + err.message);
+        }
+      });
+    }
+
+    if (examRandomizeOptionsInput) {
+      examRandomizeOptionsInput.addEventListener("change", async function () {
+        const nextQ = !!(
+          examRandomizeQuestionsInput && examRandomizeQuestionsInput.checked
+        );
+        const nextO = !!examRandomizeOptionsInput.checked;
+        try {
+          await preventRandomizeChangeIfExamRunning(nextQ, nextO);
+        } catch (err) {
+          setMsg("Gagal memvalidasi status ujian berjalan: " + err.message);
         }
       });
     }
@@ -5744,6 +5867,14 @@
     );
     const examsRefreshBtn = document.getElementById("guru-exams-refresh-btn");
     const examForm = document.getElementById("guru-exam-form");
+    const examRandomizeQuestionsInput =
+      examForm && examForm.elements
+        ? examForm.elements.namedItem("randomize_questions")
+        : null;
+    const examRandomizeOptionsInput =
+      examForm && examForm.elements
+        ? examForm.elements.namedItem("randomize_options")
+        : null;
     const examSubjectSelect = document.getElementById("guru-exam-subject");
     const examsBody = document.getElementById("guru-exams-body");
     const examQuestionForm = document.getElementById("guru-exam-question-form");
@@ -9066,6 +9197,67 @@
       });
     }
 
+    function findExamManageByID(examID) {
+      const id = Number(examID || 0);
+      if (id <= 0) return null;
+      const list = Array.isArray(examsManageCache) ? examsManageCache : [];
+      for (let i = 0; i < list.length; i += 1) {
+        const it = list[i];
+        if (Number((it && it.id) || 0) === id) return it;
+      }
+      return null;
+    }
+
+    async function examHasInProgressAttempt(examID) {
+      const id = Number(examID || 0);
+      if (id <= 0) return false;
+      const rows = await api(
+        "/api/v1/admin/exams/" + id + "/assignments",
+        "GET",
+      );
+      if (!Array.isArray(rows)) return false;
+      return rows.some(function (it) {
+        return (
+          String((it && it.latest_attempt_status) || "")
+            .trim()
+            .toLowerCase() === "in_progress"
+        );
+      });
+    }
+
+    function resetRandomizeInputsToExam(examRow) {
+      if (!examRow) return;
+      if (examRandomizeQuestionsInput) {
+        examRandomizeQuestionsInput.checked = !!examRow.randomize_questions;
+      }
+      if (examRandomizeOptionsInput) {
+        examRandomizeOptionsInput.checked = !!examRow.randomize_options;
+      }
+    }
+
+    async function preventRandomizeChangeIfExamRunning(nextQ, nextO) {
+      const examID = Number(
+        (examForm &&
+          examForm.elements &&
+          examForm.elements.namedItem("exam_id") &&
+          examForm.elements.namedItem("exam_id").value) ||
+          0,
+      );
+      if (examID <= 0) return false;
+      const examRow = findExamManageByID(examID);
+      if (!examRow) return false;
+      const changed =
+        !!nextQ !== !!examRow.randomize_questions ||
+        !!nextO !== !!examRow.randomize_options;
+      if (!changed) return false;
+      const running = await examHasInProgressAttempt(examID);
+      if (!running) return false;
+      resetRandomizeInputsToExam(examRow);
+      window.alert("Jangan acak saat ini ujian sedang berlangsung");
+      setMsg("Perubahan acak diblokir: ada peserta yang sedang mengerjakan.");
+      return true;
+    }
+
     async function loadGuruExamManageTable() {
       const exams = await api("/api/v1/admin/exams/manage", "GET");
       examsManageCache = Array.isArray(exams) ? exams : [];
@@ -10730,7 +10922,9 @@
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
-          review_policy: String(fd.get("review_policy") || "after_submit"),
+          review_policy: String(fd.get("review_policy") || "score_only"),
+          randomize_questions: fd.get("randomize_questions") !== null,
+          randomize_options: fd.get("randomize_options") !== null,
           is_active: true,
         };
         examFormSubmitting = true;
@@ -10766,6 +10960,33 @@
         const action = String(btn.getAttribute("data-exam-action") || "");
         if (examID <= 0) return;
         if (action === "use") {
+          const examRow = findExamManageByID(examID);
+          if (examForm && examRow) {
+            const idField = examForm.elements.namedItem("exam_id");
+            const codeField = examForm.elements.namedItem("code");
+            const titleField = examForm.elements.namedItem("title");
+            const subjectField = examForm.elements.namedItem("subject_id");
+            const durationField =
+              examForm.elements.namedItem("duration_minutes");
+            const maxAttemptField = examForm.elements.namedItem("max_attempts");
+            const policyField = examForm.elements.namedItem("review_policy");
+            if (idField) idField.value = String(examID);
+            if (codeField) codeField.value = String(examRow.code || "");
+            if (titleField) titleField.value = String(examRow.title || "");
+            if (subjectField) {
+              subjectField.value = String(examRow.subject_id || "");
+            }
+            if (durationField) {
+              durationField.value = String(examRow.duration_minutes || 90);
+            }
+            if (maxAttemptField) {
+              maxAttemptField.value = String(examRow.max_attempts || 1);
+            }
+            if (policyField) {
+              policyField.value = String(examRow.review_policy || "score_only");
+            }
+            resetRandomizeInputsToExam(examRow);
+          }
           if (questionExamIDInput) questionExamIDInput.value = String(examID);
           if (examQuestionCodeRuleExamIDInput) {
             examQuestionCodeRuleExamIDInput.value = String(examID);

@@ -81,8 +81,9 @@ type SaveAnswerInput struct {
 }
 
 type AttemptResult struct {
-	Summary AttemptSummary      `json:"summary"`
-	Items   []AttemptResultItem `json:"items"`
+	Summary   AttemptSummary      `json:"summary"`
+	Items     []AttemptResultItem `json:"items"`
+	ScoreOnly bool                `json:"score_only,omitempty"`
 }
 
 type SubjectOption struct {
@@ -116,48 +117,54 @@ type ExamOption struct {
 }
 
 type ExamAdminRecord struct {
-	ID              int64      `json:"id"`
-	Code            string     `json:"code"`
-	Title           string     `json:"title"`
-	SubjectID       int64      `json:"subject_id"`
-	SubjectName     string     `json:"subject_name"`
-	EducationLevel  string     `json:"education_level"`
-	SubjectType     string     `json:"subject_type"`
-	DurationMinutes int        `json:"duration_minutes"`
-	MaxAttempts     int        `json:"max_attempts"`
-	StartAt         *time.Time `json:"start_at,omitempty"`
-	EndAt           *time.Time `json:"end_at,omitempty"`
-	ReviewPolicy    string     `json:"review_policy"`
-	IsActive        bool       `json:"is_active"`
-	CreatedBy       *int64     `json:"created_by,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	QuestionCount   int        `json:"question_count"`
-	AssignedCount   int        `json:"assigned_count"`
+	ID                 int64      `json:"id"`
+	Code               string     `json:"code"`
+	Title              string     `json:"title"`
+	SubjectID          int64      `json:"subject_id"`
+	SubjectName        string     `json:"subject_name"`
+	EducationLevel     string     `json:"education_level"`
+	SubjectType        string     `json:"subject_type"`
+	DurationMinutes    int        `json:"duration_minutes"`
+	MaxAttempts        int        `json:"max_attempts"`
+	StartAt            *time.Time `json:"start_at,omitempty"`
+	EndAt              *time.Time `json:"end_at,omitempty"`
+	ReviewPolicy       string     `json:"review_policy"`
+	RandomizeQuestions bool       `json:"randomize_questions"`
+	RandomizeOptions   bool       `json:"randomize_options"`
+	IsActive           bool       `json:"is_active"`
+	CreatedBy          *int64     `json:"created_by,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	QuestionCount      int        `json:"question_count"`
+	AssignedCount      int        `json:"assigned_count"`
 }
 
 type CreateExamInput struct {
-	Code            string
-	Title           string
-	SubjectID       int64
-	DurationMinutes int
-	MaxAttempts     int
-	StartAt         *time.Time
-	EndAt           *time.Time
-	ReviewPolicy    string
-	CreatedBy       int64
+	Code               string
+	Title              string
+	SubjectID          int64
+	DurationMinutes    int
+	MaxAttempts        int
+	StartAt            *time.Time
+	EndAt              *time.Time
+	ReviewPolicy       string
+	RandomizeQuestions bool
+	RandomizeOptions   bool
+	CreatedBy          int64
 }
 
 type UpdateExamInput struct {
-	ID              int64
-	Code            string
-	Title           string
-	SubjectID       int64
-	DurationMinutes int
-	MaxAttempts     int
-	StartAt         *time.Time
-	EndAt           *time.Time
-	ReviewPolicy    string
-	IsActive        bool
+	ID                 int64
+	Code               string
+	Title              string
+	SubjectID          int64
+	DurationMinutes    int
+	MaxAttempts        int
+	StartAt            *time.Time
+	EndAt              *time.Time
+	ReviewPolicy       string
+	RandomizeQuestions bool
+	RandomizeOptions   bool
+	IsActive           bool
 }
 
 type ExamTokenExam struct {
@@ -824,6 +831,8 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 			e.start_at,
 			e.end_at,
 			e.review_policy,
+			e.randomize_questions,
+			e.randomize_options,
 			e.is_active,
 			e.created_by,
 			e.created_at,
@@ -866,6 +875,8 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 					e.start_at,
 					e.end_at,
 					e.review_policy,
+					e.randomize_questions,
+					e.randomize_options,
 					e.is_active,
 					e.created_by,
 					e.created_at,
@@ -910,6 +921,8 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 			&startAt,
 			&endAt,
 			&it.ReviewPolicy,
+			&it.RandomizeQuestions,
+			&it.RandomizeOptions,
 			&it.IsActive,
 			&createdBy,
 			&it.CreatedAt,
@@ -953,10 +966,10 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		if err := s.db.QueryRowContext(ctx, `
 			INSERT INTO exams (
 				code, title, subject_id, duration_minutes, max_attempts,
-				start_at, end_at, review_policy, is_active, created_by, created_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,now())
+				start_at, end_at, review_policy, randomize_questions, randomize_options, is_active, created_by, created_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,now())
 			RETURNING id
-		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.CreatedBy).Scan(&outID); err != nil {
+		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.CreatedBy).Scan(&outID); err != nil {
 			return 0, err
 		}
 		return outID, nil
@@ -1015,10 +1028,12 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 			start_at = $7,
 			end_at = $8,
 			review_policy = $9,
-			is_active = $10
+			randomize_questions = $10,
+			randomize_options = $11,
+			is_active = $12
 		WHERE id = $1
 		RETURNING id
-	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.IsActive).Scan(&outID); err != nil {
+	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.IsActive).Scan(&outID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
@@ -1067,6 +1082,8 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 			e.start_at,
 			e.end_at,
 			e.review_policy,
+			e.randomize_questions,
+			e.randomize_options,
 			e.is_active,
 			e.created_by,
 			e.created_at,
@@ -1103,6 +1120,8 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 					e.start_at,
 					e.end_at,
 					e.review_policy,
+					e.randomize_questions,
+					e.randomize_options,
 					e.is_active,
 					e.created_by,
 					e.created_at,
@@ -1143,6 +1162,8 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 		&startAt,
 		&endAt,
 		&it.ReviewPolicy,
+		&it.RandomizeQuestions,
+		&it.RandomizeOptions,
 		&it.IsActive,
 		&createdBy,
 		&it.CreatedAt,
@@ -2463,9 +2484,11 @@ func normalizeExamToken(token string) string {
 func normalizeReviewPolicy(input string) string {
 	v := strings.TrimSpace(strings.ToLower(input))
 	switch v {
-	case "after_submit", "immediate", "disabled", "after_exam_end":
+	case "score_only", "after_submit", "immediate", "disabled", "after_exam_end", "manual_release":
 		return v
 	case "after_end":
+		return "after_exam_end"
+	case "after_exam_closed":
 		return "after_exam_end"
 	default:
 		return "after_submit"
@@ -2622,11 +2645,27 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 	}
 
+	randomizeQuestions, randomizeOptions, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+
+	questionRefs, err := s.listExamQuestionRefs(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	if questionNo > len(questionRefs) {
+		return nil, ErrQuestionNotInExam
+	}
+	if randomizeQuestions {
+		questionRefs = shuffleQuestionRefsByAttempt(questionRefs, attemptID)
+	}
+	target := questionRefs[questionNo-1]
+
 	r := s.db.QueryRowContext(ctx, `
 			SELECT
 				a.id,
 				eq.question_id,
-				eq.seq_no,
 				q.question_type,
 				COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
 				COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
@@ -2677,8 +2716,8 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 			LIMIT 1
 		) qv_fallback ON TRUE
 		WHERE a.id = $1
-		  AND eq.seq_no = $2
-	`, attemptID, questionNo)
+		  AND eq.question_id = $2
+	`, attemptID, target.QuestionID)
 
 	var out AttemptQuestion
 	var versionStimulus sql.NullString
@@ -2687,7 +2726,6 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	if err := r.Scan(
 		&out.AttemptID,
 		&out.QuestionID,
-		&out.SeqNo,
 		&out.QuestionType,
 		&out.StemHTML,
 		&versionStimulus,
@@ -2702,6 +2740,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 		return nil, fmt.Errorf("query attempt question: %w", err)
 	}
+	out.SeqNo = questionNo
 	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, questionMetadata)
 
 	optRows, err := s.db.QueryContext(ctx, `
@@ -2725,8 +2764,108 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	if err := optRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate question options: %w", err)
 	}
+	if randomizeOptions && len(out.Options) > 1 {
+		out.Options = shuffleQuestionOptionsByAttempt(out.Options, attemptID, out.QuestionID)
+	}
 
 	return &out, nil
+}
+
+type examQuestionRef struct {
+	QuestionID int64
+	SeqNo      int
+}
+
+func (s *Service) listExamQuestionRefs(ctx context.Context, examID int64) ([]examQuestionRef, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT question_id, seq_no
+		FROM exam_questions
+		WHERE exam_id = $1
+		ORDER BY seq_no ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam question refs: %w", err)
+	}
+	defer rows.Close()
+
+	refs := make([]examQuestionRef, 0)
+	for rows.Next() {
+		var ref examQuestionRef
+		if err := rows.Scan(&ref.QuestionID, &ref.SeqNo); err != nil {
+			return nil, fmt.Errorf("scan exam question refs: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate exam question refs: %w", err)
+	}
+	return refs, nil
+}
+
+func (s *Service) loadExamRandomizeConfig(ctx context.Context, examID int64) (bool, bool, error) {
+	var randomizeQuestions bool
+	var randomizeOptions bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT randomize_questions, randomize_options
+		FROM exams
+		WHERE id = $1
+	`, examID).Scan(&randomizeQuestions, &randomizeOptions); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, false, ErrExamNotFound
+		}
+		return false, false, fmt.Errorf("load exam randomize config: %w", err)
+	}
+	return randomizeQuestions, randomizeOptions, nil
+}
+
+func shuffleQuestionRefsByAttempt(items []examQuestionRef, attemptID int64) []examQuestionRef {
+	if len(items) <= 1 {
+		return items
+	}
+	shuffled := append([]examQuestionRef(nil), items...)
+	sort.SliceStable(shuffled, func(i, j int) bool {
+		ri := deterministicRankForAttempt(
+			attemptID,
+			fmt.Sprintf("q:%d:%d", shuffled[i].QuestionID, shuffled[i].SeqNo),
+		)
+		rj := deterministicRankForAttempt(
+			attemptID,
+			fmt.Sprintf("q:%d:%d", shuffled[j].QuestionID, shuffled[j].SeqNo),
+		)
+		if ri == rj {
+			return shuffled[i].SeqNo < shuffled[j].SeqNo
+		}
+		return ri < rj
+	})
+	return shuffled
+}
+
+func shuffleQuestionOptionsByAttempt(items []QuestionOption, attemptID int64, questionID int64) []QuestionOption {
+	if len(items) <= 1 {
+		return items
+	}
+	shuffled := append([]QuestionOption(nil), items...)
+	sort.SliceStable(shuffled, func(i, j int) bool {
+		ri := deterministicRankForAttempt(
+			attemptID,
+			fmt.Sprintf("o:%d:%s", questionID, strings.TrimSpace(shuffled[i].OptionKey)),
+		)
+		rj := deterministicRankForAttempt(
+			attemptID,
+			fmt.Sprintf("o:%d:%s", questionID, strings.TrimSpace(shuffled[j].OptionKey)),
+		)
+		if ri == rj {
+			return shuffled[i].OptionKey < shuffled[j].OptionKey
+		}
+		return ri < rj
+	})
+	return shuffled
+}
+
+func deterministicRankForAttempt(attemptID int64, key string) string {
+	raw := fmt.Sprintf("%d|%s", attemptID, strings.TrimSpace(key))
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString, metadata json.RawMessage) *string {
@@ -2821,7 +2960,8 @@ func (s *Service) GetAttemptResult(ctx context.Context, attemptID int64) (*Attem
 	if err != nil {
 		return nil, err
 	}
-	if !canViewResultByPolicy(reviewPolicy, row.Status, examEndAt) {
+	policy := normalizeReviewPolicy(reviewPolicy)
+	if !canViewResultByPolicy(policy, row.Status, examEndAt) {
 		return nil, ErrResultPolicyDenied
 	}
 
@@ -2830,14 +2970,18 @@ func (s *Service) GetAttemptResult(ctx context.Context, attemptID int64) (*Attem
 		return nil, err
 	}
 
-	items, err := s.loadAttemptResultItems(ctx, attemptID)
-	if err != nil {
-		return nil, err
+	items := make([]AttemptResultItem, 0)
+	if policy != "score_only" {
+		items, err = s.loadAttemptResultItems(ctx, attemptID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &AttemptResult{
-		Summary: *summary,
-		Items:   items,
+		Summary:   *summary,
+		Items:     items,
+		ScoreOnly: policy == "score_only",
 	}, nil
 }
 
@@ -3742,6 +3886,8 @@ func canViewResultByPolicy(policy, attemptStatus string, examEndAt *time.Time) b
 	}
 
 	switch strings.TrimSpace(policy) {
+	case "score_only":
+		return true
 	case "", "after_submit":
 		return true
 	case "after_exam_end":
@@ -3752,6 +3898,8 @@ func canViewResultByPolicy(policy, attemptStatus string, examEndAt *time.Time) b
 	case "immediate":
 		return true
 	case "disabled":
+		return false
+	case "manual_release":
 		return false
 	default:
 		// Safe fallback: treat unknown policy like after_submit.

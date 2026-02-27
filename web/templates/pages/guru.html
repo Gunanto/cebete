@@ -753,7 +753,7 @@
                             <input name="title" type="text" required />
                         </label>
                         <label>
-                            Mapel
+                            Mata Pelajaran (Mapel)
                             <select
                                 id="guru-exam-subject"
                                 name="subject_id"
@@ -763,7 +763,7 @@
                             </select>
                         </label>
                         <label>
-                            Durasi (menit)
+                            Alokasi Waktu Mengerjakan (menit)
                             <input
                                 name="duration_minutes"
                                 type="number"
@@ -773,7 +773,7 @@
                             />
                         </label>
                         <label>
-                            Maks Attempt
+                            Batas Pengerjaan Ujian (kali)
                             <input
                                 name="max_attempts"
                                 type="number"
@@ -783,18 +783,29 @@
                             />
                         </label>
                         <label>
-                            Review Policy
+                            Lihat Setelah Mengerjakan
                             <select name="review_policy">
-                                <option value="after_submit">
-                                    after_submit
+                                <option value="score_only">
+                                    Tampilkan Nilai Akhir saja
                                 </option>
-                                <option value="after_exam_closed">
-                                    after_exam_closed
+                                <option value="after_submit">
+                                    Tampilkan setelah submit
+                                </option>
+                                <option value="after_exam_end">
+                                    Tampilkan setelah ujian berakhir
                                 </option>
                                 <option value="manual_release">
-                                    manual_release
+                                    Tampilkan setelah dirilis manual
                                 </option>
                             </select>
+                        </label>
+                        <label>
+                            <input name="randomize_questions" type="checkbox" />
+                            Acak Soal
+                        </label>
+                        <label>
+                            <input name="randomize_options" type="checkbox" />
+                            Acak Opsi Jawaban
                         </label>
                         <button
                             id="guru-exam-save-btn"

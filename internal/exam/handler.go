@@ -95,15 +95,17 @@ type generateExamTokenRequest struct {
 }
 
 type examManageRequest struct {
-	Code            string `json:"code"`
-	Title           string `json:"title"`
-	SubjectID       int64  `json:"subject_id"`
-	DurationMinutes int    `json:"duration_minutes"`
-	MaxAttempts     int    `json:"max_attempts"`
-	StartAt         string `json:"start_at"`
-	EndAt           string `json:"end_at"`
-	ReviewPolicy    string `json:"review_policy"`
-	IsActive        *bool  `json:"is_active"`
+	Code               string `json:"code"`
+	Title              string `json:"title"`
+	SubjectID          int64  `json:"subject_id"`
+	DurationMinutes    int    `json:"duration_minutes"`
+	MaxAttempts        int    `json:"max_attempts"`
+	StartAt            string `json:"start_at"`
+	EndAt              string `json:"end_at"`
+	ReviewPolicy       string `json:"review_policy"`
+	RandomizeQuestions bool   `json:"randomize_questions"`
+	RandomizeOptions   bool   `json:"randomize_options"`
+	IsActive           *bool  `json:"is_active"`
 }
 
 type resetExamAttemptRequest struct {
@@ -371,15 +373,17 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := h.svc.CreateExam(r.Context(), CreateExamInput{
-		Code:            req.Code,
-		Title:           req.Title,
-		SubjectID:       req.SubjectID,
-		DurationMinutes: req.DurationMinutes,
-		MaxAttempts:     req.MaxAttempts,
-		StartAt:         startAt,
-		EndAt:           endAt,
-		ReviewPolicy:    req.ReviewPolicy,
-		CreatedBy:       user.ID,
+		Code:               req.Code,
+		Title:              req.Title,
+		SubjectID:          req.SubjectID,
+		DurationMinutes:    req.DurationMinutes,
+		MaxAttempts:        req.MaxAttempts,
+		StartAt:            startAt,
+		EndAt:              endAt,
+		ReviewPolicy:       req.ReviewPolicy,
+		RandomizeQuestions: req.RandomizeQuestions,
+		RandomizeOptions:   req.RandomizeOptions,
+		CreatedBy:          user.ID,
 	})
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
@@ -417,16 +421,18 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		isActive = *req.IsActive
 	}
 	item, err := h.svc.UpdateExam(r.Context(), UpdateExamInput{
-		ID:              examID,
-		Code:            req.Code,
-		Title:           req.Title,
-		SubjectID:       req.SubjectID,
-		DurationMinutes: req.DurationMinutes,
-		MaxAttempts:     req.MaxAttempts,
-		StartAt:         startAt,
-		EndAt:           endAt,
-		ReviewPolicy:    req.ReviewPolicy,
-		IsActive:        isActive,
+		ID:                 examID,
+		Code:               req.Code,
+		Title:              req.Title,
+		SubjectID:          req.SubjectID,
+		DurationMinutes:    req.DurationMinutes,
+		MaxAttempts:        req.MaxAttempts,
+		StartAt:            startAt,
+		EndAt:              endAt,
+		ReviewPolicy:       req.ReviewPolicy,
+		RandomizeQuestions: req.RandomizeQuestions,
+		RandomizeOptions:   req.RandomizeOptions,
+		IsActive:           isActive,
 	})
 	if err != nil {
 		switch {
