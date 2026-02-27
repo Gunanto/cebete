@@ -4,25 +4,6 @@
         <h2 id="attempt-page-title">Ujian #{{.AttemptID}}</h2>
         <p>Kerjakan soal, atur ukuran font, dan pantau sisa waktu.</p>
     </section>
-    <div class="attempt-head">
-        <div class="attempt-tools">
-            <button id="info-soal-btn" type="button" class="chip chip-primary">
-                Informasi Soal
-            </button>
-            <div class="chip chip-timer">
-                Sisa Waktu : <span id="remaining-label">-</span>
-            </div>
-            <button
-                id="daftar-soal-btn"
-                type="button"
-                class="chip chip-primary"
-                aria-expanded="false"
-                aria-controls="daftar-soal-panel"
-            >
-                Daftar Soal
-            </button>
-        </div>
-    </div>
     <div class="attempt-subhead">
         <div class="attempt-font-row">
             <div
@@ -56,6 +37,23 @@
                     A
                 </button>
             </div>
+        </div>
+        <div class="attempt-tools">
+            <button id="info-soal-btn" type="button" class="chip chip-primary">
+                Informasi Soal
+            </button>
+            <div class="chip chip-timer">
+                Sisa Waktu : <span id="remaining-label">-</span>
+            </div>
+            <button
+                id="daftar-soal-btn"
+                type="button"
+                class="chip chip-primary"
+                aria-expanded="false"
+                aria-controls="daftar-soal-panel"
+            >
+                Daftar Soal
+            </button>
         </div>
     </div>
 

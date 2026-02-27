@@ -21,6 +21,7 @@ type Handler struct {
 
 type examService interface {
 	StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
+	PreviewExamByToken(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
 	ListAdminExams(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
 	CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
@@ -34,6 +35,8 @@ type examService interface {
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
+	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
@@ -63,6 +66,10 @@ type response struct {
 type startAttemptRequest struct {
 	ExamID    int64  `json:"exam_id"`
 	StudentID int64  `json:"student_id"`
+	ExamToken string `json:"exam_token"`
+}
+
+type previewExamByTokenRequest struct {
 	ExamToken string `json:"exam_token"`
 }
 
@@ -189,6 +196,41 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: attempt})
+}
+
+func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if strings.TrimSpace(strings.ToLower(user.Role)) != "siswa" {
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		return
+	}
+
+	var req previewExamByTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	out, err := h.svc.PreviewExamByToken(r.Context(), user.ID, req.ExamToken)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrStudentDataMissing):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotAssigned), errors.Is(err, ErrAttemptForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptLimitReached):
+			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
 }
 
 func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
@@ -483,6 +525,54 @@ func (h *Handler) ListExamAssignments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	items, err := h.svc.ListExamParticipantResults(r.Context(), examID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ExportExamParticipantResultsExcel(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	content, filename, err := h.svc.ExportExamParticipantResultsExcel(r.Context(), examID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	if strings.TrimSpace(filename) == "" {
+		filename = "hasil_ujian.xlsx"
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (h *Handler) ReplaceExamAssignments(w http.ResponseWriter, r *http.Request) {

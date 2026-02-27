@@ -1,0 +1,115 @@
+package exam
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/xuri/excelize/v2"
+)
+
+func (s *Service) ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error) {
+	matrix, err := s.ListExamParticipantResults(ctx, examID)
+	if err != nil {
+		return nil, "", err
+	}
+	title, err := s.loadExamTitle(ctx, s.db, examID)
+	if err != nil {
+		return nil, "", err
+	}
+	buf, err := buildExamParticipantResultsExcel(matrix)
+	if err != nil {
+		return nil, "", err
+	}
+	filename := "hasil_ujian_" + sanitizeExcelFilename(title) + "_" + time.Now().Format("20060102_150405") + ".xlsx"
+	return buf, filename, nil
+}
+
+func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, error) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	headers := []string{
+		"Nama",
+		"Attempt Ke-",
+		"Skor Total",
+		"Nilai",
+		"Start Ujian",
+		"End Ujian",
+	}
+	if matrix != nil {
+		for _, no := range matrix.QuestionNos {
+			headers = append(headers, strconv.Itoa(no))
+		}
+	}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		_ = f.SetCellValue(sheet, cell, h)
+	}
+
+	rows := []ExamParticipantResultRow{}
+	if matrix != nil {
+		rows = matrix.Rows
+	}
+	totalQuestions := 0
+	if matrix != nil {
+		totalQuestions = len(matrix.QuestionNos)
+	}
+	for idx, it := range rows {
+		row := idx + 2
+		nilai := 0.0
+		if totalQuestions > 0 {
+			nilai = (it.SkorTotal / float64(totalQuestions)) * 100
+		}
+		values := []interface{}{
+			it.FullName,
+			it.AttemptKe,
+			it.SkorTotal,
+			fmt.Sprintf("%.2f", nilai),
+			it.StartedAt.Format(time.RFC3339),
+			it.EndedAt.Format(time.RFC3339),
+		}
+		for _, ans := range it.Answers {
+			values = append(values, ans)
+		}
+		for col, v := range values {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row)
+			_ = f.SetCellValue(sheet, cell, v)
+		}
+	}
+
+	lastCol, _ := excelize.ColumnNumberToName(len(headers))
+	_ = f.SetColWidth(sheet, "A", lastCol, 16)
+	var b bytes.Buffer
+	if err := f.Write(&b); err != nil {
+		return nil, fmt.Errorf("write excel: %w", err)
+	}
+	return b.Bytes(), nil
+}
+
+func sanitizeExcelFilename(input string) string {
+	s := strings.TrimSpace(strings.ToLower(input))
+	if s == "" {
+		return "exam"
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	out := b.String()
+	out = strings.Trim(out, "_")
+	if out == "" {
+		return "exam"
+	}
+	if _, err := strconv.Atoi(out); err == nil {
+		return "exam_" + out
+	}
+	return out
+}

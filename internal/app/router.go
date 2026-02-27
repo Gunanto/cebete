@@ -151,6 +151,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.Get("/levels", masterHandler.ListEducationLevels)
 
 			secure.Post("/attempts/start", examHandler.Start)
+			secure.Post("/attempts/token/preview", examHandler.PreviewExamByToken)
 			secure.Get("/attempts/{id}", examHandler.GetAttempt)
 			secure.Get("/attempts/{id}/questions/{no}", examHandler.GetAttemptQuestion)
 			secure.Get("/attempts/{id}/result", examHandler.Result)
@@ -184,6 +185,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}", examHandler.DeleteExam)
 			secure.With(authHandler.RequireRoles("admin", "proktor")).Post("/admin/exams/{id}/attempts/reset", examHandler.ResetExamAttempt)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/assignments", examHandler.ListExamAssignments)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results", examHandler.ListExamParticipantResults)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results/export", examHandler.ExportExamParticipantResultsExcel)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/questions", examHandler.ListExamQuestions)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/questions", examHandler.UpsertExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/questions/{questionID}", examHandler.UpsertExamQuestion)

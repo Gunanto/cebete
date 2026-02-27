@@ -117,6 +117,18 @@
     return fallback;
   }
 
+  const LOGIN_EXAM_TOKEN_STORAGE_KEY = "cbtlms_login_exam_token";
+
+  function shortQuestionTypeLabel(qType) {
+    const v = String(qType || "")
+      .toLowerCase()
+      .trim();
+    if (v === "pg_tunggal") return "MC";
+    if (v === "multi_jawaban") return "MR";
+    if (v === "benar_salah_pernyataan") return "TF";
+    return "-";
+  }
+
   function normalizeCredential(input) {
     return String(input || "")
       .normalize("NFKC")
@@ -206,6 +218,7 @@
     const msg = document.getElementById("login-message");
     const passwordInput = document.getElementById("login-password");
     const togglePasswordBtn = document.getElementById("toggle-login-password");
+    const loginExamTokenInput = document.getElementById("login-exam-token");
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -243,11 +256,56 @@
       try {
         const identifier = normalizeCredential(fd.get("identifier"));
         const password = normalizeCredential(fd.get("password"));
+        const examToken = String(fd.get("exam_token") || "").trim();
         await api("/api/v1/auth/login-password", "POST", {
           identifier: identifier,
           password: password,
         });
         const me = await meOrNull();
+        const role = String((me && me.role) || "")
+          .trim()
+          .toLowerCase();
+        if (role === "siswa" && !examToken) {
+          try {
+            await api("/api/v1/auth/logout", "POST");
+          } catch (_) {
+            // no-op
+          }
+          text(msg, "Token ujian wajib diisi untuk login siswa.");
+          if (loginExamTokenInput) loginExamTokenInput.focus();
+          return;
+        }
+        if (role === "siswa") {
+          try {
+            await api("/api/v1/attempts/token/preview", "POST", {
+              exam_token: examToken,
+            });
+          } catch (err) {
+            try {
+              await api("/api/v1/auth/logout", "POST");
+            } catch (_) {
+              // no-op
+            }
+            text(msg, "Login gagal: token ujian salah atau tidak berlaku.");
+            if (loginExamTokenInput) {
+              loginExamTokenInput.focus();
+              loginExamTokenInput.select();
+            }
+            return;
+          }
+        }
+        try {
+          if (role === "siswa") {
+            window.sessionStorage.setItem(
+              LOGIN_EXAM_TOKEN_STORAGE_KEY,
+              examToken,
+            );
+          } else {
+            window.sessionStorage.removeItem(LOGIN_EXAM_TOKEN_STORAGE_KEY);
+          }
+        } catch (_) {
+          // Ignore if storage is unavailable.
+        }
         window.location.href = homeByRole(me);
       } catch (err) {
         text(msg, "Login gagal: " + err.message);
@@ -260,6 +318,7 @@
   async function initSimulasiPage() {
     const form = document.getElementById("simulasi-form");
     if (!form) return;
+    const legacyFlow = document.getElementById("simulasi-legacy-flow");
 
     const user = await meOrNull();
     if (!user) {
@@ -302,12 +361,50 @@
     const profileNISN = document.getElementById("profile-nisn");
     const profileSchoolName = document.getElementById("profile-school-name");
     const profileSchoolCode = document.getElementById("profile-school-code");
+    const examReadyDialog = document.getElementById("exam-ready-dialog");
+    const examReadyDialogForm = document.getElementById(
+      "exam-ready-dialog-form",
+    );
+    const examReadyDialogHelp = document.getElementById(
+      "exam-ready-dialog-help",
+    );
+    const examReadyDialogCancelBtn = document.getElementById(
+      "exam-ready-dialog-cancel-btn",
+    );
+    const examReadyCode = document.getElementById("exam-ready-code");
+    const examReadyTitle = document.getElementById("exam-ready-title");
+    const examReadySubject = document.getElementById("exam-ready-subject");
+    const examReadyDuration = document.getElementById("exam-ready-duration");
+    const examReadyStart = document.getElementById("exam-ready-start");
+    const examReadyEnd = document.getElementById("exam-ready-end");
+    const examReadyAttempt = document.getElementById("exam-ready-attempt");
+    const examReadyTokenExpiry = document.getElementById(
+      "exam-ready-token-expiry",
+    );
     const startBtn = document.getElementById("start-btn");
     let pendingStartExamID = 0;
+    let pendingStartToken = "";
+    let pendingPreviewData = null;
     const userRole = String((user && user.role) || "")
       .trim()
       .toLowerCase();
     const isStudentRole = userRole === "siswa";
+    const tokenDialogHelpDefault = String(
+      (examTokenDialogHelp && examTokenDialogHelp.textContent) ||
+        "Token wajib diisi. Mintakan token ujian ke proktor.",
+    ).trim();
+    const examReadyHelpDefault = String(
+      (examReadyDialogHelp && examReadyDialogHelp.textContent) ||
+        "Pastikan informasi ujian sudah benar sebelum memulai.",
+    ).trim();
+    let loginExamToken = "";
+    try {
+      loginExamToken = String(
+        window.sessionStorage.getItem(LOGIN_EXAM_TOKEN_STORAGE_KEY) || "",
+      ).trim();
+    } catch (_) {
+      loginExamToken = "";
+    }
 
     let subjects = [];
     const initDone = beginBusy(form, msg, "Memuat daftar mapel...");
@@ -438,8 +535,10 @@
         }
         const out = await api("/api/v1/attempts/start", "POST", payload);
         window.location.href = "/ujian/" + out.id;
+        return out;
       } catch (err) {
         text(msg, "Gagal start attempt: " + err.message);
+        throw err;
       } finally {
         done();
       }
@@ -455,25 +554,24 @@
       el.textContent = raw || "-";
     }
 
-    form.addEventListener("submit", async function (e) {
-      e.preventDefault();
-      const examID = Number(examSelect.value || 0);
-      if (!examID) return;
-      pendingStartExamID = examID;
+    function formatDateTimeID(value) {
+      if (!value) return "-";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleString("id-ID");
+    }
 
-      if (!isStudentRole) {
-        if (examTokenDialogInput) examTokenDialogInput.value = "";
-        if (
-          examTokenDialog &&
-          typeof examTokenDialog.showModal === "function"
-        ) {
-          examTokenDialog.showModal();
-          return;
-        }
-        text(msg, "Dialog token tidak tersedia. Hubungi proktor.");
-        return;
+    async function previewExamByToken(token) {
+      const cleanToken = String(token || "").trim();
+      if (!cleanToken) {
+        throw new Error("Token ujian wajib diisi.");
       }
+      return api("/api/v1/attempts/token/preview", "POST", {
+        exam_token: cleanToken,
+      });
+    }
 
+    async function showStudentProfileStep() {
       try {
         const profile = await loadStudentProfile();
         setProfileCell(profileParticipantNo, profile.participant_no);
@@ -483,40 +581,78 @@
         setProfileCell(profileSchoolName, profile.school_name);
         setProfileCell(profileSchoolCode, profile.school_code);
       } catch (err) {
-        const errMsg = String((err && err.message) || "")
-          .trim()
-          .toLowerCase();
-        // Fallback: non-siswa should continue via token flow without profile dialog.
-        if (!isStudentRole || errMsg.includes("forbidden")) {
-          if (examTokenDialogInput) examTokenDialogInput.value = "";
-          if (
-            examTokenDialog &&
-            typeof examTokenDialog.showModal === "function"
-          ) {
-            examTokenDialog.showModal();
-            return;
-          }
-        }
         text(msg, "Gagal memuat data peserta: " + err.message);
-        return;
+        return false;
       }
-
       if (
         studentProfileDialog &&
         typeof studentProfileDialog.showModal === "function"
       ) {
         studentProfileDialog.showModal();
-        return;
+        return true;
       }
       text(
         msg,
         "Dialog konfirmasi data tidak tersedia. Hubungi proktor untuk bantuan.",
       );
+      return false;
+    }
+
+    function renderExamReadyDialog(preview) {
+      const exam = preview || {};
+      text(examReadyCode, String(exam.exam_code || "-"));
+      text(examReadyTitle, String(exam.exam_title || "-"));
+      text(examReadySubject, String(exam.subject_name || "-"));
+      text(
+        examReadyDuration,
+        String(Number(exam.duration_minutes || 0)) + " menit",
+      );
+      text(examReadyStart, formatDateTimeID(exam.start_at));
+      text(examReadyEnd, formatDateTimeID(exam.end_at));
+      text(
+        examReadyAttempt,
+        String(Number(exam.attempts_used || 0)) +
+          " / " +
+          String(Number(exam.max_attempts || 0)) +
+          " (sisa " +
+          String(Number(exam.attempts_remaining || 0)) +
+          ")",
+      );
+      text(examReadyTokenExpiry, formatDateTimeID(exam.token_expires_at));
+    }
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const examID = Number(examSelect.value || 0);
+      if (!examID) return;
+      pendingStartExamID = examID;
+      pendingStartToken = "";
+      pendingPreviewData = null;
+
+      if (!isStudentRole) {
+        if (examTokenDialogInput) examTokenDialogInput.value = "";
+        if (
+          examTokenDialog &&
+          typeof examTokenDialog.showModal === "function"
+        ) {
+          if (examTokenDialogHelp) {
+            examTokenDialogHelp.textContent = tokenDialogHelpDefault;
+          }
+          examTokenDialog.showModal();
+          return;
+        }
+        text(msg, "Dialog token tidak tersedia. Hubungi proktor.");
+        return;
+      }
+      await showStudentProfileStep();
     });
 
     if (examTokenDialogCancelBtn) {
       examTokenDialogCancelBtn.addEventListener("click", function () {
         pendingStartExamID = 0;
+        if (examTokenDialogHelp) {
+          examTokenDialogHelp.textContent = tokenDialogHelpDefault;
+        }
         if (examTokenDialog && typeof examTokenDialog.close === "function") {
           examTokenDialog.close();
         }
@@ -537,7 +673,7 @@
     }
 
     if (studentProfileDialogForm) {
-      studentProfileDialogForm.addEventListener("submit", function (e) {
+      studentProfileDialogForm.addEventListener("submit", async function (e) {
         e.preventDefault();
         if (
           studentProfileDialog &&
@@ -545,11 +681,45 @@
         ) {
           studentProfileDialog.close();
         }
+        const stagedToken = String(loginExamToken || "").trim();
+        if (stagedToken) {
+          const done = beginBusy(
+            studentProfileDialogForm,
+            msg,
+            "Memvalidasi token ujian...",
+          );
+          try {
+            const preview = await previewExamByToken(stagedToken);
+            pendingStartExamID = Number((preview && preview.exam_id) || 0);
+            pendingStartToken = stagedToken;
+            pendingPreviewData = preview;
+            renderExamReadyDialog(preview);
+            if (examReadyDialogHelp) {
+              examReadyDialogHelp.textContent = examReadyHelpDefault;
+            }
+            if (
+              examReadyDialog &&
+              typeof examReadyDialog.showModal === "function"
+            ) {
+              examReadyDialog.showModal();
+            }
+            return;
+          } catch (err) {
+            text(msg, "Token ujian salah/tidak valid: " + err.message);
+            window.alert("Token ujian salah atau tidak valid.");
+            return;
+          } finally {
+            done();
+          }
+        }
         if (examTokenDialogInput) examTokenDialogInput.value = "";
         if (
           examTokenDialog &&
           typeof examTokenDialog.showModal === "function"
         ) {
+          if (examTokenDialogHelp) {
+            examTokenDialogHelp.textContent = tokenDialogHelpDefault;
+          }
           examTokenDialog.showModal();
           return;
         }
@@ -560,20 +730,144 @@
     if (examTokenDialogForm) {
       examTokenDialogForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const examID = Number(pendingStartExamID || 0);
-        if (examID <= 0) return;
+        const selectedExamID = Number(pendingStartExamID || 0);
+        if (selectedExamID <= 0) return;
         const token = String(
           (examTokenDialogInput && examTokenDialogInput.value) || "",
         ).trim();
         if (!token) {
           text(msg, "Token ujian wajib diisi.");
+          if (examTokenDialogHelp) {
+            examTokenDialogHelp.textContent = "Token ujian wajib diisi.";
+          }
           return;
         }
-        if (examTokenDialog && typeof examTokenDialog.close === "function") {
-          examTokenDialog.close();
+        if (examTokenDialogHelp) {
+          examTokenDialogHelp.textContent = tokenDialogHelpDefault;
         }
-        await startAttemptByExamID(examID, token, examTokenDialogForm);
+        try {
+          const preview = await previewExamByToken(token);
+          const previewExamID = Number((preview && preview.exam_id) || 0);
+          if (previewExamID <= 0) {
+            throw new Error("Informasi ujian tidak valid.");
+          }
+          if (selectedExamID > 0 && previewExamID !== selectedExamID) {
+            throw new Error(
+              "Token tidak sesuai dengan ujian yang dipilih. Silakan pilih ujian yang benar.",
+            );
+          }
+          pendingStartExamID = previewExamID;
+          pendingStartToken = token;
+          pendingPreviewData = preview;
+          renderExamReadyDialog(preview);
+          if (examReadyDialogHelp) {
+            examReadyDialogHelp.textContent = examReadyHelpDefault;
+          }
+          if (examTokenDialog && typeof examTokenDialog.close === "function") {
+            examTokenDialog.close();
+          }
+          if (
+            examReadyDialog &&
+            typeof examReadyDialog.showModal === "function"
+          ) {
+            examReadyDialog.showModal();
+          }
+        } catch (err) {
+          const errMsg = String((err && err.message) || "").toLowerCase();
+          const tokenInvalid =
+            errMsg.includes("token") ||
+            errMsg.includes("unauthorized") ||
+            errMsg.includes("forbidden") ||
+            errMsg.includes("invalid");
+          const warnText = tokenInvalid
+            ? "Token ujian salah atau tidak berlaku."
+            : "Gagal memverifikasi token ujian. Coba lagi.";
+          if (examTokenDialogHelp) {
+            examTokenDialogHelp.textContent = warnText;
+          }
+          window.alert(warnText);
+          if (examTokenDialogInput) {
+            examTokenDialogInput.focus();
+            examTokenDialogInput.select();
+          }
+        }
       });
+    }
+
+    if (examReadyDialogCancelBtn) {
+      examReadyDialogCancelBtn.addEventListener("click", function () {
+        pendingStartToken = "";
+        pendingPreviewData = null;
+        if (examReadyDialogHelp) {
+          examReadyDialogHelp.textContent = examReadyHelpDefault;
+        }
+        if (examReadyDialog && typeof examReadyDialog.close === "function") {
+          examReadyDialog.close();
+        }
+      });
+    }
+
+    if (examReadyDialogForm) {
+      examReadyDialogForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const examID = Number(
+          (pendingPreviewData && pendingPreviewData.exam_id) ||
+            pendingStartExamID ||
+            0,
+        );
+        const token = String(pendingStartToken || "").trim();
+        if (examID <= 0 || !token) {
+          text(msg, "Sesi ujian tidak valid. Silakan ulangi dari awal.");
+          return;
+        }
+        if (examReadyDialogHelp) {
+          examReadyDialogHelp.textContent = examReadyHelpDefault;
+        }
+        try {
+          await startAttemptByExamID(examID, token, examReadyDialogForm);
+          try {
+            window.sessionStorage.removeItem(LOGIN_EXAM_TOKEN_STORAGE_KEY);
+          } catch (_) {
+            // Ignore if storage is unavailable.
+          }
+        } catch (err) {
+          const errMsg = String((err && err.message) || "").toLowerCase();
+          const warn = errMsg.includes("token")
+            ? "Token ujian salah atau tidak berlaku."
+            : "Gagal memulai ujian: " + err.message;
+          if (examReadyDialogHelp) {
+            examReadyDialogHelp.textContent = warn;
+          }
+          window.alert(warn);
+        }
+      });
+    }
+
+    if (isStudentRole && loginExamToken) {
+      if (legacyFlow) legacyFlow.hidden = true;
+      const done = beginBusy(form, msg, "Memvalidasi token dari login...");
+      try {
+        const preview = await previewExamByToken(loginExamToken);
+        pendingStartExamID = Number((preview && preview.exam_id) || 0);
+        pendingStartToken = loginExamToken;
+        pendingPreviewData = preview;
+        text(
+          msg,
+          "Token valid. Lanjutkan konfirmasi data peserta untuk memulai ujian.",
+        );
+        await showStudentProfileStep();
+      } catch (err) {
+        text(msg, "Token dari login tidak valid: " + err.message);
+        window.alert("Token dari login tidak valid. Silakan login ulang.");
+        try {
+          await api("/api/v1/auth/logout", "POST");
+        } catch (_) {
+          // no-op
+        }
+        window.location.href = "/login";
+      } finally {
+        done();
+      }
     }
   }
 
@@ -694,9 +988,28 @@
       return "medium";
     }
 
-    function isAnsweredPayload(qType, payload) {
+    function isAnsweredPayload(qType, payload, questionLike) {
       if (qType === "benar_salah_pernyataan") {
-        return Array.isArray(payload.answers) && payload.answers.length > 0;
+        const statements = readTFStatements(questionLike);
+        if (!Array.isArray(statements) || statements.length === 0) return false;
+        const expected = new Set(
+          statements.map(function (s, idx) {
+            return String((s && s.id) || "S" + (idx + 1));
+          }),
+        );
+        if (expected.size === 0) return false;
+        const answers = Array.isArray(payload && payload.answers)
+          ? payload.answers
+          : [];
+        const answered = new Set();
+        answers.forEach(function (a) {
+          if (!a || typeof a !== "object") return;
+          const id = String(a.id || "").trim();
+          if (!id || !expected.has(id)) return;
+          if (typeof a.value !== "boolean") return;
+          answered.add(id);
+        });
+        return answered.size === expected.size;
       }
       if (qType === "pg_tunggal") {
         return (
@@ -713,7 +1026,7 @@
       if (!questionLike) return false;
       const qType = String(questionLike.question_type || "").toLowerCase();
       const payload = parseJSONLoose(questionLike.answer_payload, {});
-      return isAnsweredPayload(qType, payload);
+      return isAnsweredPayload(qType, payload, questionLike);
     }
 
     function questionTypeLabel(qType) {
@@ -822,6 +1135,42 @@
       const isLast = currentNo === totalQuestions;
       submitBtn.hidden = !isLast;
       if (actionsBar) actionsBar.classList.toggle("with-submit", isLast);
+    }
+
+    async function collectUnansweredQuestionNumbers() {
+      const unanswered = [];
+      const unknown = [];
+      for (let no = 1; no <= totalQuestions; no += 1) {
+        const state = questionState[no];
+        if (state && state.answered === true) continue;
+        if (state && state.answered === false) {
+          unanswered.push(no);
+          continue;
+        }
+        unknown.push(no);
+      }
+
+      if (!unknown.length) return unanswered;
+
+      await Promise.all(
+        unknown.map(async function (no) {
+          const q = await api(
+            "/api/v1/attempts/" + attemptID + "/questions/" + no,
+            "GET",
+          );
+          const answered = isAnswered(q);
+          questionState[no] = {
+            answered: answered,
+            doubt: !!(q && q.is_doubt),
+          };
+          if (!answered) unanswered.push(no);
+        }),
+      );
+
+      unanswered.sort(function (a, b) {
+        return a - b;
+      });
+      return unanswered;
     }
 
     function notifyEvent(msg) {
@@ -1207,6 +1556,7 @@
         answered: isAnsweredPayload(
           String(currentQuestion.question_type || "").toLowerCase(),
           payload,
+          currentQuestion,
         ),
         doubt: !!doubtCheckbox.checked,
       };
@@ -1418,10 +1768,23 @@
       .getElementById("submit-btn")
       .addEventListener("click", async function () {
         if (!attemptEditable) return;
-        if (!window.confirm("Yakin submit final?")) return;
         const done = beginBusy(this, message, "Memproses submit final...");
         try {
           await saveCurrent();
+          const unansweredNumbers = await collectUnansweredQuestionNumbers();
+          renderQuestionListState();
+          if (unansweredNumbers.length > 0) {
+            window.alert(
+              "Anda belum mengerjakan soal nomor: " +
+                unansweredNumbers.join(", "),
+            );
+            text(
+              message,
+              "Submit dibatalkan. Lengkapi jawaban pada nomor yang belum dikerjakan.",
+            );
+            return;
+          }
+          if (!window.confirm("Yakin submit final?")) return;
           await api("/api/v1/attempts/" + attemptID + "/submit", "POST");
           window.location.href = "/hasil/" + attemptID;
         } catch (err) {
@@ -1558,12 +1921,19 @@
     }
 
     const attemptID = Number(root.getAttribute("data-attempt-id") || 0);
+    const resultPageTitle = document.getElementById("result-page-title");
     const summaryBox = document.getElementById("result-summary");
     const tbody = document.querySelector("#result-table tbody");
 
     try {
       const out = await api("/api/v1/attempts/" + attemptID + "/result", "GET");
       const s = out.summary;
+      const examTitle = String((s && s.title) || "").trim();
+      if (resultPageTitle) {
+        resultPageTitle.textContent = examTitle
+          ? "Hasil " + examTitle
+          : "Hasil #" + String(attemptID);
+      }
       html(
         summaryBox,
         "<strong>Status:</strong> " +
@@ -1594,6 +1964,9 @@
         tr.innerHTML = [
           "<td>" + (idx + 1) + "</td>",
           "<td>" + escapeHtml(String(it.question_id)) + "</td>",
+          "<td>" +
+            escapeHtml(shortQuestionTypeLabel(it.question_type)) +
+            "</td>",
           "<td>" + escapeHtml((it.selected || []).join(", ")) + "</td>",
           "<td>" + escapeHtml((it.correct || []).join(", ")) + "</td>",
           "<td>" + escapeHtml(it.reason || "") + breakdown + "</td>",
@@ -3589,7 +3962,306 @@
       text(resultsExtra, value);
       if (resultsExtra) resultsExtra.classList.remove("muted");
     };
+    const setGuruResultsExtraHTML = function (value) {
+      if (!resultsExtra) return;
+      resultsExtra.innerHTML = String(value || "");
+      resultsExtra.classList.remove("muted");
+    };
 
+    function buildGuruResultsScoreChartHTML(rows, totalQuestions) {
+      const list = (Array.isArray(rows) ? rows : [])
+        .slice()
+        .sort(function (a, b) {
+          return (
+            Number((a && a.skor_total) || 0) - Number((b && b.skor_total) || 0)
+          );
+        });
+      if (!list.length) {
+        return '<span class="muted">Belum ada data grafik.</span>';
+      }
+      const labels = list.map(function (r) {
+        return (
+          String((r && r.full_name) || "-") +
+          " (" +
+          String((r && r.attempt_ke) || 0) +
+          ")"
+        );
+      });
+      const nilaiList = list.map(function (r) {
+        const score = Number((r && r.skor_total) || 0);
+        if (totalQuestions <= 0) return 0;
+        return (score / totalQuestions) * 100;
+      });
+      const maxScore = 100;
+      const ticks = 5;
+      const chartWidth = Math.max(560, labels.length * 66);
+      const chartHeight = 340;
+      const margin = { left: 54, right: 18, top: 16, bottom: 116 };
+      const innerW = chartWidth - margin.left - margin.right;
+      const innerH = chartHeight - margin.top - margin.bottom;
+      const barW = Math.max(
+        12,
+        Math.floor(innerW / Math.max(1, labels.length * 1.7)),
+      );
+      const step = innerW / Math.max(1, labels.length);
+      const elements = [];
+
+      for (let i = 0; i <= ticks; i += 1) {
+        const yVal = (maxScore / ticks) * i;
+        const y = margin.top + innerH - (yVal / maxScore) * innerH;
+        elements.push(
+          '<line x1="' +
+            margin.left +
+            '" y1="' +
+            y.toFixed(2) +
+            '" x2="' +
+            (margin.left + innerW) +
+            '" y2="' +
+            y.toFixed(2) +
+            '" stroke="#d7dfec" stroke-width="1" />',
+        );
+        elements.push(
+          '<text x="' +
+            (margin.left - 8) +
+            '" y="' +
+            (y + 4).toFixed(2) +
+            '" text-anchor="end" font-size="11" fill="#4b5d78">' +
+            escapeHtml(String(Math.round(yVal * 100) / 100)) +
+            "</text>",
+        );
+      }
+
+      labels.forEach(function (label, i) {
+        const score = scores[i];
+        const xCenter = margin.left + step * i + step / 2;
+        const barH = (score / maxScore) * innerH;
+        const yTop = margin.top + innerH - barH;
+        const x = xCenter - barW / 2;
+        elements.push(
+          '<rect x="' +
+            x.toFixed(2) +
+            '" y="' +
+            yTop.toFixed(2) +
+            '" width="' +
+            barW +
+            '" height="' +
+            Math.max(0, barH).toFixed(2) +
+            '" fill="#2f64dc" rx="4" ry="4"></rect>',
+        );
+        elements.push(
+          '<text x="' +
+            xCenter.toFixed(2) +
+            '" y="' +
+            (yTop - 6).toFixed(2) +
+            '" text-anchor="middle" font-size="11" fill="#1f3559">' +
+            escapeHtml(String(score)) +
+            "</text>",
+        );
+        elements.push(
+          '<text x="' +
+            xCenter.toFixed(2) +
+            '" y="' +
+            (margin.top + innerH + 12).toFixed(2) +
+            '" text-anchor="end" transform="rotate(-40 ' +
+            xCenter.toFixed(2) +
+            " " +
+            (margin.top + innerH + 12).toFixed(2) +
+            ')" font-size="11" fill="#324862">' +
+            escapeHtml(label) +
+            "</text>",
+        );
+      });
+
+      return [
+        '<div class="guru-results-chart-wrap">',
+        '<svg viewBox="0 0 ' +
+          chartWidth +
+          " " +
+          chartHeight +
+          '" class="guru-results-chart-svg" role="img" aria-label="Grafik skor peserta">',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          (margin.top + innerH) +
+          '" x2="' +
+          (margin.left + innerW) +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          margin.top +
+          '" x2="' +
+          margin.left +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        elements.join(""),
+        '<text x="' +
+          (margin.left + innerW / 2).toFixed(2) +
+          '" y="' +
+          (chartHeight - 10) +
+          '" text-anchor="middle" font-size="12" fill="#223b63">Sumbu X: Nama Peserta</text>',
+        '<text x="14" y="' +
+          (margin.top + innerH / 2).toFixed(2) +
+          '" text-anchor="middle" transform="rotate(-90 14 ' +
+          (margin.top + innerH / 2).toFixed(2) +
+          ')" font-size="12" fill="#223b63">Sumbu Y: Skor</text>',
+        "</svg>",
+        "</div>",
+      ].join("");
+    }
+    const setResultsExtraHTML = function (value) {
+      if (!resultsExtra) return;
+      resultsExtra.innerHTML = String(value || "");
+      resultsExtra.classList.remove("muted");
+    };
+
+    function buildResultsScoreChartHTML(rows, totalQuestions) {
+      const list = (Array.isArray(rows) ? rows : [])
+        .slice()
+        .sort(function (a, b) {
+          return (
+            Number((a && a.skor_total) || 0) - Number((b && b.skor_total) || 0)
+          );
+        });
+      if (!list.length) {
+        return '<span class="muted">Belum ada data grafik.</span>';
+      }
+      const labels = list.map(function (r) {
+        return (
+          String((r && r.full_name) || "-") +
+          " (" +
+          String((r && r.attempt_ke) || 0) +
+          ")"
+        );
+      });
+      const nilaiList = list.map(function (r) {
+        const score = Number((r && r.skor_total) || 0);
+        if (totalQuestions <= 0) return 0;
+        return (score / totalQuestions) * 100;
+      });
+      const maxScore = 100;
+      const ticks = 5;
+      const chartWidth = Math.max(560, labels.length * 66);
+      const chartHeight = 340;
+      const margin = { left: 54, right: 18, top: 16, bottom: 116 };
+      const innerW = chartWidth - margin.left - margin.right;
+      const innerH = chartHeight - margin.top - margin.bottom;
+      const barW = Math.max(
+        12,
+        Math.floor(innerW / Math.max(1, labels.length * 1.7)),
+      );
+      const step = innerW / Math.max(1, labels.length);
+      const elements = [];
+
+      for (let i = 0; i <= ticks; i += 1) {
+        const yVal = (maxScore / ticks) * i;
+        const y = margin.top + innerH - (yVal / maxScore) * innerH;
+        elements.push(
+          '<line x1="' +
+            margin.left +
+            '" y1="' +
+            y.toFixed(2) +
+            '" x2="' +
+            (margin.left + innerW) +
+            '" y2="' +
+            y.toFixed(2) +
+            '" stroke="#d7dfec" stroke-width="1" />',
+        );
+        elements.push(
+          '<text x="' +
+            (margin.left - 8) +
+            '" y="' +
+            (y + 4).toFixed(2) +
+            '" text-anchor="end" font-size="11" fill="#4b5d78">' +
+            escapeHtml(String(Math.round(yVal * 100) / 100)) +
+            "</text>",
+        );
+      }
+
+      labels.forEach(function (label, i) {
+        const score = scores[i];
+        const xCenter = margin.left + step * i + step / 2;
+        const barH = (score / maxScore) * innerH;
+        const yTop = margin.top + innerH - barH;
+        const x = xCenter - barW / 2;
+        elements.push(
+          '<rect x="' +
+            x.toFixed(2) +
+            '" y="' +
+            yTop.toFixed(2) +
+            '" width="' +
+            barW +
+            '" height="' +
+            Math.max(0, barH).toFixed(2) +
+            '" fill="#2f64dc" rx="4" ry="4"></rect>',
+        );
+        elements.push(
+          '<text x="' +
+            xCenter.toFixed(2) +
+            '" y="' +
+            (yTop - 6).toFixed(2) +
+            '" text-anchor="middle" font-size="11" fill="#1f3559">' +
+            escapeHtml(String(score)) +
+            "</text>",
+        );
+        elements.push(
+          '<text x="' +
+            xCenter.toFixed(2) +
+            '" y="' +
+            (margin.top + innerH + 12).toFixed(2) +
+            '" text-anchor="end" transform="rotate(-40 ' +
+            xCenter.toFixed(2) +
+            " " +
+            (margin.top + innerH + 12).toFixed(2) +
+            ')" font-size="11" fill="#324862">' +
+            escapeHtml(label) +
+            "</text>",
+        );
+      });
+
+      return [
+        '<div class="guru-results-chart-wrap">',
+        '<svg viewBox="0 0 ' +
+          chartWidth +
+          " " +
+          chartHeight +
+          '" class="guru-results-chart-svg" role="img" aria-label="Grafik skor peserta">',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          (margin.top + innerH) +
+          '" x2="' +
+          (margin.left + innerW) +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          margin.top +
+          '" x2="' +
+          margin.left +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        elements.join(""),
+        '<text x="' +
+          (margin.left + innerW / 2).toFixed(2) +
+          '" y="' +
+          (chartHeight - 10) +
+          '" text-anchor="middle" font-size="12" fill="#223b63">Sumbu X: Nama Peserta</text>',
+        '<text x="14" y="' +
+          (margin.top + innerH / 2).toFixed(2) +
+          '" text-anchor="middle" transform="rotate(-90 14 ' +
+          (margin.top + innerH / 2).toFixed(2) +
+          ')" font-size="12" fill="#223b63">Sumbu Y: Skor</text>',
+        "</svg>",
+        "</div>",
+      ].join("");
+    }
     function summarizeAttemptResult(mode) {
       const data = latestResultData;
       const summary = data && data.summary ? data.summary : {};
@@ -5105,18 +5777,21 @@
     const resultsAssignmentForm = document.getElementById(
       "guru-results-assignment-form",
     );
-    const resultsExamIDInput = document.getElementById("guru-results-exam-id");
+    const resultsExamSelect = document.getElementById(
+      "guru-results-exam-select",
+    );
     const resultsAssignmentBody = document.getElementById(
       "guru-results-assignment-body",
     );
-    const resultsAttemptForm = document.getElementById(
-      "guru-results-attempt-form",
+    const resultsMatrixHead = document.getElementById(
+      "guru-results-matrix-head",
     );
     const resultsSummary = document.getElementById("guru-results-summary");
     const resultsExtra = document.getElementById("guru-results-extra");
     const resultsReportBtn = document.getElementById("guru-results-report-btn");
     const resultsStatsBtn = document.getElementById("guru-results-stats-btn");
     const resultsChartBtn = document.getElementById("guru-results-chart-btn");
+    const resultsExportBtn = document.getElementById("guru-results-export-btn");
 
     let subjectsCache = [];
     let learningGoalsCache = [];
@@ -5138,6 +5813,7 @@
     let educationLevelsCache = [];
     let examFormSubmitting = false;
     let latestResultData = null;
+    let latestResultsMatrix = null;
     let learningGoalEditingID = 0;
     let learningGoalPage = 1;
     let learningGoalPageSize = 10;
@@ -5161,72 +5837,227 @@
       text(resultsExtra, value);
       if (resultsExtra) resultsExtra.classList.remove("muted");
     };
+    const setResultsExtraHTML = function (value) {
+      if (!resultsExtra) return;
+      resultsExtra.innerHTML = String(value || "");
+      resultsExtra.classList.remove("muted");
+    };
+
+    function buildResultsScoreChartHTML(rows, totalQuestions) {
+      const list = (Array.isArray(rows) ? rows : [])
+        .slice()
+        .sort(function (a, b) {
+          return (
+            Number((a && a.skor_total) || 0) - Number((b && b.skor_total) || 0)
+          );
+        });
+      if (!list.length) {
+        return '<span class="muted">Belum ada data grafik.</span>';
+      }
+      const labels = list.map(function (r) {
+        return (
+          String((r && r.full_name) || "-") +
+          " (" +
+          String((r && r.attempt_ke) || 0) +
+          ")"
+        );
+      });
+      const nilaiList = list.map(function (r) {
+        const score = Number((r && r.skor_total) || 0);
+        if (totalQuestions <= 0) return 0;
+        return (score / totalQuestions) * 100;
+      });
+      const maxScore = 100;
+      const ticks = 5;
+      const chartWidth = Math.max(560, labels.length * 66);
+      const chartHeight = 340;
+      const margin = { left: 54, right: 18, top: 16, bottom: 116 };
+      const innerW = chartWidth - margin.left - margin.right;
+      const innerH = chartHeight - margin.top - margin.bottom;
+      const barW = Math.max(
+        12,
+        Math.floor(innerW / Math.max(1, labels.length * 1.7)),
+      );
+      const step = innerW / Math.max(1, labels.length);
+      const elements = [];
+
+      for (let i = 0; i <= ticks; i += 1) {
+        const yVal = (maxScore / ticks) * i;
+        const y = margin.top + innerH - (yVal / maxScore) * innerH;
+        elements.push(
+          '<line x1="' +
+            margin.left +
+            '" y1="' +
+            y.toFixed(2) +
+            '" x2="' +
+            (margin.left + innerW) +
+            '" y2="' +
+            y.toFixed(2) +
+            '" stroke="#d8e0ef" stroke-width="1" />',
+        );
+        elements.push(
+          '<text x="' +
+            (margin.left - 8) +
+            '" y="' +
+            (y + 4).toFixed(2) +
+            '" text-anchor="end" font-size="11" fill="#6f7f99">' +
+            Math.round(yVal) +
+            "</text>",
+        );
+      }
+
+      labels.forEach(function (label, idx) {
+        const nilai = Number(nilaiList[idx] || 0);
+        const barH = (nilai / maxScore) * innerH;
+        const x = margin.left + step * idx + (step - barW) / 2;
+        const y = margin.top + innerH - barH;
+        elements.push(
+          '<rect x="' +
+            x.toFixed(2) +
+            '" y="' +
+            y.toFixed(2) +
+            '" width="' +
+            barW +
+            '" height="' +
+            Math.max(1, barH).toFixed(2) +
+            '" rx="4" ry="4" fill="#3f53db"></rect>',
+        );
+        elements.push(
+          '<text x="' +
+            (x + barW / 2).toFixed(2) +
+            '" y="' +
+            (y - 6).toFixed(2) +
+            '" text-anchor="middle" font-size="11" fill="#1e2d4a">' +
+            String(nilai.toFixed(2)) +
+            "</text>",
+        );
+        elements.push(
+          '<text x="' +
+            (x + barW / 2).toFixed(2) +
+            '" y="' +
+            (margin.top + innerH + 14).toFixed(2) +
+            '" text-anchor="end" transform="rotate(-35 ' +
+            (x + barW / 2).toFixed(2) +
+            " " +
+            (margin.top + innerH + 14).toFixed(2) +
+            ')" font-size="11" fill="#4a5f83">' +
+            escapeHtml(label) +
+            "</text>",
+        );
+      });
+
+      return [
+        '<div class="guru-results-chart-wrap">',
+        '<svg viewBox="0 0 ' +
+          chartWidth +
+          " " +
+          chartHeight +
+          '" class="guru-results-chart-svg" role="img" aria-label="Grafik nilai peserta">',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          (margin.top + innerH) +
+          '" x2="' +
+          (margin.left + innerW) +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        '<line x1="' +
+          margin.left +
+          '" y1="' +
+          margin.top +
+          '" x2="' +
+          margin.left +
+          '" y2="' +
+          (margin.top + innerH) +
+          '" stroke="#778ba8" stroke-width="1.5" />',
+        elements.join(""),
+        '<text x="' +
+          (margin.left + innerW / 2).toFixed(2) +
+          '" y="' +
+          (chartHeight - 10) +
+          '" text-anchor="middle" font-size="12" fill="#223b63">Sumbu X: Nama Peserta</text>',
+        '<text x="14" y="' +
+          (margin.top + innerH / 2).toFixed(2) +
+          '" text-anchor="middle" transform="rotate(-90 14 ' +
+          (margin.top + innerH / 2).toFixed(2) +
+          ')" font-size="12" fill="#223b63">Sumbu Y: Nilai</text>',
+        "</svg>",
+        "</div>",
+      ].join("");
+    }
 
     function summarizeAttemptResult(mode) {
-      const data = latestResultData;
-      const summary = data && data.summary ? data.summary : {};
-      const items = Array.isArray(data && data.items) ? data.items : [];
-      if (!data) {
-        setResultsExtra("Muat nilai (Attempt ID) terlebih dahulu.");
+      const data = latestResultsMatrix;
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      const totalQuestions = Array.isArray(data && data.question_nos)
+        ? data.question_nos.length
+        : 0;
+      if (!data || !rows.length) {
+        setResultsExtra("Muat hasil ujian peserta terlebih dahulu.");
         return;
       }
-      const total = items.length;
-      const correct = items.filter(function (it) {
-        return !!it.is_correct;
-      }).length;
-      const wrong = items.filter(function (it) {
-        return it.is_correct === false;
-      }).length;
-      const unanswered = items.filter(function (it) {
-        return String(it.reason || "") === "unanswered";
-      }).length;
-      const score = Number(summary.score || 0);
+      const totalAttempts = rows.length;
+      const totalScore = rows.reduce(function (acc, it) {
+        return acc + Number((it && it.skor_total) || 0);
+      }, 0);
+      const avgScore =
+        totalAttempts > 0 ? (totalScore / totalAttempts).toFixed(2) : "0.00";
       if (mode === "report") {
         setResultsExtra(
           "Laporan: exam #" +
-            String(summary.exam_id || "-") +
-            ", attempt #" +
-            String(summary.id || "-") +
-            ", skor " +
-            String(score) +
-            ", benar " +
-            String(correct) +
-            ", salah " +
-            String(wrong) +
-            ", kosong " +
-            String(unanswered) +
+            String((data && data.exam_id) || "-") +
+            ", peserta/attempt " +
+            String(totalAttempts) +
+            ", jumlah soal " +
+            String(totalQuestions) +
+            ", rerata skor " +
+            String(avgScore) +
             ".",
         );
         return;
       }
       if (mode === "stats") {
-        const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+        let maxScore = 0;
+        let minScore = 0;
+        if (rows.length > 0) {
+          maxScore = Number(rows[0].skor_total || 0);
+          minScore = Number(rows[0].skor_total || 0);
+          rows.forEach(function (r) {
+            const s = Number((r && r.skor_total) || 0);
+            maxScore = Math.max(maxScore, s);
+            minScore = Math.min(minScore, s);
+          });
+        }
         setResultsExtra(
-          "Statistik: total soal " +
-            String(total) +
-            ", akurasi " +
-            String(pct) +
-            "%, benar " +
-            String(correct) +
-            ", salah " +
-            String(wrong) +
-            ", kosong " +
-            String(unanswered) +
+          "Statistik: total attempt " +
+            String(totalAttempts) +
+            ", rerata skor " +
+            String(avgScore) +
+            ", skor tertinggi " +
+            String(maxScore) +
+            ", skor terendah " +
+            String(minScore) +
             ".",
         );
         return;
       }
-      const bar = total > 0 ? Math.round((correct / total) * 20) : 0;
-      setResultsExtra(
-        "Grafik (teks): [" +
-          "#".repeat(Math.max(0, bar)) +
-          "-".repeat(Math.max(0, 20 - bar)) +
-          "] " +
-          String(correct) +
-          "/" +
-          String(total) +
-          " benar.",
-      );
+      setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalQuestions));
+    }
+
+    function renderResultsChart() {
+      const data = latestResultsMatrix;
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      const totalQuestions = Array.isArray(data && data.question_nos)
+        ? data.question_nos.length
+        : 0;
+      if (!rows.length) {
+        setResultsExtra("Muat hasil ujian peserta terlebih dahulu.");
+        setMsg("Grafik belum bisa ditampilkan: data hasil ujian belum dimuat.");
+        return;
+      }
+      setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalQuestions));
+      setMsg("Grafik skor peserta berhasil ditampilkan.");
     }
 
     function isOwnerOnlyQuestionsEnabled() {
@@ -7034,7 +7865,7 @@
           desc: buildManuscriptsDesc(),
         },
         exams: {
-          title: "Ujian",
+          title: "Pengelolaan Pelaksanaan Ujian",
           desc: buildExamsDesc(),
         },
         results: {
@@ -8238,6 +9069,7 @@
     async function loadGuruExamManageTable() {
       const exams = await api("/api/v1/admin/exams/manage", "GET");
       examsManageCache = Array.isArray(exams) ? exams : [];
+      fillGuruResultsExamSelect();
       if (examsPanel && !examsPanel.hidden) {
         activateGuruMenu("exams");
       }
@@ -8279,6 +9111,30 @@
       });
     }
 
+    function fillGuruResultsExamSelect() {
+      if (!resultsExamSelect) return;
+      const current = String(resultsExamSelect.value || "");
+      resultsExamSelect.innerHTML = '<option value="">Pilih ujian...</option>';
+      (Array.isArray(examsManageCache) ? examsManageCache : []).forEach(
+        function (it) {
+          const examID = Number((it && it.id) || 0);
+          if (examID <= 0) return;
+          const o = document.createElement("option");
+          o.value = String(examID);
+          o.textContent =
+            "#" +
+            String(examID) +
+            " - " +
+            String((it && it.title) || "") +
+            " (" +
+            String((it && it.code) || "") +
+            ")";
+          if (current && current === o.value) o.selected = true;
+          resultsExamSelect.appendChild(o);
+        },
+      );
+    }
+
     async function loadGuruExamQuestions(examID) {
       if (!examQuestionsBody) return;
       if (!examID || examID <= 0) {
@@ -8317,39 +9173,109 @@
       if (!resultsAssignmentBody) return;
       if (!examID || examID <= 0) {
         resultsAssignmentsCount = 0;
+        latestResultsMatrix = null;
         if (resultsPanel && !resultsPanel.hidden) {
           activateGuruMenu("results");
         }
+        if (resultsMatrixHead) {
+          resultsMatrixHead.innerHTML =
+            "<th>Nama</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th>";
+        }
         resultsAssignmentBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Isi Exam ID lalu muat peserta ujian.</td></tr>';
+          '<tr><td colspan="6" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
+        setResultsSummary("Belum ada data hasil ujian.");
         return;
       }
-      const items = await api(
-        "/api/v1/admin/exams/" + Number(examID) + "/assignments",
+      const matrix = await api(
+        "/api/v1/admin/exams/" + Number(examID) + "/results",
         "GET",
       );
-      resultsAssignmentsCount = Array.isArray(items) ? items.length : 0;
+      latestResultsMatrix = matrix || null;
+      const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
+      const questionNos = Array.isArray(matrix && matrix.question_nos)
+        ? matrix.question_nos
+        : [];
+      resultsAssignmentsCount = rows.length;
       if (resultsPanel && !resultsPanel.hidden) {
         activateGuruMenu("results");
       }
-      if (!Array.isArray(items) || !items.length) {
+      if (resultsMatrixHead) {
+        const fixed = [
+          "<th>Nama</th>",
+          "<th>Attempt Ke-</th>",
+          "<th>Skor Total</th>",
+          "<th>Nilai</th>",
+          "<th>Start Ujian</th>",
+          "<th>End Ujian</th>",
+        ];
+        const dyn = questionNos.map(function (no) {
+          return "<th>" + escapeHtml(String(no)) + "</th>";
+        });
+        resultsMatrixHead.innerHTML = fixed.concat(dyn).join("");
+      }
+      if (!rows.length) {
         resultsAssignmentBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Belum ada peserta terdaftar.</td></tr>';
+          '<tr><td colspan="' +
+          String(6 + questionNos.length) +
+          '" class="muted">Belum ada peserta yang mengikuti ujian ini.</td></tr>';
+        setResultsSummary("Belum ada data hasil ujian.");
+        setResultsExtra("Belum ada data untuk laporan/statistik/grafik.");
         return;
       }
       resultsAssignmentBody.innerHTML = "";
-      items.forEach(function (it) {
+      rows.forEach(function (it) {
+        const answers = Array.isArray(it.answers) ? it.answers : [];
+        const answerStates = Array.isArray(it.answer_states)
+          ? it.answer_states
+          : [];
+        const totalQuestions = questionNos.length;
+        const scoreValue = Number(it.skor_total || 0);
+        const nilai =
+          totalQuestions > 0
+            ? ((scoreValue / totalQuestions) * 100).toFixed(2)
+            : "0.00";
+        const answerCells = questionNos.map(function (_, idx) {
+          const state = String(answerStates[idx] || "")
+            .trim()
+            .toLowerCase();
+          const cls =
+            state === "correct"
+              ? "result-cell-correct"
+              : state === "wrong"
+                ? "result-cell-wrong"
+                : "";
+          return (
+            '<td class="' +
+            cls +
+            '">' +
+            escapeHtml(String(answers[idx] || "")) +
+            "</td>"
+          );
+        });
         const tr = document.createElement("tr");
         tr.innerHTML = [
-          "<td>" + escapeHtml(String(it.user_id || "")) + "</td>",
           "<td>" + escapeHtml(String(it.full_name || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.username || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.role || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.status || "-")) + "</td>",
-          "<td>" + escapeHtml(fmtDate(it.assigned_at)) + "</td>",
-        ].join("");
+          "<td>" + escapeHtml(String(it.attempt_ke || 0)) + "</td>",
+          "<td>" + escapeHtml(String(scoreValue)) + "</td>",
+          "<td>" + escapeHtml(String(nilai)) + "</td>",
+          "<td>" + escapeHtml(fmtDate(it.started_at)) + "</td>",
+          "<td>" + escapeHtml(fmtDate(it.ended_at)) + "</td>",
+        ]
+          .concat(answerCells)
+          .join("");
         resultsAssignmentBody.appendChild(tr);
       });
+      setResultsSummary(
+        "Exam #" +
+          String((matrix && matrix.exam_id) || examID) +
+          " | Attempt tercatat: " +
+          String(rows.length) +
+          " | Jumlah soal: " +
+          String(questionNos.length),
+      );
+      setResultsExtra(
+        "Hasil ujian dimuat. Gunakan Muat Laporan/Statistik/Grafik atau Download Excel.",
+      );
     }
 
     async function loadGuruDashboard() {
@@ -9844,7 +10770,7 @@
           if (examQuestionCodeRuleExamIDInput) {
             examQuestionCodeRuleExamIDInput.value = String(examID);
           }
-          if (resultsExamIDInput) resultsExamIDInput.value = String(examID);
+          if (resultsExamSelect) resultsExamSelect.value = String(examID);
           fillExamQuestionCodeSelectByExam(examID);
           try {
             await Promise.all([
@@ -10140,66 +11066,90 @@
         e.preventDefault();
         const fd = new FormData(resultsAssignmentForm);
         const examID = Number(fd.get("exam_id") || 0);
+        if (examID <= 0) {
+          setMsg("Pilih ujian terlebih dahulu.");
+          return;
+        }
         const done = beginBusy(
           resultsAssignmentForm,
           msg,
-          "Memuat peserta ujian...",
+          "Memuat hasil ujian peserta...",
         );
         try {
           await loadGuruExamAssignments(examID);
-          setMsg("Peserta ujian berhasil dimuat.");
+          setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
-          setMsg("Gagal memuat peserta ujian: " + err.message);
+          setMsg("Gagal memuat hasil ujian peserta: " + err.message);
         } finally {
           done();
         }
       });
     }
 
-    if (resultsAttemptForm) {
-      resultsAttemptForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const fd = new FormData(resultsAttemptForm);
-        const attemptID = Number(fd.get("attempt_id") || 0);
-        if (attemptID <= 0) {
-          setMsg("Attempt ID tidak valid.");
+    if (resultsExamSelect) {
+      resultsExamSelect.addEventListener("change", async function () {
+        const examID = Number(resultsExamSelect.value || 0);
+        if (examID <= 0) {
+          await loadGuruExamAssignments(0);
+          setMsg("Pilih ujian terlebih dahulu.");
           return;
         }
         const done = beginBusy(
-          resultsAttemptForm,
+          resultsExamSelect,
           msg,
-          "Memuat nilai attempt...",
+          "Memuat hasil ujian peserta...",
         );
         try {
-          const out = await api(
-            "/api/v1/attempts/" + attemptID + "/result",
-            "GET",
-          );
-          latestResultData = out || null;
-          const summary = (out && out.summary) || {};
-          const itemCount = Array.isArray(out && out.items)
-            ? out.items.length
-            : 0;
-          setResultsSummary(
-            "Exam #" +
-              String(summary.exam_id || "-") +
-              " | Attempt #" +
-              String(summary.id || "-") +
-              " | Skor: " +
-              String(summary.score || 0) +
-              " | Benar: " +
-              String(summary.total_correct || 0) +
-              " | Salah: " +
-              String(summary.total_wrong || 0) +
-              " | Kosong: " +
-              String(summary.total_unanswered || 0) +
-              " | Item: " +
-              String(itemCount),
-          );
-          setResultsExtra("Nilai dimuat. Pilih Muat Laporan/Statistik/Grafik.");
-          setMsg("Nilai attempt berhasil dimuat.");
+          await loadGuruExamAssignments(examID);
+          setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
-          setMsg("Gagal memuat nilai: " + err.message);
+          setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (resultsExportBtn) {
+      resultsExportBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (resultsExamSelect && resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          setMsg("Pilih ujian terlebih dahulu.");
+          return;
+        }
+        const done = beginBusy(
+          resultsExportBtn,
+          msg,
+          "Menyiapkan file Excel...",
+        );
+        try {
+          const res = await fetch(
+            "/api/v1/admin/exams/" + examID + "/results/export",
+            { method: "GET", credentials: "include" },
+          );
+          if (!res.ok) {
+            const textBody = await res.text().catch(function () {
+              return "";
+            });
+            throw new Error(textBody || "gagal mengunduh excel");
+          }
+          const blob = await res.blob();
+          const cd = String(res.headers.get("content-disposition") || "");
+          const m = cd.match(/filename=\"?([^\";]+)\"?/i);
+          const filename = (m && m[1]) || "hasil_ujian.xlsx";
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          setMsg("Excel hasil ujian berhasil diunduh.");
+        } catch (err) {
+          setMsg("Gagal mengunduh Excel: " + err.message);
         } finally {
           done();
         }
@@ -10218,7 +11168,7 @@
     }
     if (resultsChartBtn) {
       resultsChartBtn.addEventListener("click", function () {
-        summarizeAttemptResult("chart");
+        renderResultsChart();
       });
     }
 

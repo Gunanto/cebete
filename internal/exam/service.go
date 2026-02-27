@@ -180,17 +180,55 @@ type ExamAccessToken struct {
 	GeneratedBy int64     `json:"generated_by"`
 }
 
+type ExamTokenPreview struct {
+	ExamID            int64      `json:"exam_id"`
+	ExamCode          string     `json:"exam_code"`
+	ExamTitle         string     `json:"exam_title"`
+	SubjectName       string     `json:"subject_name"`
+	DurationMinutes   int        `json:"duration_minutes"`
+	MaxAttempts       int        `json:"max_attempts"`
+	AttemptsUsed      int        `json:"attempts_used"`
+	AttemptsRemaining int        `json:"attempts_remaining"`
+	TokenExpiresAt    time.Time  `json:"token_expires_at"`
+	StartAt           *time.Time `json:"start_at,omitempty"`
+	EndAt             *time.Time `json:"end_at,omitempty"`
+}
+
 type ExamAssignmentUser struct {
-	UserID      int64     `json:"user_id"`
-	Username    string    `json:"username"`
-	FullName    string    `json:"full_name"`
-	Role        string    `json:"role"`
-	SchoolName  *string   `json:"school_name,omitempty"`
-	ClassName   *string   `json:"class_name,omitempty"`
-	Status      string    `json:"status"`
-	AssignedAt  time.Time `json:"assigned_at"`
-	AssignedBy  *int64    `json:"assigned_by,omitempty"`
-	AssignedByN *string   `json:"assigned_by_name,omitempty"`
+	UserID              int64      `json:"user_id"`
+	Username            string     `json:"username"`
+	FullName            string     `json:"full_name"`
+	Role                string     `json:"role"`
+	SchoolName          *string    `json:"school_name,omitempty"`
+	ClassName           *string    `json:"class_name,omitempty"`
+	Status              string     `json:"status"`
+	AssignedAt          time.Time  `json:"assigned_at"`
+	AssignedBy          *int64     `json:"assigned_by,omitempty"`
+	AssignedByN         *string    `json:"assigned_by_name,omitempty"`
+	LatestAttemptID     *int64     `json:"latest_attempt_id,omitempty"`
+	LatestAttemptStatus *string    `json:"latest_attempt_status,omitempty"`
+	LatestAttemptScore  *float64   `json:"latest_attempt_score,omitempty"`
+	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
+}
+
+type ExamParticipantResult struct {
+	ExamID      int64                      `json:"exam_id"`
+	QuestionNos []int                      `json:"question_nos"`
+	Rows        []ExamParticipantResultRow `json:"rows"`
+}
+
+type ExamParticipantResultRow struct {
+	UserID       int64      `json:"user_id"`
+	Username     string     `json:"username"`
+	FullName     string     `json:"full_name"`
+	AttemptID    int64      `json:"attempt_id"`
+	AttemptKe    int        `json:"attempt_ke"`
+	SkorTotal    float64    `json:"skor_total"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      time.Time  `json:"ended_at"`
+	Answers      []string   `json:"answers"`
+	AnswerStates []string   `json:"answer_states,omitempty"`
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
 }
 
 type ReplaceExamAssignmentsInput struct {
@@ -280,13 +318,14 @@ type ExamQuestionIncidentResult struct {
 }
 
 type AttemptResultItem struct {
-	QuestionID  int64            `json:"question_id"`
-	Selected    []string         `json:"selected"`
-	Correct     []string         `json:"correct"`
-	IsCorrect   *bool            `json:"is_correct,omitempty"`
-	EarnedScore float64          `json:"earned_score"`
-	Reason      string           `json:"reason,omitempty"`
-	Breakdown   []StatementScore `json:"breakdown,omitempty"`
+	QuestionID   int64            `json:"question_id"`
+	QuestionType string           `json:"question_type"`
+	Selected     []string         `json:"selected"`
+	Correct      []string         `json:"correct"`
+	IsCorrect    *bool            `json:"is_correct,omitempty"`
+	EarnedScore  float64          `json:"earned_score"`
+	Reason       string           `json:"reason,omitempty"`
+	Breakdown    []StatementScore `json:"breakdown,omitempty"`
 }
 
 type AttemptQuestion struct {
@@ -473,6 +512,150 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	}
 
 	return &created, nil
+}
+
+func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error) {
+	if err := s.ensureStudentAttemptProfileComplete(ctx, studentID); err != nil {
+		return nil, err
+	}
+
+	inputToken := normalizeExamToken(examToken)
+	if inputToken == "" {
+		return nil, ErrExamTokenRequired
+	}
+
+	tokenHash := hashExamToken(inputToken)
+	now := time.Now()
+
+	var (
+		examID          int64
+		examCode        string
+		examTitle       string
+		subjectName     string
+		durationMinutes int
+		maxAttempts     int
+		tokenExpiresAt  time.Time
+		startAt         sql.NullTime
+		endAt           sql.NullTime
+	)
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			e.id,
+			e.code,
+			e.title,
+			s.name AS subject_name,
+			e.duration_minutes,
+			e.max_attempts,
+			e.exam_token_expires_at,
+			e.start_at,
+			e.end_at
+		FROM exams e
+		JOIN subjects s ON s.id = e.subject_id
+		WHERE e.is_active = TRUE
+		  AND e.exam_token_hash = $1
+		  AND e.exam_token_expires_at IS NOT NULL
+		  AND e.exam_token_expires_at > $2
+		ORDER BY e.created_at DESC, e.id DESC
+		LIMIT 1
+	`, tokenHash, now).Scan(
+		&examID,
+		&examCode,
+		&examTitle,
+		&subjectName,
+		&durationMinutes,
+		&maxAttempts,
+		&tokenExpiresAt,
+		&startAt,
+		&endAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			var exists int
+			errExpired := s.db.QueryRowContext(ctx, `
+				SELECT COUNT(*)
+				FROM exams
+				WHERE is_active = TRUE
+				  AND exam_token_hash = $1
+			`, tokenHash).Scan(&exists)
+			if errExpired != nil {
+				return nil, fmt.Errorf("query exam token existence: %w", errExpired)
+			}
+			if exists > 0 {
+				return nil, ErrExamTokenExpired
+			}
+			return nil, ErrExamTokenInvalid
+		}
+		return nil, fmt.Errorf("query exam by token: %w", err)
+	}
+
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+	if durationMinutes <= 0 {
+		durationMinutes = s.defaultExamMinutes
+	}
+
+	var assignmentCount int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM exam_assignments
+		WHERE exam_id = $1
+		  AND status = 'active'
+	`, examID).Scan(&assignmentCount); err != nil {
+		if !isUndefinedTableErr(err, "exam_assignments") {
+			return nil, fmt.Errorf("query assignment count: %w", err)
+		}
+		assignmentCount = 0
+	}
+	if assignmentCount > 0 {
+		var assigned bool
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1
+				FROM exam_assignments
+				WHERE exam_id = $1
+				  AND user_id = $2
+				  AND status = 'active'
+			)
+		`, examID, studentID).Scan(&assigned); err != nil {
+			return nil, fmt.Errorf("check assignment: %w", err)
+		}
+		if !assigned {
+			return nil, ErrExamNotAssigned
+		}
+	}
+
+	var totalAttempts int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM attempts
+		WHERE exam_id = $1 AND student_id = $2
+	`, examID, studentID).Scan(&totalAttempts); err != nil {
+		return nil, fmt.Errorf("count attempts: %w", err)
+	}
+	if totalAttempts >= maxAttempts {
+		return nil, ErrAttemptLimitReached
+	}
+
+	out := &ExamTokenPreview{
+		ExamID:            examID,
+		ExamCode:          examCode,
+		ExamTitle:         examTitle,
+		SubjectName:       subjectName,
+		DurationMinutes:   durationMinutes,
+		MaxAttempts:       maxAttempts,
+		AttemptsUsed:      totalAttempts,
+		AttemptsRemaining: maxAttempts - totalAttempts,
+		TokenExpiresAt:    tokenExpiresAt,
+	}
+	if startAt.Valid {
+		out.StartAt = &startAt.Time
+	}
+	if endAt.Valid {
+		out.EndAt = &endAt.Time
+	}
+	return out, nil
 }
 
 func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, studentID int64) error {
@@ -1023,13 +1206,25 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			ea.status,
 			ea.assigned_at,
 			ea.assigned_by,
-			ab.full_name AS assigned_by_name
+			ab.full_name AS assigned_by_name,
+			la.id AS latest_attempt_id,
+			la.status AS latest_attempt_status,
+			la.score AS latest_attempt_score,
+			la.submitted_at AS latest_submitted_at
 		FROM exam_assignments ea
 		JOIN users u ON u.id = ea.user_id
 		LEFT JOIN enrollments en ON en.user_id = u.id AND en.status = 'active'
 		LEFT JOIN schools sch ON sch.id = en.school_id
 		LEFT JOIN classes cls ON cls.id = en.class_id
 		LEFT JOIN users ab ON ab.id = ea.assigned_by
+		LEFT JOIN LATERAL (
+			SELECT a.id, a.status, a.score, a.submitted_at, a.started_at
+			FROM attempts a
+			WHERE a.exam_id = ea.exam_id
+			  AND a.student_id = ea.user_id
+			ORDER BY COALESCE(a.submitted_at, a.started_at) DESC, a.id DESC
+			LIMIT 1
+		) la ON TRUE
 		WHERE ea.exam_id = $1
 		  AND ea.status = 'active'
 		ORDER BY u.role, u.full_name, u.username
@@ -1048,6 +1243,10 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		var className sql.NullString
 		var assignedBy sql.NullInt64
 		var assignedByName sql.NullString
+		var latestAttemptID sql.NullInt64
+		var latestAttemptStatus sql.NullString
+		var latestAttemptScore sql.NullFloat64
+		var latestSubmittedAt sql.NullTime
 		if err := rows.Scan(
 			&it.UserID,
 			&it.Username,
@@ -1059,6 +1258,10 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			&it.AssignedAt,
 			&assignedBy,
 			&assignedByName,
+			&latestAttemptID,
+			&latestAttemptStatus,
+			&latestAttemptScore,
+			&latestSubmittedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan exam assignment: %w", err)
 		}
@@ -1074,12 +1277,252 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		if assignedByName.Valid {
 			it.AssignedByN = &assignedByName.String
 		}
+		if latestAttemptID.Valid {
+			v := latestAttemptID.Int64
+			it.LatestAttemptID = &v
+		}
+		if latestAttemptStatus.Valid {
+			v := strings.TrimSpace(latestAttemptStatus.String)
+			it.LatestAttemptStatus = &v
+		}
+		if latestAttemptScore.Valid {
+			v := latestAttemptScore.Float64
+			it.LatestAttemptScore = &v
+		}
+		if latestSubmittedAt.Valid {
+			v := latestSubmittedAt.Time
+			it.LatestSubmittedAt = &v
+		}
 		items = append(items, it)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate exam assignments: %w", err)
 	}
 	return items, nil
+}
+
+func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	var examExists bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1)`, examID).Scan(&examExists); err != nil {
+		return nil, fmt.Errorf("check exam exists for results: %w", err)
+	}
+	if !examExists {
+		return nil, ErrExamNotFound
+	}
+
+	type examQuestionColumn struct {
+		SeqNo        int
+		QuestionID   int64
+		QuestionType string
+	}
+	questionCols := make([]examQuestionColumn, 0)
+	qRows, err := s.db.QueryContext(ctx, `
+		SELECT eq.seq_no, eq.question_id, q.question_type
+		FROM exam_questions eq
+		JOIN questions q ON q.id = eq.question_id
+		WHERE eq.exam_id = $1
+		ORDER BY eq.seq_no ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam questions for results matrix: %w", err)
+	}
+	for qRows.Next() {
+		var c examQuestionColumn
+		if err := qRows.Scan(&c.SeqNo, &c.QuestionID, &c.QuestionType); err != nil {
+			_ = qRows.Close()
+			return nil, fmt.Errorf("scan exam question for results matrix: %w", err)
+		}
+		questionCols = append(questionCols, c)
+	}
+	if err := qRows.Err(); err != nil {
+		_ = qRows.Close()
+		return nil, fmt.Errorf("iterate exam questions for results matrix: %w", err)
+	}
+	_ = qRows.Close()
+
+	questionNos := make([]int, 0, len(questionCols))
+	questionTypeByID := make(map[int64]string, len(questionCols))
+	questionIndexByID := make(map[int64]int, len(questionCols))
+	for idx, c := range questionCols {
+		questionNos = append(questionNos, c.SeqNo)
+		questionTypeByID[c.QuestionID] = c.QuestionType
+		questionIndexByID[c.QuestionID] = idx
+	}
+
+	type attemptRowLite struct {
+		AttemptID   int64
+		StudentID   int64
+		Username    string
+		FullName    string
+		Score       float64
+		StartedAt   time.Time
+		EndedAt     time.Time
+		SubmittedAt *time.Time
+	}
+	attemptRows := make([]attemptRowLite, 0)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			a.id,
+			u.id,
+			u.username,
+			u.full_name,
+			COALESCE(a.score, 0),
+			a.started_at,
+			COALESCE(a.submitted_at, a.expires_at) AS ended_at,
+			a.submitted_at
+		FROM attempts a
+		JOIN users u ON u.id = a.student_id
+		WHERE a.exam_id = $1
+		ORDER BY a.started_at ASC, a.id ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam participant results: %w", err)
+	}
+	defer rows.Close()
+	attemptIDs := make([]int64, 0)
+	for rows.Next() {
+		var it attemptRowLite
+		var submittedAt sql.NullTime
+		if err := rows.Scan(
+			&it.AttemptID,
+			&it.StudentID,
+			&it.Username,
+			&it.FullName,
+			&it.Score,
+			&it.StartedAt,
+			&it.EndedAt,
+			&submittedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan exam participant result: %w", err)
+		}
+		if submittedAt.Valid {
+			v := submittedAt.Time
+			it.SubmittedAt = &v
+		}
+		attemptRows = append(attemptRows, it)
+		attemptIDs = append(attemptIDs, it.AttemptID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate exam participant results: %w", err)
+	}
+
+	answerByAttemptQuestion := map[int64]map[int64]string{}
+	answerStateByAttemptQuestion := map[int64]map[int64]string{}
+	if len(attemptIDs) > 0 {
+		answerRows, err := s.db.QueryContext(ctx, `
+			SELECT aa.attempt_id, aa.question_id, aa.answer_payload
+			FROM attempt_answers aa
+			JOIN attempts a ON a.id = aa.attempt_id
+			WHERE a.exam_id = $1
+		`, examID)
+		if err != nil {
+			return nil, fmt.Errorf("list attempt answers for results matrix: %w", err)
+		}
+		for answerRows.Next() {
+			var attemptID int64
+			var questionID int64
+			var payload []byte
+			if err := answerRows.Scan(&attemptID, &questionID, &payload); err != nil {
+				_ = answerRows.Close()
+				return nil, fmt.Errorf("scan attempt answer for results matrix: %w", err)
+			}
+			formatted := formatAnswerForResultsMatrix(questionTypeByID[questionID], payload)
+			if _, ok := answerByAttemptQuestion[attemptID]; !ok {
+				answerByAttemptQuestion[attemptID] = map[int64]string{}
+			}
+			answerByAttemptQuestion[attemptID][questionID] = formatted
+		}
+		if err := answerRows.Err(); err != nil {
+			_ = answerRows.Close()
+			return nil, fmt.Errorf("iterate attempt answers for results matrix: %w", err)
+		}
+		_ = answerRows.Close()
+
+		scoreRows, err := s.db.QueryContext(ctx, `
+			SELECT s.attempt_id, s.question_id, s.is_correct
+			FROM attempt_scores s
+			JOIN attempts a ON a.id = s.attempt_id
+			WHERE a.exam_id = $1
+		`, examID)
+		if err != nil {
+			return nil, fmt.Errorf("list attempt score states for results matrix: %w", err)
+		}
+		for scoreRows.Next() {
+			var attemptID int64
+			var questionID int64
+			var isCorrect sql.NullBool
+			if err := scoreRows.Scan(&attemptID, &questionID, &isCorrect); err != nil {
+				_ = scoreRows.Close()
+				return nil, fmt.Errorf("scan attempt score state for results matrix: %w", err)
+			}
+			state := ""
+			if isCorrect.Valid {
+				if isCorrect.Bool {
+					state = "correct"
+				} else {
+					state = "wrong"
+				}
+			}
+			if _, ok := answerStateByAttemptQuestion[attemptID]; !ok {
+				answerStateByAttemptQuestion[attemptID] = map[int64]string{}
+			}
+			answerStateByAttemptQuestion[attemptID][questionID] = state
+		}
+		if err := scoreRows.Err(); err != nil {
+			_ = scoreRows.Close()
+			return nil, fmt.Errorf("iterate attempt score states for results matrix: %w", err)
+		}
+		_ = scoreRows.Close()
+	}
+
+	attemptCountByStudent := map[int64]int{}
+	resultRows := make([]ExamParticipantResultRow, 0, len(attemptRows))
+	for _, a := range attemptRows {
+		attemptCountByStudent[a.StudentID]++
+		r := ExamParticipantResultRow{
+			UserID:       a.StudentID,
+			Username:     a.Username,
+			FullName:     a.FullName,
+			AttemptID:    a.AttemptID,
+			AttemptKe:    attemptCountByStudent[a.StudentID],
+			SkorTotal:    a.Score,
+			StartedAt:    a.StartedAt,
+			EndedAt:      a.EndedAt,
+			Answers:      make([]string, len(questionCols)),
+			AnswerStates: make([]string, len(questionCols)),
+			SubmittedAt:  a.SubmittedAt,
+		}
+		for _, col := range questionCols {
+			idx := questionIndexByID[col.QuestionID]
+			if answersForAttempt, ok := answerByAttemptQuestion[a.AttemptID]; ok {
+				r.Answers[idx] = strings.TrimSpace(answersForAttempt[col.QuestionID])
+			}
+			if statesForAttempt, ok := answerStateByAttemptQuestion[a.AttemptID]; ok {
+				r.AnswerStates[idx] = strings.TrimSpace(statesForAttempt[col.QuestionID])
+			}
+		}
+		resultRows = append(resultRows, r)
+	}
+
+	sort.SliceStable(resultRows, func(i, j int) bool {
+		if resultRows[i].AttemptKe != resultRows[j].AttemptKe {
+			return resultRows[i].AttemptKe < resultRows[j].AttemptKe
+		}
+		if resultRows[i].FullName != resultRows[j].FullName {
+			return resultRows[i].FullName < resultRows[j].FullName
+		}
+		return resultRows[i].AttemptID < resultRows[j].AttemptID
+	})
+
+	return &ExamParticipantResult{
+		ExamID:      examID,
+		QuestionNos: questionNos,
+		Rows:        resultRows,
+	}, nil
 }
 
 func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error) {
@@ -2728,7 +3171,11 @@ func (s *Service) loadQuestionEvaluations(ctx context.Context, q queryable, exam
 			qn.question_type,
 			eq.weight,
 			COALESCE(aa.answer_payload, '{}'::jsonb) AS answer_payload,
-			COALESCE(qv.answer_key, '{}'::jsonb) AS answer_key,
+			COALESCE(
+				NULLIF(qv.answer_key, '{}'::jsonb),
+				NULLIF(qv_fallback.answer_key, '{}'::jsonb),
+				'{}'::jsonb
+			) AS answer_key,
 			COALESCE(i.policy, '') AS incident_policy,
 			COALESCE(
 				json_agg(qo.option_key) FILTER (WHERE qo.is_correct),
@@ -2741,14 +3188,38 @@ func (s *Service) loadQuestionEvaluations(ctx context.Context, q queryable, exam
 			ON aa.attempt_id = $1
 			AND aa.question_id = eq.question_id
 		LEFT JOIN LATERAL (
-			SELECT answer_key
-			FROM question_versions
-			WHERE question_id = eq.question_id
-			  AND is_active = TRUE
-			  AND status = 'final'
-			ORDER BY version_no DESC
+			SELECT qv.answer_key
+			FROM question_versions qv
+			WHERE qv.question_id = eq.question_id
+			ORDER BY CASE
+				WHEN qv.version_no = qn.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
 			LIMIT 1
 		) qv ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT qv2.answer_key
+			FROM questions q2
+			JOIN question_versions qv2 ON qv2.question_id = q2.id
+			WHERE qn.question_code_id IS NOT NULL
+			  AND q2.question_code_id = qn.question_code_id
+			  AND q2.id <> qn.id
+			  AND q2.question_type = qn.question_type
+			  AND (
+				NULLIF(btrim(qn.metadata->>'title'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(qn.metadata->>'title'), '')
+			  )
+			  AND (
+				NULLIF(btrim(qn.metadata->>'material'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(qn.metadata->>'material'), '')
+			  )
+			ORDER BY CASE
+				WHEN qv2.status = 'final' THEN 0
+				ELSE 1
+			END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
 		LEFT JOIN question_options qo
 			ON qo.question_id = eq.question_id
 		LEFT JOIN exam_question_incidents i
@@ -2756,7 +3227,7 @@ func (s *Service) loadQuestionEvaluations(ctx context.Context, q queryable, exam
 			AND i.question_id = eq.question_id
 			AND i.is_active = TRUE
 		WHERE eq.exam_id = $2
-		GROUP BY eq.question_id, qn.question_type, eq.weight, aa.answer_payload, qv.answer_key, i.policy, eq.seq_no
+		GROUP BY eq.question_id, qn.question_type, eq.weight, aa.answer_payload, qv.answer_key, qv_fallback.answer_key, i.policy, eq.seq_no
 		ORDER BY eq.seq_no
 	`, attemptID, examID)
 	if err != nil {
@@ -2787,13 +3258,15 @@ func (s *Service) loadQuestionEvaluations(ctx context.Context, q queryable, exam
 func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) ([]AttemptResultItem, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
-			question_id,
-			earned_score,
-			is_correct,
-			feedback
-		FROM attempt_scores
-		WHERE attempt_id = $1
-		ORDER BY question_id ASC
+			s.question_id,
+			q.question_type,
+			s.earned_score,
+			s.is_correct,
+			s.feedback
+		FROM attempt_scores s
+		JOIN questions q ON q.id = s.question_id
+		WHERE s.attempt_id = $1
+		ORDER BY s.question_id ASC
 	`, attemptID)
 	if err != nil {
 		return nil, fmt.Errorf("query attempt result items: %w", err)
@@ -2807,7 +3280,7 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 			isCorrect   sql.NullBool
 			feedbackRaw []byte
 		)
-		if err := rows.Scan(&item.QuestionID, &item.EarnedScore, &isCorrect, &feedbackRaw); err != nil {
+		if err := rows.Scan(&item.QuestionID, &item.QuestionType, &item.EarnedScore, &isCorrect, &feedbackRaw); err != nil {
 			return nil, fmt.Errorf("scan result item: %w", err)
 		}
 		if isCorrect.Valid {
@@ -3118,13 +3591,29 @@ func anyToStringSlice(v interface{}) []string {
 		}
 	case []interface{}:
 		for _, it := range t {
-			s, ok := it.(string)
+			if s, ok := it.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					set[s] = struct{}{}
+				}
+				continue
+			}
+			obj, ok := it.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			s = strings.TrimSpace(s)
-			if s != "" {
-				set[s] = struct{}{}
+			id, _ := obj["id"].(string)
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if val, ok := obj["value"].(bool); ok {
+				set[id+":"+boolLabelTF(val)] = struct{}{}
+				continue
+			}
+			if val, ok := obj["correct"].(bool); ok {
+				set[id+":"+boolLabelTF(val)] = struct{}{}
+				continue
 			}
 		}
 	case []string:
@@ -3175,6 +3664,75 @@ func anyToStatementScores(v interface{}) []StatementScore {
 		return nil
 	}
 	return out
+}
+
+func formatAnswerForResultsMatrix(questionType string, payload []byte) string {
+	qType := strings.TrimSpace(strings.ToLower(questionType))
+	if len(payload) == 0 {
+		return ""
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return ""
+	}
+	switch qType {
+	case "pg_tunggal":
+		selected, _ := obj["selected"].(string)
+		return strings.ToUpper(strings.TrimSpace(selected))
+	case "multi_jawaban":
+		keys := anyToStringSlice(obj["selected"])
+		if len(keys) == 0 {
+			return ""
+		}
+		return strings.Join(keys, "")
+	case "benar_salah_pernyataan":
+		rawAnswers, ok := obj["answers"].([]interface{})
+		if !ok || len(rawAnswers) == 0 {
+			return ""
+		}
+		type tfPair struct {
+			ID    string
+			Value bool
+		}
+		pairs := make([]tfPair, 0, len(rawAnswers))
+		for _, it := range rawAnswers {
+			o, ok := it.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			id, _ := o["id"].(string)
+			id = strings.TrimSpace(id)
+			val, ok := o["value"].(bool)
+			if id == "" || !ok {
+				continue
+			}
+			pairs = append(pairs, tfPair{ID: id, Value: val})
+		}
+		sort.SliceStable(pairs, func(i, j int) bool {
+			return pairs[i].ID < pairs[j].ID
+		})
+		if len(pairs) == 0 {
+			return ""
+		}
+		var b strings.Builder
+		for _, p := range pairs {
+			if p.Value {
+				b.WriteByte('T')
+			} else {
+				b.WriteByte('F')
+			}
+		}
+		return b.String()
+	default:
+		return ""
+	}
+}
+
+func boolLabelTF(v bool) string {
+	if v {
+		return "T"
+	}
+	return "F"
 }
 
 func canViewResultByPolicy(policy, attemptStatus string, examEndAt *time.Time) bool {

@@ -727,7 +727,7 @@
             <section id="guru-exams-panel" class="panel" hidden>
                 <div class="admin-card">
                     <div class="admin-section-head">
-                        <h3>Kelola Ujian</h3>
+                        <h3>Pengelolaan Pelaksanaan Ujian</h3>
                         <button
                             id="guru-exams-refresh-btn"
                             class="btn btn-secondary"
@@ -993,71 +993,54 @@
 
             <section id="guru-results-panel" class="panel" hidden>
                 <div class="admin-section-head">
-                    <h3>Hasil Ujian</h3>
-                    <button
-                        id="guru-results-refresh-btn"
-                        class="btn btn-secondary"
-                        type="button"
-                    >
-                        Muat Ujian
-                    </button>
+                    <h3>Pengelolaan Hasil Ujian</h3>
                 </div>
 
                 <form id="guru-results-assignment-form" class="form-grid mt">
                     <label>
-                        Exam ID
-                        <input
-                            id="guru-results-exam-id"
+                        Pilih Ujian
+                        <select
+                            id="guru-results-exam-select"
                             name="exam_id"
-                            type="number"
-                            min="1"
                             required
-                        />
+                        >
+                            <option value="">Pilih ujian...</option>
+                        </select>
                     </label>
-                    <button class="btn btn-secondary" type="submit">
-                        Muat Peserta Ujian
-                    </button>
                 </form>
 
                 <div class="table-wrap mt">
-                    <table class="bs-table">
+                    <table id="guru-results-matrix-table" class="bs-table">
                         <thead>
-                            <tr>
-                                <th>User ID</th>
+                            <tr id="guru-results-matrix-head">
                                 <th>Nama</th>
-                                <th>Username</th>
-                                <th>Role</th>
-                                <th>Status</th>
-                                <th>Assigned At</th>
+                                <th>Attempt Ke-</th>
+                                <th>Skor Total</th>
+                                <th>Start Ujian</th>
+                                <th>End Ujian</th>
                             </tr>
                         </thead>
                         <tbody id="guru-results-assignment-body">
                             <tr>
-                                <td colspan="6" class="muted">
+                                <td colspan="5" class="muted">
                                     Belum ada data peserta.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-
-                <form id="guru-results-attempt-form" class="form-grid mt">
-                    <label>
-                        Attempt ID
-                        <input
-                            name="attempt_id"
-                            type="number"
-                            min="1"
-                            required
-                        />
-                    </label>
-                    <button class="btn btn-secondary" type="submit">
-                        Muat Nilai
+                <div class="mt">
+                    <button
+                        id="guru-results-export-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        Download Excel Hasil Ujian
                     </button>
-                </form>
+                </div>
 
                 <div id="guru-results-summary" class="box mt muted">
-                    Belum ada data nilai.
+                    Belum ada data hasil ujian.
                 </div>
 
                 <div class="action-icons mt">
@@ -1084,8 +1067,8 @@
                     </button>
                 </div>
                 <div id="guru-results-extra" class="box mt muted">
-                    Laporan/statistik/grafik akan diringkas dari data nilai
-                    attempt yang dimuat.
+                    Laporan/statistik/grafik akan diringkas dari tabel hasil
+                    ujian yang dimuat.
                 </div>
             </section>
         </div>

@@ -17,6 +17,7 @@ import (
 
 type mockExamService struct {
 	startAttemptFn                  func(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
+	previewExamByTokenFn            func(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
 	listAdminExamsFn                func(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
 	createExamFn                    func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
@@ -30,6 +31,8 @@ type mockExamService struct {
 	listExamsForTokenFn             func(ctx context.Context) ([]ExamTokenExam, error)
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
+	listExamParticipantResultsFn    func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	exportExamParticipantResultsFn  func(ctx context.Context, examID int64) ([]byte, string, error)
 	replaceExamAssignmentsFn        func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	replaceExamAssignmentsByClassFn func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	listExamQuestionsFn             func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
@@ -55,6 +58,13 @@ func (m *mockExamService) StartAttempt(ctx context.Context, examID, studentID in
 		return nil, errors.New("not implemented")
 	}
 	return m.startAttemptFn(ctx, examID, studentID, examToken)
+}
+
+func (m *mockExamService) PreviewExamByToken(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error) {
+	if m.previewExamByTokenFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.previewExamByTokenFn(ctx, studentID, examToken)
 }
 
 func (m *mockExamService) ListAdminExams(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error) {
@@ -146,6 +156,20 @@ func (m *mockExamService) ListExamAssignments(ctx context.Context, examID int64)
 		return nil, errors.New("not implemented")
 	}
 	return m.listExamAssignmentsFn(ctx, examID)
+}
+
+func (m *mockExamService) ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error) {
+	if m.listExamParticipantResultsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamParticipantResultsFn(ctx, examID)
+}
+
+func (m *mockExamService) ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error) {
+	if m.exportExamParticipantResultsFn == nil {
+		return nil, "", errors.New("not implemented")
+	}
+	return m.exportExamParticipantResultsFn(ctx, examID)
 }
 
 func (m *mockExamService) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error) {

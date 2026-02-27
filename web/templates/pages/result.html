@@ -1,7 +1,7 @@
 {{define "result_content"}}
 <section class="card" data-attempt-id="{{.AttemptID}}" id="result-root">
     <section class="page-hero">
-        <h2>Hasil Attempt #{{.AttemptID}}</h2>
+        <h2 id="result-page-title">Hasil #{{.AttemptID}}</h2>
         <p>Ringkasan hasil dan detail jawaban.</p>
     </section>
     <div id="result-summary" class="box muted" role="status" aria-live="polite">
@@ -13,6 +13,7 @@
                 <tr>
                     <th>No</th>
                     <th>Question ID</th>
+                    <th>Tipe Soal</th>
                     <th>Jawaban</th>
                     <th>Kunci</th>
                     <th>Reason</th>
