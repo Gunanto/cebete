@@ -407,7 +407,7 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 
-	stem := "<p>Draft naskah soal: " + in.Title + "</p>"
+	stem := "<p>" + in.Title + "</p>"
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO questions (
 			subject_id, learning_goal_id, question_code_id, question_type, stem_html, stimulus_html, difficulty,

@@ -607,6 +607,7 @@
 
     const remainingLabel = document.getElementById("remaining-label");
     const message = document.getElementById("attempt-message");
+    const attemptPageTitle = document.getElementById("attempt-page-title");
     const questionTitle = document.getElementById("question-title");
     const stimulusBox = document.getElementById("stimulus-box");
     const stemBox = document.getElementById("stem-box");
@@ -764,6 +765,12 @@
 
     async function loadSummary() {
       const sum = await api("/api/v1/attempts/" + attemptID, "GET");
+      const examTitle = String(sum.title || "").trim();
+      if (attemptPageTitle) {
+        attemptPageTitle.textContent = examTitle
+          ? "Ujian " + examTitle
+          : "Ujian #" + String(attemptID);
+      }
       totalQuestions = Number(sum.total_questions || 1);
       attemptEditable = String(sum.status || "") === "in_progress";
       ensureQuestionList();
@@ -775,6 +782,13 @@
         text(remainingLabel, formatRemain(remain));
       }, 1000);
       return sum;
+    }
+
+    function normalizeAttemptStemHTML(stemHTML) {
+      let stem = String(stemHTML || "");
+      stem = stem.replace(/^\s*<p>\s*draft naskah soal:\s*/i, "<p>");
+      stem = stem.replace(/^\s*draft naskah soal:\s*/i, "");
+      return stem;
     }
 
     function applyAttemptReadonlyState(summaryStatus) {
@@ -865,8 +879,7 @@
       const qType = String(q.question_type || "").toLowerCase();
 
       if (qType === "benar_salah_pernyataan") {
-        const key = parseJSONLoose(q.answer_key, {});
-        const statements = Array.isArray(key.statements) ? key.statements : [];
+        const statements = readTFStatements(q);
         if (!statements.length) {
           html(optionsBox, '<p class="muted">Pernyataan tidak tersedia.</p>');
           return;
@@ -936,6 +949,20 @@
         ].join("");
       });
       html(optionsBox, rows.join(""));
+    }
+
+    function readTFStatements(q) {
+      const key = parseJSONLoose(q && q.answer_key, {});
+      if (Array.isArray(key.statements) && key.statements.length) {
+        return key.statements;
+      }
+      const options = Array.isArray(q && q.options) ? q.options : [];
+      return options.map(function (opt, idx) {
+        return {
+          id: String((opt && opt.option_key) || "S" + (idx + 1)),
+          statement_html: String((opt && opt.option_html) || ""),
+        };
+      });
     }
 
     function renderMathInContainer(el) {
@@ -1129,8 +1156,7 @@
     function collectPayload(q) {
       const qType = String(q.question_type || "").toLowerCase();
       if (qType === "benar_salah_pernyataan") {
-        const key = parseJSONLoose(q.answer_key, {});
-        const statements = Array.isArray(key.statements) ? key.statements : [];
+        const statements = readTFStatements(q);
         const answers = [];
 
         statements.forEach(function (s, idx) {
@@ -1201,7 +1227,11 @@
       syncSubmitVisibility();
       renderQuestionListState();
       text(questionTitle, "Soal nomor " + no + " dari " + totalQuestions);
-      html(stemBox, q.stem_html || '<p class="muted">Soal tidak tersedia.</p>');
+      html(
+        stemBox,
+        normalizeAttemptStemHTML(q.stem_html) ||
+          '<p class="muted">Soal tidak tersedia.</p>',
+      );
       html(
         stimulusBox,
         q.stimulus_html || '<p class="muted">Tidak ada stimulus.</p>',

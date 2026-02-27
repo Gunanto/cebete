@@ -57,6 +57,7 @@ type Attempt struct {
 type AttemptSummary struct {
 	ID              int64      `json:"id"`
 	ExamID          int64      `json:"exam_id"`
+	Title           string     `json:"title"`
 	StudentID       int64      `json:"student_id"`
 	Status          string     `json:"status"`
 	StartedAt       time.Time  `json:"started_at"`
@@ -2184,10 +2185,11 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 				eq.question_id,
 				eq.seq_no,
 				q.question_type,
-				COALESCE(NULLIF(qv.stem_html, ''), q.stem_html) AS stem_html,
-				qv.stimulus_html AS version_stimulus_html,
+				COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
+				COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
 				q.stimulus_html AS legacy_stimulus_html,
-				COALESCE(qv.answer_key, '{}'::jsonb) AS answer_key,
+				COALESCE(NULLIF(qv.answer_key, '{}'::jsonb), NULLIF(qv_fallback.answer_key, '{}'::jsonb), '{}'::jsonb) AS answer_key,
+				q.metadata,
 			COALESCE(aa.answer_payload, '{}'::jsonb) AS answer_payload,
 			COALESCE(aa.is_doubt, FALSE) AS is_doubt
 		FROM attempts a
@@ -2198,18 +2200,39 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		LEFT JOIN attempt_answers aa
 			ON aa.attempt_id = a.id
 			AND aa.question_id = eq.question_id
-			LEFT JOIN LATERAL (
-				SELECT answer_key, stimulus_html, stem_html
-				FROM question_versions
-				WHERE question_id = q.id
-				  AND is_active = TRUE
+		LEFT JOIN LATERAL (
+				SELECT qv.answer_key, qv.stimulus_html, qv.stem_html
+				FROM question_versions qv
+				WHERE qv.question_id = q.id
 				ORDER BY CASE
-					WHEN version_no = q.version THEN 0
-					WHEN status = 'final' THEN 1
+					WHEN qv.version_no = q.version THEN 0
+					WHEN qv.status = 'final' THEN 1
 					ELSE 2
-				END, version_no DESC
+				END, qv.is_active DESC, qv.version_no DESC
 			LIMIT 1
 		) qv ON TRUE
+		LEFT JOIN LATERAL (
+				SELECT qv2.answer_key, qv2.stimulus_html, qv2.stem_html
+				FROM questions q2
+				JOIN question_versions qv2 ON qv2.question_id = q2.id
+				WHERE q.question_code_id IS NOT NULL
+				  AND q2.question_code_id = q.question_code_id
+				  AND q2.id <> q.id
+				  AND q2.question_type = q.question_type
+				  AND (
+					NULLIF(btrim(q.metadata->>'title'), '') IS NULL
+					OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(q.metadata->>'title'), '')
+				  )
+				  AND (
+					NULLIF(btrim(q.metadata->>'material'), '') IS NULL
+					OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(q.metadata->>'material'), '')
+				  )
+				ORDER BY CASE
+					WHEN qv2.status = 'final' THEN 0
+					ELSE 1
+				END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
 		WHERE a.id = $1
 		  AND eq.seq_no = $2
 	`, attemptID, questionNo)
@@ -2217,6 +2240,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	var out AttemptQuestion
 	var versionStimulus sql.NullString
 	var legacyStimulus sql.NullString
+	var questionMetadata json.RawMessage
 	if err := r.Scan(
 		&out.AttemptID,
 		&out.QuestionID,
@@ -2226,6 +2250,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		&versionStimulus,
 		&legacyStimulus,
 		&out.AnswerKey,
+		&questionMetadata,
 		&out.AnswerPayload,
 		&out.IsDoubt,
 	); err != nil {
@@ -2234,7 +2259,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 		return nil, fmt.Errorf("query attempt question: %w", err)
 	}
-	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus)
+	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, questionMetadata)
 
 	optRows, err := s.db.QueryContext(ctx, `
 		SELECT option_key, option_html
@@ -2261,7 +2286,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	return &out, nil
 }
 
-func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString) *string {
+func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString, metadata json.RawMessage) *string {
 	if version.Valid && strings.TrimSpace(version.String) != "" {
 		v := version.String
 		return &v
@@ -2269,6 +2294,18 @@ func resolveAttemptStimulusHTML(version sql.NullString, legacy sql.NullString) *
 	if legacy.Valid && strings.TrimSpace(legacy.String) != "" {
 		v := legacy.String
 		return &v
+	}
+	if len(metadata) > 0 {
+		var meta map[string]any
+		if err := json.Unmarshal(metadata, &meta); err == nil {
+			if material, ok := meta["material"].(string); ok {
+				material = strings.TrimSpace(material)
+				if material != "" {
+					v := "<p>" + html.EscapeString(material) + "</p>"
+					return &v
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -2797,6 +2834,11 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 }
 
 func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *attemptRow) (*AttemptSummary, error) {
+	examTitle, err := s.loadExamTitle(ctx, q, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+
 	totalQuestions, answered, doubt, err := s.countProgress(ctx, q, row.ID, row.ExamID)
 	if err != nil {
 		return nil, err
@@ -2805,6 +2847,7 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	summary := &AttemptSummary{
 		ID:             row.ID,
 		ExamID:         row.ExamID,
+		Title:          examTitle,
 		StudentID:      row.StudentID,
 		Status:         row.Status,
 		StartedAt:      row.StartedAt,
@@ -2840,6 +2883,18 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	}
 
 	return summary, nil
+}
+
+func (s *Service) loadExamTitle(ctx context.Context, q queryable, examID int64) (string, error) {
+	var title string
+	if err := q.QueryRowContext(ctx, `
+		SELECT title
+		FROM exams
+		WHERE id = $1
+	`, examID).Scan(&title); err != nil {
+		return "", fmt.Errorf("load exam title: %w", err)
+	}
+	return strings.TrimSpace(title), nil
 }
 
 func (s *Service) countProgress(ctx context.Context, q queryable, attemptID, examID int64) (totalQuestions, answered, doubt int, err error) {
