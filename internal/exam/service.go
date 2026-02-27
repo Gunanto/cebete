@@ -2203,8 +2203,11 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 				FROM question_versions
 				WHERE question_id = q.id
 				  AND is_active = TRUE
-				  AND status = 'final'
-			ORDER BY version_no DESC
+				ORDER BY CASE
+					WHEN version_no = q.version THEN 0
+					WHEN status = 'final' THEN 1
+					ELSE 2
+				END, version_no DESC
 			LIMIT 1
 		) qv ON TRUE
 		WHERE a.id = $1
