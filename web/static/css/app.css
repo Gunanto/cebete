@@ -30,6 +30,32 @@ body {
     color: var(--text);
 }
 
+body:not(.page-home) {
+    --fixed-topbar-h: 58px;
+    --fixed-footer-h: 38px;
+    min-height: 100vh;
+    padding-top: var(--fixed-topbar-h);
+    padding-bottom: var(--fixed-footer-h);
+}
+
+body:not(.page-home) .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+}
+
+body:not(.page-home) .landing-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    margin-top: 0;
+    border-radius: 0;
+}
+
 .topbar {
     background: linear-gradient(90deg, var(--primary-dark), var(--primary));
     color: #fff;
@@ -304,11 +330,10 @@ textarea {
     position: relative;
     z-index: 2;
     text-align: center;
-    padding: 26px 16px 36px;
-    color: #7dd3fc;
-    border-top: 1px solid rgba(56, 189, 248, 0.18);
-    background: rgba(2, 6, 23, 0.52);
-    backdrop-filter: blur(3px);
+    padding: 10px 16px 14px;
+    color: #dbeafe;
+    border-top: 1px solid rgba(56, 189, 248, 0.24);
+    background: #0a1f4a;
 }
 
 .landing-footer p {
@@ -317,8 +342,8 @@ textarea {
 
 .landing-footer small {
     display: block;
-    margin-top: 6px;
-    color: #38bdf8;
+    margin-top: 4px;
+    color: #7dd3fc;
 }
 
 .landing-radial {
