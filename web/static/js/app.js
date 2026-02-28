@@ -7027,7 +7027,7 @@
           ).trim();
           const label = [
             mapel ? "mapel: " + mapel : "",
-            kelas ? "kelas: " + kelas : "",
+            kelas ? "tingkat/grade: " + kelas : "",
             materi ? "materi: " + materi : "",
             semester ? "semester: " + semester : "",
           ]
@@ -8960,7 +8960,7 @@
         "<p><strong>Mapel:</strong> " +
           escapeHtml(String(item.mata_pelajaran || "-")) +
           "</p>",
-        "<p><strong>Kelas:</strong> " +
+        "<p><strong>Tingkat/Grade:</strong> " +
           escapeHtml(String(item.kelas || "-")) +
           "</p>",
         "<p><strong>Semester:</strong> " +
@@ -9005,20 +9005,38 @@
 
     async function loadClassesForLearningGoal() {
       try {
-        const classes = await api("/api/v1/admin/classes?all=1", "GET");
         if (!learningGoalKelasInput) return;
         learningGoalKelasInput.innerHTML =
-          '<option value="">Pilih Kelas</option>';
-        if (Array.isArray(classes)) {
-          classes.forEach(function (it) {
+          '<option value="">Pilih Tingkat/Grade</option>';
+        const grades = new Set();
+        (Array.isArray(educationLevelsCache)
+          ? educationLevelsCache
+          : []
+        ).forEach(function (it) {
+          const value = String((it && it.name) || "").trim();
+          if (value) grades.add(value);
+        });
+        (Array.isArray(subjectsCache) ? subjectsCache : []).forEach(
+          function (it) {
+            const value = String((it && it.education_level) || "").trim();
+            if (value) grades.add(value);
+          },
+        );
+        Array.from(grades)
+          .sort(function (a, b) {
+            return a.localeCompare(b, "id", {
+              numeric: true,
+              sensitivity: "base",
+            });
+          })
+          .forEach(function (grade) {
             const opt = document.createElement("option");
-            opt.value = String(it.name || "");
-            opt.textContent = String(it.name || "");
+            opt.value = grade;
+            opt.textContent = grade;
             learningGoalKelasInput.appendChild(opt);
           });
-        }
       } catch (err) {
-        console.error("Gagal memuat data kelas:", err);
+        console.error("Gagal memuat data tingkat/grade:", err);
       }
     }
 
