@@ -51,6 +51,8 @@ type mockExamService struct {
 	getAttemptOwnerFn               func(ctx context.Context, attemptID int64) (int64, error)
 	logAttemptEventFn               func(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
 	listAttemptEventsFn             func(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
+	setUserPhotoDataURLFn           func(ctx context.Context, userID int64, dataURL string) (string, error)
+	clearUserPhotoDataURLFn         func(ctx context.Context, userID int64) error
 }
 
 func (m *mockExamService) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
@@ -296,6 +298,20 @@ func (m *mockExamService) ListAttemptEvents(ctx context.Context, attemptID int64
 		return nil, errors.New("not implemented")
 	}
 	return m.listAttemptEventsFn(ctx, attemptID, limit)
+}
+
+func (m *mockExamService) SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error) {
+	if m.setUserPhotoDataURLFn == nil {
+		return "", errors.New("not implemented")
+	}
+	return m.setUserPhotoDataURLFn(ctx, userID, dataURL)
+}
+
+func (m *mockExamService) ClearUserPhotoDataURL(ctx context.Context, userID int64) error {
+	if m.clearUserPhotoDataURLFn == nil {
+		return errors.New("not implemented")
+	}
+	return m.clearUserPhotoDataURLFn(ctx, userID)
 }
 
 func withChiParam(r *http.Request, key, value string) *http.Request {

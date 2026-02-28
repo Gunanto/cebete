@@ -2,8 +2,10 @@ package exam
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,6 +57,8 @@ type examService interface {
 	GetAttemptOwner(ctx context.Context, attemptID int64) (int64, error)
 	LogAttemptEvent(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
 	ListAttemptEvents(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
+	SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error)
+	ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 }
 
 type response struct {
@@ -562,6 +566,88 @@ func (h *Handler) ListExamAssignments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) UploadUserPhoto(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || userID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid user id"})
+		return
+	}
+	if err := r.ParseMultipartForm(3 << 20); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid multipart form"})
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "file is required"})
+		return
+	}
+	defer file.Close()
+
+	limited := io.LimitReader(file, 2*1024*1024+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "failed to read file"})
+		return
+	}
+	if len(raw) == 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "file is empty"})
+		return
+	}
+	if len(raw) > 2*1024*1024 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "file terlalu besar (maks 2MB)"})
+		return
+	}
+
+	contentType := http.DetectContentType(raw)
+	switch contentType {
+	case "image/jpeg", "image/png", "image/webp":
+	default:
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "format file harus jpg/png/webp"})
+		return
+	}
+
+	dataURL := "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(raw)
+	stored, err := h.svc.SetUserPhotoDataURL(r.Context(), userID, dataURL)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "user not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{
+		"user_id":        userID,
+		"photo_data_url": stored,
+	}})
+}
+
+func (h *Handler) DeleteUserPhoto(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || userID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid user id"})
+		return
+	}
+	if err := h.svc.ClearUserPhotoDataURL(r.Context(), userID); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "user not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{
+		"user_id": userID,
+		"cleared": true,
+	}})
 }
 
 func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Request) {

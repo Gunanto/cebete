@@ -40,6 +40,7 @@ var (
 	ErrStudentDataMissing       = errors.New("data peserta belum lengkap (nomor peserta, nama, kelas, nisn, nama sekolah, npsn)")
 	ErrIncidentPolicyInvalid    = errors.New("kebijakan insiden tidak valid")
 	ErrQuestionCodeRuleNotFound = errors.New("exam question code rule not found")
+	ErrUserNotFound             = errors.New("user not found")
 )
 
 type Service struct {
@@ -209,9 +210,15 @@ type ExamTokenPreview struct {
 type ExamAssignmentUser struct {
 	UserID              int64      `json:"user_id"`
 	Username            string     `json:"username"`
+	Email               *string    `json:"email,omitempty"`
 	FullName            string     `json:"full_name"`
+	ParticipantNo       *string    `json:"participant_no,omitempty"`
+	PhotoDataURL        *string    `json:"photo_data_url,omitempty"`
+	UserActive          bool       `json:"user_active"`
 	Role                string     `json:"role"`
+	SchoolID            *int64     `json:"school_id,omitempty"`
 	SchoolName          *string    `json:"school_name,omitempty"`
+	ClassID             *int64     `json:"class_id,omitempty"`
 	ClassName           *string    `json:"class_name,omitempty"`
 	Status              string     `json:"status"`
 	AssignedAt          time.Time  `json:"assigned_at"`
@@ -1267,9 +1274,15 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		SELECT
 			u.id,
 			u.username,
+			u.email,
 			u.full_name,
+			NULLIF(btrim(u.participant_no), '') AS participant_no,
+			u.photo_data_url,
+			u.is_active,
 			u.role,
+			en.school_id,
 			sch.name AS school_name,
+			en.class_id,
 			cls.name AS class_name,
 			ea.status,
 			ea.assigned_at,
@@ -1307,7 +1320,12 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 	items := make([]ExamAssignmentUser, 0)
 	for rows.Next() {
 		var it ExamAssignmentUser
+		var email sql.NullString
+		var participantNo sql.NullString
+		var photoDataURL sql.NullString
+		var schoolID sql.NullInt64
 		var schoolName sql.NullString
+		var classID sql.NullInt64
 		var className sql.NullString
 		var assignedBy sql.NullInt64
 		var assignedByName sql.NullString
@@ -1318,9 +1336,15 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		if err := rows.Scan(
 			&it.UserID,
 			&it.Username,
+			&email,
 			&it.FullName,
+			&participantNo,
+			&photoDataURL,
+			&it.UserActive,
 			&it.Role,
+			&schoolID,
 			&schoolName,
+			&classID,
 			&className,
 			&it.Status,
 			&it.AssignedAt,
@@ -1333,11 +1357,37 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		); err != nil {
 			return nil, fmt.Errorf("scan exam assignment: %w", err)
 		}
+		if email.Valid {
+			v := strings.TrimSpace(email.String)
+			if v != "" {
+				it.Email = &v
+			}
+		}
+		if participantNo.Valid {
+			v := strings.TrimSpace(participantNo.String)
+			if v != "" {
+				it.ParticipantNo = &v
+			}
+		}
+		if photoDataURL.Valid {
+			v := strings.TrimSpace(photoDataURL.String)
+			if v != "" {
+				it.PhotoDataURL = &v
+			}
+		}
 		if schoolName.Valid {
 			it.SchoolName = &schoolName.String
 		}
+		if schoolID.Valid {
+			v := schoolID.Int64
+			it.SchoolID = &v
+		}
 		if className.Valid {
 			it.ClassName = &className.String
+		}
+		if classID.Valid {
+			v := classID.Int64
+			it.ClassID = &v
 		}
 		if assignedBy.Valid {
 			it.AssignedBy = &assignedBy.Int64
@@ -1367,6 +1417,56 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		return nil, fmt.Errorf("iterate exam assignments: %w", err)
 	}
 	return items, nil
+}
+
+func (s *Service) SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error) {
+	if userID <= 0 {
+		return "", ErrInvalidInput
+	}
+	dataURL = strings.TrimSpace(dataURL)
+	if dataURL == "" {
+		return "", ErrInvalidInput
+	}
+	if len(dataURL) > 4*1024*1024 {
+		return "", ErrInvalidInput
+	}
+
+	var stored sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		UPDATE users
+		SET photo_data_url = $2,
+			updated_at = now()
+		WHERE id = $1
+		  AND role = 'siswa'
+		RETURNING photo_data_url
+	`, userID, dataURL).Scan(&stored); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", fmt.Errorf("set user photo data: %w", err)
+	}
+	return strings.TrimSpace(stored.String), nil
+}
+
+func (s *Service) ClearUserPhotoDataURL(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return ErrInvalidInput
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE users
+		SET photo_data_url = NULL,
+			updated_at = now()
+		WHERE id = $1
+		  AND role = 'siswa'
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("clear user photo data: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error) {

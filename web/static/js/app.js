@@ -4283,6 +4283,17 @@
     const tokenExamSelect = document.getElementById("proktor-token-exam");
     const tokenTTLInput = document.getElementById("proktor-token-ttl");
     const tokenResult = document.getElementById("proktor-token-result");
+    const cardsPanel = document.getElementById("proktor-cards-panel");
+    const cardsForm = document.getElementById("proktor-cards-form");
+    const cardsExamSelect = document.getElementById("proktor-cards-exam");
+    const cardsSchoolSelect = document.getElementById("proktor-cards-school");
+    const cardsClassSelect = document.getElementById("proktor-cards-class");
+    const cardsOnlyActiveInput = document.getElementById(
+      "proktor-cards-only-active",
+    );
+    const cardsMeta = document.getElementById("proktor-cards-meta");
+    const cardsPages = document.getElementById("proktor-cards-pages");
+    const cardsPrintBtn = document.getElementById("proktor-cards-print-btn");
     const examsPanel = document.getElementById("proktor-exams-panel");
     const examsRefreshBtn = document.getElementById(
       "proktor-exams-refresh-btn",
@@ -4361,6 +4372,8 @@
     const proktorPageDesc = document.getElementById("proktor-page-desc");
     let examFormSubmitting = false;
     let latestResultData = null;
+    let cardsStudentsAll = [];
+    let cardsPhotoByUserID = {};
     let placementUsers = [];
     let placementSchools = [];
     let placementClasses = [];
@@ -4384,6 +4397,10 @@
     const setTokenResult = function (value) {
       text(tokenResult, value);
       if (tokenResult) tokenResult.classList.remove("muted");
+    };
+    const setCardsMeta = function (value) {
+      text(cardsMeta, value);
+      if (cardsMeta) cardsMeta.classList.remove("muted");
     };
     const setResultsSummary = function (value) {
       text(resultsSummary, value);
@@ -4901,6 +4918,7 @@
         "registrations",
         "events",
         "token",
+        "cards",
         "exams",
         "results",
         "master",
@@ -4916,6 +4934,7 @@
         registrationsPanel.hidden = key !== "registrations";
       if (eventsPanel) eventsPanel.hidden = key !== "events";
       if (tokenPanel) tokenPanel.hidden = key !== "token";
+      if (cardsPanel) cardsPanel.hidden = key !== "cards";
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
       if (masterPanel) masterPanel.hidden = key !== "master";
@@ -4936,6 +4955,10 @@
         token: {
           title: "Token Ujian",
           desc: "Buat dan kelola token ujian.",
+        },
+        cards: {
+          title: "Kartu Ujian",
+          desc: "Cetak kartu peserta ujian per event ujian.",
         },
         exams: {
           title: "Kelola Ujian",
@@ -4960,21 +4983,323 @@
     }
 
     async function loadTokenExamOptions() {
-      if (!tokenExamSelect) return;
       const exams = await api("/api/v1/admin/exams", "GET");
-      tokenExamSelect.innerHTML = '<option value="">Pilih ujian...</option>';
-      if (!Array.isArray(exams) || !exams.length) return;
-      exams.forEach(function (it) {
-        const o = document.createElement("option");
-        o.value = String(it.id || "");
-        const chunks = [
-          String(it.code || "").trim(),
-          String(it.title || "").trim(),
-          String(it.subject_name || "").trim(),
-        ].filter(Boolean);
-        o.textContent = chunks.join(" | ");
-        tokenExamSelect.appendChild(o);
+      const items = Array.isArray(exams) ? exams : [];
+      function fillExamSelect(el) {
+        if (!el) return;
+        el.innerHTML = '<option value="">Pilih ujian...</option>';
+        items.forEach(function (it) {
+          const o = document.createElement("option");
+          o.value = String(it.id || "");
+          const chunks = [
+            String(it.code || "").trim(),
+            String(it.title || "").trim(),
+            String(it.subject_name || "").trim(),
+          ].filter(Boolean);
+          o.textContent = chunks.join(" | ");
+          el.appendChild(o);
+        });
+      }
+      fillExamSelect(tokenExamSelect);
+      fillExamSelect(cardsExamSelect);
+    }
+
+    function renderExamCardsPage(items, startIndex) {
+      const page = document.createElement("div");
+      page.className = "proktor-cards-page";
+      for (let i = 0; i < 10; i += 1) {
+        const current = items[startIndex + i];
+        const card = document.createElement("article");
+        card.className = "proktor-card";
+        if (!current) {
+          card.classList.add("is-empty");
+          card.innerHTML = '<div class="proktor-card-empty">Slot Kartu</div>';
+          page.appendChild(card);
+          continue;
+        }
+        const schoolName = String((current.school_name || "").trim() || "-");
+        const participantNo = String(
+          (current.participant_no || "").trim() || "-",
+        );
+        const fullName = String((current.full_name || "").trim() || "-");
+        const username = String((current.username || "").trim() || "-");
+        const email = String((current.email || "").trim() || "-");
+        const status = String((current.status || "").trim() || "active");
+        const userID = Number(current.user_id || 0);
+        const photoSrc = String(
+          cardsPhotoByUserID[String(userID)] || current.photo_data_url || "",
+        ).trim();
+        const photoAlt = "Foto " + fullName;
+        card.innerHTML = [
+          '<div class="proktor-card-head">',
+          "<h4>Kartu Peserta Ujian</h4>",
+          "<p>" + escapeHtml(schoolName) + "</p>",
+          "</div>",
+          '<div class="proktor-card-body">',
+          '<div class="proktor-card-photo">' +
+            (photoSrc
+              ? '<img src="' +
+                escapeHtml(photoSrc) +
+                '" alt="' +
+                escapeHtml(photoAlt) +
+                '" />'
+              : "FOTO<br>2x3") +
+            "</div>",
+          '<table class="proktor-card-table">',
+          "<tr><td>No. Peserta</td><td>:</td><td>" +
+            escapeHtml(participantNo) +
+            "</td></tr>",
+          "<tr><td>Nama</td><td>:</td><td>" +
+            escapeHtml(fullName) +
+            "</td></tr>",
+          "<tr><td>Username</td><td>:</td><td>" +
+            escapeHtml(username) +
+            "</td></tr>",
+          "<tr><td>Email</td><td>:</td><td>" + escapeHtml(email) + "</td></tr>",
+          "</table>",
+          "</div>",
+          '<div class="proktor-card-photo-actions">',
+          '<button class="btn btn-secondary proktor-card-photo-btn" type="button" data-photo-pick="' +
+            escapeHtml(String(userID)) +
+            '">Pilih Foto</button>',
+          '<button class="btn btn-secondary proktor-card-photo-btn" type="button" data-photo-clear="' +
+            escapeHtml(String(userID)) +
+            '"' +
+            (photoSrc ? "" : " disabled") +
+            ">Hapus</button>",
+          '<input type="file" accept="image/*" data-photo-input="' +
+            escapeHtml(String(userID)) +
+            '" hidden />',
+          "</div>",
+          '<div class="proktor-card-foot">',
+          "<span>Dibuat: " +
+            escapeHtml(fmtDate(new Date().toISOString())) +
+            "</span>",
+          '<span class="proktor-card-badge">' + escapeHtml(status) + "</span>",
+          "</div>",
+        ].join("");
+        page.appendChild(card);
+      }
+      return page;
+    }
+
+    async function loadExamCards(examID) {
+      if (!cardsPages) return;
+      const id = Number(examID || 0);
+      if (id <= 0) {
+        cardsPages.innerHTML =
+          '<div class="muted">Pilih ujian terlebih dahulu.</div>';
+        cardsStudentsAll = [];
+        return;
+      }
+      const items = await api(
+        "/api/v1/admin/exams/" + id + "/assignments",
+        "GET",
+      );
+      cardsStudentsAll = (Array.isArray(items) ? items : []).filter(
+        function (it) {
+          return String((it && it.role) || "").toLowerCase() === "siswa";
+        },
+      );
+      cardsPhotoByUserID = {};
+      cardsStudentsAll.forEach(function (it) {
+        const userID = Number((it && it.user_id) || 0);
+        const photoDataURL = String((it && it.photo_data_url) || "").trim();
+        if (userID > 0 && photoDataURL) {
+          cardsPhotoByUserID[String(userID)] = photoDataURL;
+        }
       });
+      fillCardsSchoolOptions(cardsStudentsAll);
+      fillCardsClassOptions(cardsStudentsAll);
+      renderFilteredExamCards();
+    }
+
+    function fillCardsSchoolOptions(students) {
+      if (!cardsSchoolSelect) return;
+      const mapByID = {};
+      (students || []).forEach(function (it) {
+        const schoolID = Number((it && it.school_id) || 0);
+        if (schoolID <= 0) return;
+        if (mapByID[String(schoolID)]) return;
+        mapByID[String(schoolID)] = {
+          id: schoolID,
+          name: String((it && it.school_name) || "").trim() || "-",
+        };
+      });
+      const currentValue = String(cardsSchoolSelect.value || "");
+      cardsSchoolSelect.innerHTML = '<option value="">Semua sekolah</option>';
+      Object.keys(mapByID)
+        .sort(function (a, b) {
+          return mapByID[a].name.localeCompare(mapByID[b].name, "id");
+        })
+        .forEach(function (k) {
+          const o = document.createElement("option");
+          o.value = String(mapByID[k].id);
+          o.textContent = mapByID[k].name;
+          cardsSchoolSelect.appendChild(o);
+        });
+      if (
+        currentValue &&
+        cardsSchoolSelect.querySelector(
+          'option[value="' + CSS.escape(currentValue) + '"]',
+        )
+      ) {
+        cardsSchoolSelect.value = currentValue;
+      }
+    }
+
+    function fillCardsClassOptions(students) {
+      if (!cardsClassSelect) return;
+      const selectedSchoolID = Number(
+        (cardsSchoolSelect && cardsSchoolSelect.value) || 0,
+      );
+      const currentValue = String(cardsClassSelect.value || "");
+      const mapByID = {};
+      (students || []).forEach(function (it) {
+        const classID = Number((it && it.class_id) || 0);
+        if (classID <= 0) return;
+        const schoolID = Number((it && it.school_id) || 0);
+        if (selectedSchoolID > 0 && schoolID !== selectedSchoolID) return;
+        if (mapByID[String(classID)]) return;
+        mapByID[String(classID)] = {
+          id: classID,
+          name: String((it && it.class_name) || "").trim() || "-",
+        };
+      });
+      cardsClassSelect.innerHTML = '<option value="">Semua kelas</option>';
+      Object.keys(mapByID)
+        .sort(function (a, b) {
+          return mapByID[a].name.localeCompare(mapByID[b].name, "id");
+        })
+        .forEach(function (k) {
+          const o = document.createElement("option");
+          o.value = String(mapByID[k].id);
+          o.textContent = mapByID[k].name;
+          cardsClassSelect.appendChild(o);
+        });
+      if (
+        currentValue &&
+        cardsClassSelect.querySelector(
+          'option[value="' + CSS.escape(currentValue) + '"]',
+        )
+      ) {
+        cardsClassSelect.value = currentValue;
+      }
+    }
+
+    function getFilteredCardsStudents() {
+      const selectedSchoolID = Number(
+        (cardsSchoolSelect && cardsSchoolSelect.value) || 0,
+      );
+      const selectedClassID = Number(
+        (cardsClassSelect && cardsClassSelect.value) || 0,
+      );
+      const onlyActive =
+        !cardsOnlyActiveInput || !!cardsOnlyActiveInput.checked;
+      return cardsStudentsAll.filter(function (it) {
+        if (onlyActive && !Boolean(it && it.user_active)) return false;
+        const schoolID = Number((it && it.school_id) || 0);
+        if (selectedSchoolID > 0 && schoolID !== selectedSchoolID) return false;
+        const classID = Number((it && it.class_id) || 0);
+        if (selectedClassID > 0 && classID !== selectedClassID) return false;
+        return true;
+      });
+    }
+
+    if (cardsPages) {
+      cardsPages.addEventListener("click", function (e) {
+        const pickBtn = e.target && e.target.closest("button[data-photo-pick]");
+        if (pickBtn) {
+          const userID = String(pickBtn.getAttribute("data-photo-pick") || "");
+          if (!userID) return;
+          const input = cardsPages.querySelector(
+            'input[data-photo-input="' + CSS.escape(userID) + '"]',
+          );
+          if (input) input.click();
+          return;
+        }
+        const clearBtn =
+          e.target && e.target.closest("button[data-photo-clear]");
+        if (clearBtn) {
+          const userID = String(
+            clearBtn.getAttribute("data-photo-clear") || "",
+          );
+          if (!userID) return;
+          (async function () {
+            try {
+              await api(
+                "/api/v1/admin/users/" + encodeURIComponent(userID) + "/photo",
+                "DELETE",
+                {},
+              );
+              delete cardsPhotoByUserID[userID];
+              setMsg("Foto peserta dihapus.");
+              renderFilteredExamCards();
+            } catch (err) {
+              setMsg("Gagal hapus foto: " + err.message);
+            }
+          })();
+        }
+      });
+
+      cardsPages.addEventListener("change", function (e) {
+        const input = e.target && e.target.closest("input[data-photo-input]");
+        if (!input) return;
+        const userID = String(input.getAttribute("data-photo-input") || "");
+        if (!userID) return;
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (!String(file.type || "").startsWith("image/")) {
+          setMsg("File foto harus berupa gambar.");
+          input.value = "";
+          return;
+        }
+        if (Number(file.size || 0) > 2 * 1024 * 1024) {
+          setMsg("Ukuran foto maksimal 2MB.");
+          input.value = "";
+          return;
+        }
+        (async function () {
+          const form = new FormData();
+          form.append("file", file);
+          try {
+            const out = await apiMultipart(
+              "/api/v1/admin/users/" + encodeURIComponent(userID) + "/photo",
+              "POST",
+              form,
+            );
+            cardsPhotoByUserID[userID] = String(
+              (out && out.photo_data_url) || "",
+            ).trim();
+            setMsg("Foto peserta berhasil disimpan.");
+            renderFilteredExamCards();
+          } catch (err) {
+            setMsg("Upload foto gagal: " + err.message);
+          } finally {
+            input.value = "";
+          }
+        })();
+      });
+    }
+
+    function renderFilteredExamCards() {
+      if (!cardsPages) return;
+      const students = getFilteredCardsStudents();
+      if (!students.length) {
+        cardsPages.innerHTML =
+          '<div class="muted">Tidak ada data kartu sesuai filter saat ini.</div>';
+        setCardsMeta("Belum ada kartu yang bisa dicetak dari filter ini.");
+        return;
+      }
+      cardsPages.innerHTML = "";
+      for (let i = 0; i < students.length; i += 10) {
+        cardsPages.appendChild(renderExamCardsPage(students, i));
+      }
+      setCardsMeta(
+        "Total kartu siap cetak: " +
+          String(students.length) +
+          " peserta (siswa) sesuai filter.",
+      );
     }
 
     async function loadExamSubjectOptions() {
@@ -5401,6 +5726,54 @@
         } finally {
           done();
         }
+      });
+    }
+
+    if (cardsForm) {
+      cardsForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const examID = Number((cardsExamSelect && cardsExamSelect.value) || 0);
+        if (examID <= 0) {
+          setMsg("Pilih ujian terlebih dahulu.");
+          return;
+        }
+        const done = beginBusy(cardsForm, msg, "Memuat kartu ujian...");
+        try {
+          await loadExamCards(examID);
+          setMsg("Kartu ujian berhasil dimuat.");
+        } catch (err) {
+          setMsg("Gagal memuat kartu ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (cardsSchoolSelect) {
+      cardsSchoolSelect.addEventListener("change", function () {
+        fillCardsClassOptions(cardsStudentsAll);
+        renderFilteredExamCards();
+      });
+    }
+    if (cardsClassSelect) {
+      cardsClassSelect.addEventListener("change", function () {
+        renderFilteredExamCards();
+      });
+    }
+    if (cardsOnlyActiveInput) {
+      cardsOnlyActiveInput.addEventListener("change", function () {
+        renderFilteredExamCards();
+      });
+    }
+
+    if (cardsPrintBtn) {
+      cardsPrintBtn.addEventListener("click", function () {
+        if (!cardsPages) return;
+        if (!cardsPages.querySelector(".proktor-card:not(.is-empty)")) {
+          setMsg("Belum ada kartu untuk dicetak.");
+          return;
+        }
+        window.print();
       });
     }
 

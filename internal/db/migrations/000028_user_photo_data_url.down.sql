@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE users
+  DROP COLUMN IF EXISTS photo_data_url;
+
+COMMIT;

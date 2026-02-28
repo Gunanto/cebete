@@ -35,6 +35,13 @@
                 <button
                     type="button"
                     class="btn btn-secondary admin-menu-btn"
+                    data-proktor-menu="cards"
+                >
+                    Kartu Ujian
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary admin-menu-btn"
                     data-proktor-menu="exams"
                 >
                     Kelola Ujian
@@ -244,6 +251,62 @@
                 </form>
                 <div id="proktor-token-result" class="box mt muted">
                     Pilih ujian lalu klik Buat Token.
+                </div>
+            </section>
+
+            <section id="proktor-cards-panel" class="panel" hidden>
+                <div class="admin-section-head">
+                    <h3>Kartu Ujian</h3>
+                </div>
+                <form id="proktor-cards-form" class="form-grid mt">
+                    <label>
+                        Pilih Ujian
+                        <select id="proktor-cards-exam" required>
+                            <option value="">Pilih ujian...</option>
+                        </select>
+                    </label>
+                    <label>
+                        Filter Sekolah
+                        <select id="proktor-cards-school">
+                            <option value="">Semua sekolah</option>
+                        </select>
+                    </label>
+                    <label>
+                        Filter Kelas
+                        <select id="proktor-cards-class">
+                            <option value="">Semua kelas</option>
+                        </select>
+                    </label>
+                    <label>
+                        <input
+                            id="proktor-cards-only-active"
+                            type="checkbox"
+                            checked
+                        />
+                        Hanya peserta aktif
+                    </label>
+                    <div class="actions">
+                        <button class="btn btn-secondary" type="submit">
+                            Muat Kartu Ujian
+                        </button>
+                        <button
+                            id="proktor-cards-print-btn"
+                            class="btn"
+                            type="button"
+                        >
+                            Cetak Kartu
+                        </button>
+                    </div>
+                </form>
+                <p id="proktor-cards-meta" class="muted mt">
+                    Pilih ujian lalu klik Muat Kartu Ujian.
+                </p>
+                <p class="muted">
+                    Foto diinput manual per kartu (sementara, tidak disimpan ke
+                    database).
+                </p>
+                <div id="proktor-cards-pages" class="proktor-cards-pages mt">
+                    <div class="muted">Belum ada data kartu ujian.</div>
                 </div>
             </section>
 

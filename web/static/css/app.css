@@ -1436,6 +1436,154 @@ textarea:focus-visible {
     display: block;
 }
 
+.proktor-cards-pages {
+    display: grid;
+    gap: 18px;
+}
+
+.proktor-cards-page {
+    width: 210mm;
+    min-height: 297mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 10mm 7mm;
+    background: #fff;
+    border: 1px solid #d8e1f0;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(5, 54mm);
+    gap: 4mm;
+    box-sizing: border-box;
+}
+
+.proktor-card {
+    width: 86mm;
+    height: 54mm;
+    border: 1px solid #111827;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+}
+
+.proktor-card-head {
+    background: #1a5f7a;
+    color: #fff;
+    padding: 6px;
+    text-align: center;
+}
+
+.proktor-card-head h4 {
+    margin: 0;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.proktor-card-head p {
+    margin: 2px 0 0;
+    font-size: 7pt;
+    opacity: 0.92;
+}
+
+.proktor-card-body {
+    padding: 8px;
+    display: flex;
+    gap: 10px;
+    flex: 1 1 auto;
+}
+
+.proktor-card-photo {
+    width: 18mm;
+    height: 24mm;
+    border: 1px dashed #cbd5e1;
+    background: #f8fafc;
+    color: #94a3b8;
+    font-size: 6pt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.proktor-card-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.proktor-card-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+}
+
+.proktor-card-table td {
+    padding: 1px 0;
+    vertical-align: top;
+}
+
+.proktor-card-table td:first-child {
+    width: 56px;
+    color: #64748b;
+    font-size: 7pt;
+}
+
+.proktor-card-table td:last-child {
+    font-weight: 700;
+    color: #0f172a;
+    word-break: break-word;
+}
+
+.proktor-card-photo-actions {
+    display: flex;
+    gap: 4px;
+    padding: 0 8px 4px;
+}
+
+.proktor-card-photo-btn {
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+}
+
+.proktor-card-foot {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 4px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 6.5pt;
+    color: #64748b;
+}
+
+.proktor-card-badge {
+    background: #22a06b;
+    color: #fff;
+    border-radius: 999px;
+    padding: 1px 6px;
+    text-transform: uppercase;
+    font-size: 6pt;
+}
+
+.proktor-card.is-empty {
+    border-style: dashed;
+    opacity: 0.35;
+}
+
+.proktor-card-empty {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    color: #64748b;
+    font-size: 10pt;
+}
+
 .admin-dialog {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -1859,5 +2007,55 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     .dashboard-quick-actions {
         width: 100%;
         justify-content: flex-start;
+    }
+}
+
+@media print {
+    body[data-page="proktor_content"] {
+        background: #fff !important;
+        padding: 0 !important;
+    }
+    body[data-page="proktor_content"] .topbar,
+    body[data-page="proktor_content"] .landing-footer,
+    body[data-page="proktor_content"] .admin-sidebar,
+    body[data-page="proktor_content"] .page-hero,
+    body[data-page="proktor_content"] #proktor-message,
+    body[data-page="proktor_content"] #proktor-cards-form,
+    body[data-page="proktor_content"] #proktor-cards-meta,
+    body[data-page="proktor_content"] .proktor-card-photo-actions,
+    body[data-page="proktor_content"] .admin-section-head {
+        display: none !important;
+    }
+    body[data-page="proktor_content"] .container,
+    body[data-page="proktor_content"] .card,
+    body[data-page="proktor_content"] .admin-layout,
+    body[data-page="proktor_content"] .admin-content,
+    body[data-page="proktor_content"] #proktor-cards-panel {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        box-shadow: none !important;
+        border: 0 !important;
+    }
+    body[data-page="proktor_content"] .admin-content > section[hidden] {
+        display: none !important;
+    }
+    body[data-page="proktor_content"] #proktor-cards-panel {
+        display: block !important;
+    }
+    body[data-page="proktor_content"] .proktor-cards-pages {
+        gap: 0 !important;
+    }
+    body[data-page="proktor_content"] .proktor-cards-page {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+    }
+    body[data-page="proktor_content"] .proktor-cards-page:last-child {
+        page-break-after: auto;
     }
 }

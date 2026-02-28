@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS photo_data_url TEXT;
+
+COMMIT;
