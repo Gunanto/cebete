@@ -970,6 +970,13 @@ textarea:focus-visible {
     margin: 0;
 }
 
+.admin-inline-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .admin-card {
     border: 1px solid var(--border);
     border-radius: 12px;

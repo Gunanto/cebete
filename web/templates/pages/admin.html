@@ -141,7 +141,13 @@
                             value="50"
                             required
                     /></label>
-                    <button class="btn btn-secondary" type="submit">
+                    <button class="btn btn-secondary icon-btn" type="submit">
+                        <span class="icon-wrap" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                        </span>
                         Muat Data
                     </button>
                 </form>
@@ -198,16 +204,26 @@
                 <div class="actions mt">
                     <button
                         id="admin-prev-page-btn"
-                        class="btn btn-secondary"
+                        class="btn btn-secondary icon-btn"
                         type="button"
                     >
+                        <span class="icon-wrap" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M15 18l-6-6 6-6" />
+                            </svg>
+                        </span>
                         Sebelumnya
                     </button>
                     <button
                         id="admin-next-page-btn"
-                        class="btn btn-secondary"
+                        class="btn btn-secondary icon-btn"
                         type="button"
                     >
+                        <span class="icon-wrap" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M9 18l6-6-6-6" />
+                            </svg>
+                        </span>
                         Berikutnya
                     </button>
                     <span id="admin-page-info" class="muted"></span>
@@ -221,9 +237,9 @@
                                 <th>Nama</th>
                                 <th>Peran</th>
                                 <th>Sekolah</th>
+                                <th>Nomor</th>
                                 <th>Email</th>
                                 <th>Status</th>
-                                <th>Aktif</th>
                                 <th>Dibuat</th>
                                 <th>Aksi</th>
                             </tr>
@@ -253,9 +269,15 @@
                 <div class="admin-master-toolbar mt">
                     <button
                         id="admin-master-refresh-btn"
-                        class="btn btn-secondary"
+                        class="btn btn-secondary icon-btn"
                         type="button"
                     >
+                        <span class="icon-wrap" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                        </span>
                         Muat Ulang Data Master
                     </button>
                 </div>
@@ -265,9 +287,14 @@
                         <h4>Jenjang</h4>
                         <button
                             id="admin-level-add-btn"
-                            class="btn btn-secondary"
+                            class="btn btn-secondary icon-btn"
                             type="button"
                         >
+                            <span class="icon-wrap" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M12 5v14M5 12h14" />
+                                </svg>
+                            </span>
                             Tambah Jenjang
                         </button>
                     </div>
@@ -297,9 +324,14 @@
                         <h4>Sekolah</h4>
                         <button
                             id="admin-school-add-btn"
-                            class="btn btn-secondary"
+                            class="btn btn-secondary icon-btn"
                             type="button"
                         >
+                            <span class="icon-wrap" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M12 5v14M5 12h14" />
+                                </svg>
+                            </span>
                             Tambah Sekolah
                         </button>
                     </div>
@@ -328,13 +360,48 @@
                 <section class="mt">
                     <div class="admin-section-head">
                         <h4>Kelas</h4>
-                        <button
-                            id="admin-class-add-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            Tambah Kelas
-                        </button>
+                        <div class="admin-inline-actions">
+                            <button
+                                id="admin-class-import-btn"
+                                class="btn btn-secondary icon-btn"
+                                type="button"
+                            >
+                                <span class="icon-wrap" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M12 20V10" />
+                                        <path d="M8 14l4-4 4 4" />
+                                        <path d="M4 6h16" />
+                                    </svg>
+                                </span>
+                                Import Kelas
+                            </button>
+                            <button
+                                id="admin-class-import-template-btn"
+                                class="btn btn-secondary icon-btn"
+                                type="button"
+                            >
+                                <span class="icon-wrap" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M12 4v10" />
+                                        <path d="M8 10l4 4 4-4" />
+                                        <path d="M4 18h16" />
+                                    </svg>
+                                </span>
+                                Template Kelas
+                            </button>
+                            <button
+                                id="admin-class-add-btn"
+                                class="btn btn-secondary icon-btn"
+                                type="button"
+                            >
+                                <span class="icon-wrap" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M12 5v14M5 12h14" />
+                                    </svg>
+                                </span>
+                                Tambah Kelas
+                            </button>
+                        </div>
                     </div>
                     <div class="table-wrap mt">
                         <table class="bs-table">
@@ -357,21 +424,6 @@
                         </table>
                     </div>
                 </section>
-
-                <form id="admin-import-form" class="form-grid mt">
-                    <h4>Impor Data Siswa (CSV)</h4>
-                    <label
-                        >File CSV
-                        <input
-                            type="file"
-                            name="file"
-                            accept=".csv,text/csv"
-                            required
-                    /></label>
-                    <button class="btn btn-secondary" type="submit">
-                        Impor CSV
-                    </button>
-                </form>
             </section>
         </div>
     </div>
@@ -671,6 +723,31 @@
                     Batal
                 </button>
                 <button class="btn" type="submit">Simpan</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="admin-class-import-dialog" class="admin-dialog">
+        <form id="admin-class-import-form" class="form-grid">
+            <h3>Import Kelas (CSV)</h3>
+            <label
+                >File CSV
+                <input type="file" name="file" accept=".csv,text/csv" required
+            /></label>
+            <small class="muted">
+                Kolom wajib: <code>school_name</code>, <code>class_name</code>,
+                <code>grade_level</code>. Opsional: <code>is_active</code>
+                (true/false).
+            </small>
+            <div class="actions">
+                <button
+                    id="admin-class-import-cancel-btn"
+                    class="btn btn-secondary"
+                    type="button"
+                >
+                    Batal
+                </button>
+                <button class="btn" type="submit">Import</button>
             </div>
         </form>
     </dialog>

@@ -1064,7 +1064,7 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 }
 
 func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in AdminCreateUserInput) (*AdminUserRecord, error) {
-	username := strings.ToLower(strings.TrimSpace(in.Username))
+	username := normalizeUsername(in.Username)
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	fullName := strings.TrimSpace(in.FullName)
 	role := strings.ToLower(strings.TrimSpace(in.Role))
@@ -1596,11 +1596,9 @@ func normalizeUsername(s string) string {
 			b.WriteRune(r)
 		case r >= '0' && r <= '9':
 			b.WriteRune(r)
-		case r == '.' || r == '_' || r == '-':
-			b.WriteRune(r)
 		}
 	}
-	return strings.Trim(b.String(), "._-")
+	return b.String()
 }
 
 func normalizeGuardKey(s string) string {

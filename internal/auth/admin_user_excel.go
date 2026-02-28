@@ -14,6 +14,8 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+const defaultImportedSiswaPassword = "Punggur1Jaya"
+
 type UserImportRowError struct {
 	Row      int    `json:"row"`
 	Username string `json:"username,omitempty"`
@@ -25,6 +27,13 @@ type UserImportReport struct {
 	SuccessRows int                  `json:"success_rows"`
 	FailedRows  int                  `json:"failed_rows"`
 	Errors      []UserImportRowError `json:"errors"`
+	Infos       []UserImportRowInfo  `json:"infos,omitempty"`
+}
+
+type UserImportRowInfo struct {
+	Row      int    `json:"row"`
+	Username string `json:"username,omitempty"`
+	Info     string `json:"info"`
 }
 
 func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte, error) {
@@ -177,7 +186,12 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 		}
 	}
 
-	report := &UserImportReport{Errors: make([]UserImportRowError, 0)}
+	report := &UserImportReport{
+		Errors: make([]UserImportRowError, 0),
+		Infos:  make([]UserImportRowInfo, 0),
+	}
+	reservedUsernames := make(map[string]struct{})
+	reservedEmails := make(map[string]struct{})
 	for i := 1; i < len(rows); i++ {
 		rowNo := i + 1
 		row := rows[i]
@@ -191,10 +205,12 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 			return strings.TrimSpace(row[idx])
 		}
 
-		username := strings.ToLower(get("username"))
+		rawUsername := get("username")
+		username := normalizeUsername(rawUsername)
 		fullName := get("full_name")
 		role := strings.ToLower(get("role"))
-		email := strings.ToLower(get("email"))
+		rawEmail := get("email")
+		email := normalizeImportedEmailInput(rawEmail)
 		password := get("password")
 		participantNo := get("participant_no")
 		nisn := get("nisn")
@@ -212,6 +228,13 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 			})
 			continue
 		}
+		rowInfos := make([]string, 0, 4)
+		if rawUsername != username {
+			rowInfos = append(rowInfos, "username dinormalisasi (spasi/karakter khusus dihapus)")
+		}
+		if strings.TrimSpace(rawEmail) != email {
+			rowInfos = append(rowInfos, "email dinormalisasi (spasi dihapus)")
+		}
 		if email != "" {
 			if _, err := mail.ParseAddress(email); err != nil {
 				report.FailedRows++
@@ -221,6 +244,38 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 					Error:    "email tidak valid",
 				})
 				continue
+			}
+		}
+		originalUsername := username
+		resolvedUsername, err := s.resolveImportUsername(ctx, username, reservedUsernames)
+		if err != nil {
+			report.FailedRows++
+			report.Errors = append(report.Errors, UserImportRowError{
+				Row:      rowNo,
+				Username: username,
+				Error:    err.Error(),
+			})
+			continue
+		}
+		username = resolvedUsername
+		if username != originalUsername {
+			rowInfos = append(rowInfos, "username bentrok, otomatis jadi "+username)
+		}
+		if email != "" {
+			originalEmail := email
+			resolvedEmail, err := s.resolveImportEmail(ctx, email, reservedEmails)
+			if err != nil {
+				report.FailedRows++
+				report.Errors = append(report.Errors, UserImportRowError{
+					Row:      rowNo,
+					Username: username,
+					Error:    err.Error(),
+				})
+				continue
+			}
+			email = resolvedEmail
+			if email != originalEmail {
+				rowInfos = append(rowInfos, "email bentrok, otomatis jadi "+email)
 			}
 		}
 		var schoolID *int64
@@ -260,68 +315,45 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 			classID = &cid
 		}
 
-		var userID int64
-		err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&userID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		finalPassword := strings.TrimSpace(password)
+		if isSiswa {
+			finalPassword = defaultImportedSiswaPassword
+			rowInfos = append(rowInfos, "password siswa diset default kebijakan")
+		}
+		if len(finalPassword) < 8 {
 			report.FailedRows++
 			report.Errors = append(report.Errors, UserImportRowError{
 				Row:      rowNo,
 				Username: username,
-				Error:    "gagal cek user existing",
+				Error:    "password minimal 8 karakter untuk user baru",
 			})
 			continue
 		}
 
-		if userID == 0 {
-			if len(strings.TrimSpace(password)) < 8 {
-				report.FailedRows++
-				report.Errors = append(report.Errors, UserImportRowError{
-					Row:      rowNo,
-					Username: username,
-					Error:    "password minimal 8 karakter untuk user baru",
-				})
-				continue
-			}
-			created, err := s.CreateUserByAdmin(ctx, actorID, AdminCreateUserInput{
-				Username:      username,
-				Email:         email,
-				Password:      password,
-				FullName:      fullName,
-				Role:          role,
-				ParticipantNo: participantNo,
-				NISN:          nisn,
-				SchoolID:      schoolID,
-				ClassID:       classID,
+		created, err := s.CreateUserByAdmin(ctx, actorID, AdminCreateUserInput{
+			Username:      username,
+			Email:         email,
+			Password:      finalPassword,
+			FullName:      fullName,
+			Role:          role,
+			ParticipantNo: participantNo,
+			NISN:          nisn,
+			SchoolID:      schoolID,
+			ClassID:       classID,
+		})
+		if err != nil {
+			report.FailedRows++
+			report.Errors = append(report.Errors, UserImportRowError{
+				Row:      rowNo,
+				Username: username,
+				Error:    err.Error(),
 			})
-			if err != nil {
-				report.FailedRows++
-				report.Errors = append(report.Errors, UserImportRowError{
-					Row:      rowNo,
-					Username: username,
-					Error:    err.Error(),
-				})
-				continue
-			}
-			userID = created.ID
-		} else {
-			if _, err := s.UpdateUserByAdmin(ctx, actorID, userID, AdminUpdateUserInput{
-				FullName:      fullName,
-				Email:         email,
-				Role:          role,
-				Password:      password,
-				ParticipantNo: participantNo,
-				NISN:          nisn,
-				SchoolID:      schoolID,
-				ClassID:       classID,
-			}); err != nil {
-				report.FailedRows++
-				report.Errors = append(report.Errors, UserImportRowError{
-					Row:      rowNo,
-					Username: username,
-					Error:    err.Error(),
-				})
-				continue
-			}
+			continue
+		}
+		userID := created.ID
+		reservedUsernames[username] = struct{}{}
+		if email != "" {
+			reservedEmails[email] = struct{}{}
 		}
 
 		if activeRaw != "" {
@@ -332,9 +364,99 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 		}
 
 		report.SuccessRows++
+		if len(rowInfos) > 0 {
+			report.Infos = append(report.Infos, UserImportRowInfo{
+				Row:      rowNo,
+				Username: username,
+				Info:     strings.Join(rowInfos, "; "),
+			})
+		}
 	}
 
 	return report, nil
+}
+
+func (s *Service) resolveImportUsername(ctx context.Context, base string, reserved map[string]struct{}) (string, error) {
+	base = normalizeUsername(base)
+	if base == "" {
+		return "", errors.New("username kosong")
+	}
+	candidate := base
+	for n := 0; n < 10000; n++ {
+		if n > 0 {
+			candidate = base + strconv.Itoa(n)
+		}
+		if _, ok := reserved[candidate]; ok {
+			continue
+		}
+		exists, err := s.userExistsByUsername(ctx, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("gagal membuat username unik")
+}
+
+func (s *Service) resolveImportEmail(ctx context.Context, base string, reserved map[string]struct{}) (string, error) {
+	base = strings.ToLower(strings.TrimSpace(base))
+	if base == "" {
+		return "", nil
+	}
+	at := strings.LastIndex(base, "@")
+	if at <= 0 || at == len(base)-1 {
+		return "", errors.New("email tidak valid")
+	}
+	local := base[:at]
+	domain := base[at+1:]
+	candidate := base
+	for n := 0; n < 10000; n++ {
+		if n > 0 {
+			candidate = local + strconv.Itoa(n) + "@" + domain
+		}
+		if _, ok := reserved[candidate]; ok {
+			continue
+		}
+		exists, err := s.userExistsByEmail(ctx, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("gagal membuat email unik")
+}
+
+func (s *Service) userExistsByUsername(ctx context.Context, username string) (bool, error) {
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE LOWER(username) = LOWER($1)
+		)
+	`, strings.TrimSpace(username)).Scan(&exists); err != nil {
+		return false, fmt.Errorf("cek username existing: %w", err)
+	}
+	return exists, nil
+}
+
+func (s *Service) userExistsByEmail(ctx context.Context, email string) (bool, error) {
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE email IS NOT NULL
+			  AND LOWER(email) = LOWER($1)
+		)
+	`, strings.TrimSpace(email)).Scan(&exists); err != nil {
+		return false, fmt.Errorf("cek email existing: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *Service) resolveEnrollmentFromNames(ctx context.Context, schoolName, className, gradeLevel string) (int64, int64, error) {
@@ -397,4 +519,12 @@ func strOrEmpty(v *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*v)
+}
+
+func normalizeImportedEmailInput(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(v), "")
 }

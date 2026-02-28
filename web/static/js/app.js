@@ -179,6 +179,144 @@
     };
   }
 
+  function iconSVGPath(kind) {
+    const key = String(kind || "")
+      .trim()
+      .toLowerCase();
+    if (key === "download") {
+      return '<path d="M12 4v10" /><path d="M8 10l4 4 4-4" /><path d="M4 18h16" />';
+    }
+    if (key === "upload") {
+      return '<path d="M12 20V10" /><path d="M8 14l4-4 4 4" /><path d="M4 6h16" />';
+    }
+    if (key === "plus") {
+      return '<path d="M12 5v14M5 12h14" />';
+    }
+    if (key === "left") {
+      return '<path d="M15 18l-6-6 6-6" />';
+    }
+    if (key === "right") {
+      return '<path d="M9 18l6-6-6-6" />';
+    }
+    if (key === "trash") {
+      return '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>';
+    }
+    if (key === "close") {
+      return '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>';
+    }
+    if (key === "check") {
+      return '<path d="M20 6L9 17l-5-5" />';
+    }
+    return '<path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />';
+  }
+
+  function iconKindForButton(el) {
+    if (!el) return "";
+    const className = String(el.className || "").toLowerCase();
+    const txt = String(el.textContent || "")
+      .trim()
+      .toLowerCase();
+    if (!txt) return "";
+    if (className.includes("btn-danger") || txt.includes("hapus"))
+      return "trash";
+    if (
+      txt.includes("sebelumnya") ||
+      txt.includes("kembali") ||
+      txt === "kembali"
+    ) {
+      return "left";
+    }
+    if (txt.includes("berikutnya") || txt.includes("lanjut")) return "right";
+    if (txt.includes("import") || txt.includes("impor")) return "upload";
+    if (
+      txt.includes("ekspor") ||
+      txt.includes("export") ||
+      txt.includes("unduh") ||
+      txt.includes("template")
+    ) {
+      return "download";
+    }
+    if (
+      txt.includes("tambah") ||
+      txt.includes("buat") ||
+      txt.includes("baru")
+    ) {
+      return "plus";
+    }
+    if (
+      txt.includes("tutup") ||
+      txt.includes("batal") ||
+      txt.includes("close")
+    ) {
+      return "close";
+    }
+    if (
+      txt.includes("simpan") ||
+      txt.includes("kirim") ||
+      txt.includes("submit")
+    ) {
+      return "check";
+    }
+    if (
+      txt.includes("muat") ||
+      txt.includes("refresh") ||
+      txt.includes("cari") ||
+      txt.includes("filter")
+    ) {
+      return "refresh";
+    }
+    return "";
+  }
+
+  function applyAutoIconToButton(el) {
+    if (!el || !el.classList) return;
+    if (el.classList.contains("icon-only-btn")) return;
+    if (el.classList.contains("admin-menu-btn")) return;
+    if (el.querySelector(".icon-wrap, .admin-menu-icon, svg")) return;
+    if (el.getAttribute("data-auto-iconified") === "1") return;
+    const kind = iconKindForButton(el);
+    if (!kind) return;
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "icon-wrap";
+    iconWrap.setAttribute("aria-hidden", "true");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("focusable", "false");
+    svg.innerHTML = iconSVGPath(kind);
+    iconWrap.appendChild(svg);
+    el.classList.add("icon-btn");
+    el.prepend(iconWrap);
+    el.setAttribute("data-auto-iconified", "1");
+  }
+
+  function enhanceButtonIcons(root) {
+    if (!root || !root.querySelectorAll) return;
+    const scan = function (container) {
+      if (!container || !container.querySelectorAll) return;
+      if (container.matches && container.matches("button.btn, a.btn")) {
+        applyAutoIconToButton(container);
+      }
+      container
+        .querySelectorAll("button.btn, a.btn")
+        .forEach(applyAutoIconToButton);
+    };
+    scan(root);
+    if (root.getAttribute("data-auto-icon-observer") === "1") return;
+    if (typeof MutationObserver !== "function") return;
+    const observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        const added = mutation.addedNodes || [];
+        for (let i = 0; i < added.length; i += 1) {
+          const node = added[i];
+          if (!node || node.nodeType !== 1) continue;
+          scan(node);
+        }
+      });
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    root.setAttribute("data-auto-icon-observer", "1");
+  }
+
   async function initTopbarAuth() {
     const userLabel = document.getElementById("nav-user");
     const logoutBtn = document.getElementById("nav-logout");
@@ -2184,6 +2322,7 @@
       window.location.href = "/";
       return;
     }
+    enhanceButtonIcons(root);
 
     const message = document.getElementById("admin-message");
     const regSummary = document.getElementById("admin-registration-summary");
@@ -2257,6 +2396,10 @@
     const levelAddBtn = document.getElementById("admin-level-add-btn");
     const schoolAddBtn = document.getElementById("admin-school-add-btn");
     const classAddBtn = document.getElementById("admin-class-add-btn");
+    const classImportBtn = document.getElementById("admin-class-import-btn");
+    const classImportTemplateBtn = document.getElementById(
+      "admin-class-import-template-btn",
+    );
     const levelTableBody = document.getElementById("admin-level-table-body");
     const schoolTableBody = document.getElementById("admin-school-table-body");
     const classTableBody = document.getElementById("admin-class-table-body");
@@ -2285,6 +2428,13 @@
     );
     const classDialogCancelBtn = document.getElementById(
       "admin-class-dialog-cancel-btn",
+    );
+    const classImportDialog = document.getElementById(
+      "admin-class-import-dialog",
+    );
+    const classImportForm = document.getElementById("admin-class-import-form");
+    const classImportCancelBtn = document.getElementById(
+      "admin-class-import-cancel-btn",
     );
     const masterDeleteDialog = document.getElementById(
       "admin-master-delete-dialog",
@@ -2602,6 +2752,36 @@
       window.URL.revokeObjectURL(url);
     }
 
+    async function downloadClassImportTemplateCSV() {
+      const res = await fetch("/api/v1/admin/imports/classes/template", {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errJSON = await res.json().catch(function () {
+          return {};
+        });
+        const msg = extractAPIError(
+          errJSON,
+          res.statusText || "Request failed",
+        );
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const filename = parseDownloadFilename(
+        res.headers.get("Content-Disposition"),
+        "template_import_kelas.csv",
+      );
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+
     function activateMenu(target) {
       if (dashboardPanel) dashboardPanel.hidden = target !== "dashboard";
       if (usersPanel) usersPanel.hidden = target !== "users";
@@ -2800,7 +2980,6 @@
       items.forEach(function (it) {
         usersByID[String(it.id || "")] = it;
         const tr = document.createElement("tr");
-        const activeLabel = it.is_active ? "ya" : "tidak";
         const detailBtn =
           '<button class="icon-only-btn" type="button" data-action="detail" data-id="' +
           escapeHtml(String(it.id || "")) +
@@ -2829,9 +3008,9 @@
           "<td>" + escapeHtml(it.full_name || "") + "</td>",
           "<td>" + escapeHtml(it.role || "") + "</td>",
           "<td>" + escapeHtml(it.school_name || "-") + "</td>",
+          "<td>" + escapeHtml(it.participant_no || "-") + "</td>",
           "<td>" + escapeHtml(it.email || "") + "</td>",
           "<td>" + escapeHtml(it.account_status || "") + "</td>",
-          "<td>" + escapeHtml(activeLabel) + "</td>",
           "<td>" + escapeHtml(fmtDate(it.created_at)) + "</td>",
           "<td>" + actionIcons + "</td>",
         ].join("");
@@ -3421,6 +3600,7 @@
               : {};
           const failed = Number(report.failed_rows || 0);
           const errors = Array.isArray(report.errors) ? report.errors : [];
+          const infos = Array.isArray(report.infos) ? report.infos : [];
 
           if (failed > 0) {
             const details = errors.length
@@ -3460,11 +3640,40 @@
             }
           }
 
+          if (infos.length > 0) {
+            const infoLines = infos
+              .map(function (it) {
+                const row = Number(it.row || 0);
+                const userLabel = String(it.username || "").trim();
+                const infoMsg = String(it.info || "").trim();
+                if (userLabel) {
+                  return (
+                    "Baris " +
+                    String(row) +
+                    " | username: " +
+                    userLabel +
+                    " | info: " +
+                    infoMsg
+                  );
+                }
+                return "Baris " + String(row) + " | info: " + infoMsg;
+              })
+              .join("\n");
+            if (userImportOut) {
+              const prev = String(userImportOut.textContent || "").trim();
+              userImportOut.textContent = prev
+                ? prev + "\n\nINFO:\n" + infoLines
+                : "INFO:\n" + infoLines;
+            }
+          }
+
           setMsg(
             "Impor selesai. Berhasil: " +
               String(report.success_rows || 0) +
               ", gagal: " +
               String(report.failed_rows || 0) +
+              ", info: " +
+              String(infos.length) +
               ".",
           );
           await loadUsers();
@@ -3487,32 +3696,136 @@
       });
     }
 
-    const importForm = document.getElementById("admin-import-form");
-    if (importForm) {
-      importForm.addEventListener("submit", async function (e) {
+    if (classImportTemplateBtn) {
+      classImportTemplateBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          classImportTemplateBtn,
+          message,
+          "Menyiapkan template import kelas...",
+        );
+        try {
+          await downloadClassImportTemplateCSV();
+          setMsg("Template import kelas berhasil diunduh.");
+        } catch (err) {
+          setMsg("Gagal mengunduh template kelas: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (classImportBtn && isAdmin()) {
+      classImportBtn.addEventListener("click", function () {
+        if (
+          classImportDialog &&
+          typeof classImportDialog.showModal === "function"
+        ) {
+          if (classImportForm) classImportForm.reset();
+          classImportDialog.showModal();
+        }
+      });
+    }
+    if (classImportCancelBtn) {
+      classImportCancelBtn.addEventListener("click", function () {
+        if (
+          classImportDialog &&
+          typeof classImportDialog.close === "function"
+        ) {
+          classImportDialog.close();
+        }
+      });
+    }
+    if (classImportForm) {
+      classImportForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const fd = new FormData(importForm);
+        const fd = new FormData(classImportForm);
         const file = fd.get("file");
         if (!file || !file.name) {
-          setMsg("File CSV wajib dipilih.");
+          setMsg("File CSV kelas wajib dipilih.");
           return;
         }
         const done = beginBusy(
-          importForm,
+          classImportForm,
           message,
-          "Mengimpor data siswa CSV...",
+          "Mengimpor data kelas CSV...",
         );
         try {
           const out = await apiMultipart(
-            "/api/v1/admin/imports/students",
+            "/api/v1/admin/imports/classes",
             "POST",
             fd,
           );
           pretty(masterOut, out);
-          setMsg("Impor CSV selesai.");
-          importForm.reset();
+          const report =
+            out && out.report && typeof out.report === "object"
+              ? out.report
+              : {};
+          const failed = Number(report.failed_rows || 0);
+          const success = Number(report.success_rows || 0);
+          const created = Number(report.created_rows || 0);
+          const updated = Number(report.updated_rows || 0);
+          if (failed > 0) {
+            const errors = Array.isArray(report.errors) ? report.errors : [];
+            const details = errors.length
+              ? errors
+                  .slice(0, 10)
+                  .map(function (it) {
+                    const row = Number(it.row || 0);
+                    const schoolName = String(it.school_name || "").trim();
+                    const className = String(it.class_name || "").trim();
+                    const errMsg = String(it.error || "error tidak diketahui");
+                    const label =
+                      schoolName && className
+                        ? schoolName + " / " + className
+                        : className || schoolName;
+                    if (label) {
+                      return (
+                        "Baris " + String(row) + " | " + label + " | " + errMsg
+                      );
+                    }
+                    return "Baris " + String(row) + " | " + errMsg;
+                  })
+                  .join("\n")
+              : "Ada baris gagal, tetapi detail tidak tersedia.";
+            window.alert(
+              "Import kelas memiliki kesalahan.\n\n" +
+                details +
+                (errors.length > 10
+                  ? "\n\nDan " + String(errors.length - 10) + " error lainnya."
+                  : ""),
+            );
+            setMsg(
+              "Import kelas selesai dengan peringatan. Berhasil: " +
+                String(success) +
+                ", dibuat: " +
+                String(created) +
+                ", diperbarui: " +
+                String(updated) +
+                ", gagal: " +
+                String(failed) +
+                ".",
+            );
+          } else {
+            setMsg(
+              "Import kelas berhasil. Total diimport: " +
+                String(success) +
+                " (dibuat: " +
+                String(created) +
+                ", diperbarui: " +
+                String(updated) +
+                ").",
+            );
+            classImportForm.reset();
+            if (
+              classImportDialog &&
+              typeof classImportDialog.close === "function"
+            ) {
+              classImportDialog.close();
+            }
+          }
+          await loadMasterSummaryTable();
         } catch (err) {
-          setMsg("Gagal impor CSV: " + err.message);
+          window.alert("Gagal import kelas: " + String(err.message || ""));
+          setMsg("Gagal impor kelas CSV: " + err.message);
         } finally {
           done();
         }
@@ -3917,6 +4230,7 @@
       window.location.href = "/";
       return;
     }
+    enhanceButtonIcons(root);
 
     const msg = document.getElementById("proktor-message");
     const statPending = document.getElementById("proktor-stat-pending");
@@ -5592,6 +5906,7 @@
       window.location.href = "/";
       return;
     }
+    enhanceButtonIcons(root);
     const canManageSubjects = String(user.role || "") === "guru";
 
     const msg = document.getElementById("guru-message");

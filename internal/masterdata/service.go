@@ -109,6 +109,23 @@ type ImportStudentsReport struct {
 	Errors      []ImportRowError `json:"errors"`
 }
 
+type ImportClassesReport struct {
+	TotalRows   int                   `json:"total_rows"`
+	SuccessRows int                   `json:"success_rows"`
+	FailedRows  int                   `json:"failed_rows"`
+	CreatedRows int                   `json:"created_rows"`
+	UpdatedRows int                   `json:"updated_rows"`
+	Errors      []ImportClassRowError `json:"errors"`
+}
+
+type ImportClassRowError struct {
+	Row        int    `json:"row"`
+	SchoolName string `json:"school_name,omitempty"`
+	ClassName  string `json:"class_name,omitempty"`
+	GradeLevel string `json:"grade_level,omitempty"`
+	Error      string `json:"error"`
+}
+
 type ImportRowError struct {
 	Row   int    `json:"row"`
 	Error string `json:"error"`
@@ -382,7 +399,7 @@ func (s *Service) ImportStudentsCSV(ctx context.Context, actorID int64, r io.Rea
 
 		row := map[string]string{
 			"full_name":   cell(rec, index, "full_name"),
-			"username":    strings.ToLower(cell(rec, index, "username")),
+			"username":    normalizeUsernameCSV(cell(rec, index, "username")),
 			"password":    cell(rec, index, "password"),
 			"email":       strings.ToLower(cell(rec, index, "email")),
 			"nisn":        cell(rec, index, "nisn"),
@@ -409,6 +426,129 @@ func (s *Service) ImportStudentsCSV(ctx context.Context, actorID int64, r io.Rea
 		"total_rows":   report.TotalRows,
 		"success_rows": report.SuccessRows,
 		"failed_rows":  report.FailedRows,
+	})
+
+	return report, nil
+}
+
+func (s *Service) ImportClassesCSV(ctx context.Context, actorID int64, r io.Reader) (*ImportClassesReport, error) {
+	reader := csv.NewReader(r)
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("read csv header: %w", err)
+	}
+	index := make(map[string]int, len(header))
+	for i, h := range header {
+		n := normalizeHeader(h)
+		if n != "" {
+			index[n] = i
+		}
+	}
+
+	required := []string{"school_name", "class_name", "grade_level"}
+	for _, col := range required {
+		if _, ok := index[col]; !ok {
+			return nil, fmt.Errorf("missing required column: %s", col)
+		}
+	}
+
+	report := &ImportClassesReport{Errors: make([]ImportClassRowError, 0)}
+	rowNo := 1
+	for {
+		rowNo++
+		rec, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			report.TotalRows++
+			report.FailedRows++
+			report.Errors = append(report.Errors, ImportClassRowError{
+				Row:   rowNo,
+				Error: fmt.Sprintf("csv parse error: %v", err),
+			})
+			continue
+		}
+		if isRowEmpty(rec) {
+			continue
+		}
+		if len(rec) > 0 && strings.HasPrefix(strings.TrimSpace(rec[0]), "#") {
+			continue
+		}
+
+		report.TotalRows++
+		schoolName := cell(rec, index, "school_name")
+		className := cell(rec, index, "class_name")
+		gradeLevel := cell(rec, index, "grade_level")
+		isActiveRaw := cell(rec, index, "is_active")
+		isActive := parseBoolCSVDefaultTrue(isActiveRaw)
+
+		if schoolName == "" || className == "" || gradeLevel == "" {
+			report.FailedRows++
+			report.Errors = append(report.Errors, ImportClassRowError{
+				Row:        rowNo,
+				SchoolName: schoolName,
+				ClassName:  className,
+				GradeLevel: gradeLevel,
+				Error:      "school_name, class_name, dan grade_level wajib diisi",
+			})
+			continue
+		}
+
+		schoolID, lookupErr := s.lookupActiveSchoolIDByName(ctx, schoolName)
+		if lookupErr != nil {
+			report.FailedRows++
+			report.Errors = append(report.Errors, ImportClassRowError{
+				Row:        rowNo,
+				SchoolName: schoolName,
+				ClassName:  className,
+				GradeLevel: gradeLevel,
+				Error:      lookupErr.Error(),
+			})
+			continue
+		}
+
+		exists, checkErr := s.classExistsBySchoolGradeName(ctx, schoolID, className, gradeLevel)
+		if checkErr != nil {
+			report.FailedRows++
+			report.Errors = append(report.Errors, ImportClassRowError{
+				Row:        rowNo,
+				SchoolName: schoolName,
+				ClassName:  className,
+				GradeLevel: gradeLevel,
+				Error:      checkErr.Error(),
+			})
+			continue
+		}
+
+		if err := s.upsertClassByIdentity(ctx, schoolID, className, gradeLevel, isActive); err != nil {
+			report.FailedRows++
+			report.Errors = append(report.Errors, ImportClassRowError{
+				Row:        rowNo,
+				SchoolName: schoolName,
+				ClassName:  className,
+				GradeLevel: gradeLevel,
+				Error:      err.Error(),
+			})
+			continue
+		}
+
+		report.SuccessRows++
+		if exists {
+			report.UpdatedRows++
+		} else {
+			report.CreatedRows++
+		}
+	}
+
+	_ = s.writeAudit(ctx, actorID, "classes_import_csv", "class_import", "csv", map[string]any{
+		"total_rows":   report.TotalRows,
+		"success_rows": report.SuccessRows,
+		"failed_rows":  report.FailedRows,
+		"created_rows": report.CreatedRows,
+		"updated_rows": report.UpdatedRows,
 	})
 
 	return report, nil
@@ -860,6 +1000,17 @@ func normalizeHeader(h string) string {
 	return h
 }
 
+func normalizeUsernameCSV(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func cell(rec []string, idx map[string]int, key string) string {
 	i, ok := idx[key]
 	if !ok || i < 0 || i >= len(rec) {
@@ -896,4 +1047,71 @@ func isRowEmpty(rec []string) bool {
 		}
 	}
 	return true
+}
+
+func parseBoolCSVDefaultTrue(v string) bool {
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return true
+	}
+	switch v {
+	case "1", "true", "yes", "ya", "aktif":
+		return true
+	case "0", "false", "no", "tidak", "nonaktif":
+		return false
+	default:
+		return true
+	}
+}
+
+func (s *Service) lookupActiveSchoolIDByName(ctx context.Context, schoolName string) (int64, error) {
+	var id int64
+	var isActive bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, is_active
+		FROM schools
+		WHERE LOWER(name) = LOWER($1)
+		LIMIT 1
+	`, strings.TrimSpace(schoolName)).Scan(&id, &isActive)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("school_name tidak ditemukan: %s", schoolName)
+		}
+		return 0, fmt.Errorf("lookup school_name gagal: %w", err)
+	}
+	if !isActive {
+		return 0, fmt.Errorf("school_name nonaktif: %s", schoolName)
+	}
+	return id, nil
+}
+
+func (s *Service) classExistsBySchoolGradeName(ctx context.Context, schoolID int64, className, gradeLevel string) (bool, error) {
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM classes
+			WHERE school_id = $1
+			  AND LOWER(name) = LOWER($2)
+			  AND LOWER(grade_level) = LOWER($3)
+		)
+	`, schoolID, strings.TrimSpace(className), strings.TrimSpace(gradeLevel)).Scan(&exists); err != nil {
+		return false, fmt.Errorf("cek kelas existing gagal: %w", err)
+	}
+	return exists, nil
+}
+
+func (s *Service) upsertClassByIdentity(ctx context.Context, schoolID int64, className, gradeLevel string, isActive bool) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, now(), now())
+		ON CONFLICT (school_id, grade_level, name)
+		DO UPDATE SET
+			is_active = EXCLUDED.is_active,
+			updated_at = now()
+	`, schoolID, strings.TrimSpace(className), strings.TrimSpace(gradeLevel), isActive)
+	if err != nil {
+		return fmt.Errorf("simpan kelas gagal: %w", err)
+	}
+	return nil
 }
