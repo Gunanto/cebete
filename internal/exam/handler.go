@@ -189,7 +189,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrStudentDataMissing):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable):
+		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrExamTokenAlreadyUsed):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
@@ -220,7 +220,7 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 	out, err := h.svc.PreviewExamByToken(r.Context(), user.ID, req.ExamToken)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrStudentDataMissing):
+		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrExamTokenAlreadyUsed), errors.Is(err, ErrStudentDataMissing):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrExamNotAssigned), errors.Is(err, ErrAttemptForbidden):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})

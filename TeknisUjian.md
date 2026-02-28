@@ -14,6 +14,37 @@ Dokumen ini adalah panduan uji fitur `Kode Soal` dan enroll soal ke ujian berbas
 - Aplikasi berjalan normal (`go run ./cmd/web`).
 - Migrasi terbaru sudah diterapkan (`./scripts/migrate.sh up`).
 
+## Alur Login & Masuk Ujian (Terbaru)
+
+### Form Login
+- Halaman `/login` hanya memiliki field:
+  - `Username / Email`
+  - `Password`
+- Field token ujian tidak ada lagi di halaman login.
+
+### Redirect Setelah Login Sukses
+- `admin` diarahkan ke `/admin`.
+- `proktor` diarahkan ke `/proktor`.
+- `guru` diarahkan ke `/guru`.
+- `siswa` diarahkan ke `/ujian`.
+
+### Alur Siswa di `/ujian`
+1. Siswa login di `/login` (username/email + password).
+2. Siswa masuk ke `/ujian`.
+3. Sistem menampilkan halaman token ujian (dialog token).
+4. Siswa isi token ujian dan token diverifikasi.
+5. Jika token valid, tampil dialog `Konfirmasi Data Peserta`.
+6. Jika data peserta benar, tampil dialog `Informasi Ujian`.
+7. Siswa klik `Saya Siap Mengikuti Ujian`.
+8. Sistem membuat/melanjutkan attempt dan masuk ke `/ujian/{attempt_id}`.
+
+### Perilaku Jika Token Salah
+- Sistem menampilkan peringatan token tidak valid.
+- Siswa tetap di halaman token sampai token benar.
+
+### Perilaku Tombol Batal Pada Dialog Token (Siswa)
+- Jika siswa klik `Batal` pada dialog token, sesi akan logout dan kembali ke `/login`.
+
 ## Skenario A: CRUD Kode Soal
 1. Buka menu `Naskah Soal`.
 2. Di blok `Kode Soal`, pilih `Mapel`.
@@ -76,6 +107,20 @@ Dokumen ini adalah panduan uji fitur `Kode Soal` dan enroll soal ke ujian berbas
 - Pastikan semua aksi menampilkan feedback sukses/gagal yang jelas di UI.
 - Jika terjadi error, catat pesan error UI dan log terminal untuk analisis.
 - Uji minimal 2 kode soal berbeda agar skenario `all` dan `random` mudah diverifikasi.
+
+## Skenario E: Uji End-to-End Login Siswa Sampai Mulai Ujian
+1. Login sebagai `siswa` di `/login` menggunakan username/email dan password.
+2. Pastikan redirect ke `/ujian`.
+3. Masukkan token ujian valid.
+4. Klik lanjut dan verifikasi dialog `Konfirmasi Data Peserta` tampil.
+5. Klik `Data Benar, Lanjut Ujian`.
+6. Verifikasi dialog `Informasi Ujian` tampil (kode, judul, durasi, attempt, expiry token).
+7. Klik `Saya Siap Mengikuti Ujian`.
+
+### Expected Result
+- Siswa masuk ke halaman attempt (`/ujian/{id}`).
+- Timer ujian dan soal tampil normal.
+- Tidak ada field token di halaman login.
 
 ## Monitoring Event Ujian (`/proktor`)
 

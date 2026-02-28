@@ -213,6 +213,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Post("/admin/registrations/{id}/reject", authHandler.RejectRegistration)
 				admin.Post("/admin/schools", masterHandler.CreateSchool)
 				admin.Post("/admin/classes", masterHandler.CreateClass)
+				admin.Get("/admin/imports/classes/template", masterHandler.ExportClassesImportTemplateCSV)
+				admin.Post("/admin/imports/classes", masterHandler.ImportClassesCSV)
 				admin.Post("/admin/imports/students", masterHandler.ImportStudentsCSV)
 			})
 

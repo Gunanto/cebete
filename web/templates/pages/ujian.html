@@ -180,4 +180,116 @@
         </div>
     </form>
 </dialog>
+
+<dialog id="exam-instruction-dialog" class="admin-dialog admin-dialog-wide">
+    <form id="exam-instruction-dialog-form">
+        <div class="exam-instruction-card">
+            <div class="exam-instruction-header">
+                <h3>Petunjuk Pengerjaan Ujian</h3>
+                <div class="exam-instruction-brand">g-cbt</div>
+                <p>Platform Evaluasi Digital Sekolah</p>
+            </div>
+
+            <div class="exam-instruction-body">
+                <p id="exam-instruction-dialog-help" class="muted">
+                    Baca petunjuk berikut sebelum memulai ujian.
+                </p>
+
+                <div class="exam-instruction-item is-blue">
+                    <div class="exam-instruction-no">1</div>
+                    <div>
+                        <h4>Persiapan Perangkat</h4>
+                        <p>
+                            Gunakan browser terbaru (Chrome/Edge) dan pastikan
+                            daya baterai cukup atau perangkat terhubung ke
+                            pengisi daya.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="exam-instruction-item is-green">
+                    <div class="exam-instruction-no">2</div>
+                    <div>
+                        <h4>Waktu Pengerjaan</h4>
+                        <p>
+                            Waktu dihitung mundur sejak tombol mulai ditekan.
+                            Saat waktu habis, soal langsung nonaktif dan ujian
+                            disubmit otomatis.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="exam-instruction-item is-purple">
+                    <div class="exam-instruction-no">3</div>
+                    <div>
+                        <h4>Navigasi Soal</h4>
+                        <p>
+                            Klik nomor soal pada panel navigasi untuk berpindah
+                            cepat. Jawaban tersimpan otomatis selama ujian.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="exam-instruction-item is-orange">
+                    <div class="exam-instruction-no">4</div>
+                    <div>
+                        <h4>Kecurangan dan Diskualifikasi</h4>
+                        <p>
+                            Dilarang membuka tab/aplikasi lain atau mematikan
+                            koneksi. Sistem mencatat aktivitas mencurigakan.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="exam-instruction-warning">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M12 9v2" />
+                        <path d="M12 16h.01" />
+                        <path
+                            d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                        />
+                    </svg>
+                    <div>
+                        <strong>Peringatan:</strong>
+                        Jangan menekan tombol refresh (F5) selama ujian
+                        berlangsung.
+                    </div>
+                </div>
+
+                <label class="exam-instruction-confirm">
+                    <input id="exam-instruction-confirm" type="checkbox" />
+                    <span>
+                        Saya mengerti dan siap mengerjakan ujian dengan jujur.
+                    </span>
+                </label>
+
+                <div class="actions">
+                    <button
+                        id="exam-instruction-dialog-cancel-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        Kembali
+                    </button>
+                    <button class="btn" type="submit">
+                        Mulai Mengerjakan Sekarang
+                    </button>
+                </div>
+            </div>
+
+            <div class="exam-instruction-footer">
+                Dibuat oleh pakgun v0.1 - 2026
+            </div>
+        </div>
+    </form>
+</dialog>
 {{end}}

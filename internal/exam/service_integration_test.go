@@ -3,6 +3,7 @@ package exam
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -380,6 +381,232 @@ func TestSubmitAttemptConcurrent_DBIntegration(t *testing.T) {
 	}
 }
 
+func TestSubmitAttemptAfterExpiryMarkedExpired_DBIntegration(t *testing.T) {
+	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
+		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
+	}
+
+	dsn := os.Getenv("CBTLMS_TEST_DSN")
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://cbtlms:cbtlms_dev_password@localhost:5432/cbtlms?sslmode=disable"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	dbConn, err := internaldb.OpenPostgres(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer dbConn.Close()
+
+	svc := NewService(dbConn, 90)
+
+	suffix := time.Now().UnixNano()
+	subjectName := fmt.Sprintf("ITEST Expired Subject %d", suffix)
+	examCode := fmt.Sprintf("ITEST-EXPIRED-EXAM-%d", suffix)
+	studentUsername := fmt.Sprintf("itest_expired_student_%d", suffix)
+
+	tx, err := dbConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin seed tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var subjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO subjects (education_level, subject_type, name, is_active)
+		VALUES ('SMA', 'Wajib', $1, TRUE)
+		RETURNING id
+	`, subjectName).Scan(&subjectID); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+
+	var studentID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Student', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentUsername, studentUsername+"@example.test").Scan(&studentID); err != nil {
+		t.Fatalf("insert student: %v", err)
+	}
+
+	var examID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO exams (
+			code, title, subject_id, duration_minutes,
+			randomize_questions, randomize_options, review_policy,
+			is_active, created_at
+		) VALUES (
+			$1, 'Integration Expired Exam', $2, 30,
+			FALSE, FALSE, 'after_submit',
+			TRUE, now()
+		)
+		RETURNING id
+	`, examCode, subjectID).Scan(&examID); err != nil {
+		t.Fatalf("insert exam: %v", err)
+	}
+
+	var attemptID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, expires_at)
+		VALUES ($1, $2, 'in_progress', now() - interval '35 minute', now() - interval '5 minute')
+		RETURNING id
+	`, examID, studentID).Scan(&attemptID); err != nil {
+		t.Fatalf("insert attempt: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	defer cleanupIntegrationFixture(t, dbConn, examID, 0, subjectID, studentID)
+
+	summary, err := svc.SubmitAttempt(ctx, attemptID)
+	if err != nil {
+		t.Fatalf("submit expired attempt: %v", err)
+	}
+	if summary.Status != "expired" {
+		t.Fatalf("expected expired status, got %s", summary.Status)
+	}
+
+	var storedStatus string
+	if err := dbConn.QueryRowContext(ctx, `
+		SELECT status FROM attempts WHERE id = $1
+	`, attemptID).Scan(&storedStatus); err != nil {
+		t.Fatalf("load finalized attempt: %v", err)
+	}
+	if storedStatus != "expired" {
+		t.Fatalf("expected DB status expired, got %s", storedStatus)
+	}
+}
+
+func TestStartAttemptRequiresNewTokenAfterSubmit_DBIntegration(t *testing.T) {
+	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
+		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
+	}
+
+	dsn := os.Getenv("CBTLMS_TEST_DSN")
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://cbtlms:cbtlms_dev_password@localhost:5432/cbtlms?sslmode=disable"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	dbConn, err := internaldb.OpenPostgres(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer dbConn.Close()
+
+	svc := NewService(dbConn, 90)
+
+	suffix := time.Now().UnixNano()
+	subjectName := fmt.Sprintf("ITEST Token Subject %d", suffix)
+	examCode := fmt.Sprintf("ITEST-TOKEN-EXAM-%d", suffix)
+	studentUsername := fmt.Sprintf("itest_token_student_%d", suffix)
+	tokenV1 := "ABC123"
+	tokenV2 := "XYZ789"
+
+	tx, err := dbConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin seed tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var subjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO subjects (education_level, subject_type, name, is_active)
+		VALUES ('SMA', 'Wajib', $1, TRUE)
+		RETURNING id
+	`, subjectName).Scan(&subjectID); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+
+	var studentID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Student', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentUsername, studentUsername+"@example.test").Scan(&studentID); err != nil {
+		t.Fatalf("insert student: %v", err)
+	}
+
+	var examID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO exams (
+			code, title, subject_id, duration_minutes,
+			max_attempts, randomize_questions, randomize_options, review_policy,
+			exam_token_hash, exam_token_generated_at, exam_token_expires_at,
+			is_active, created_at
+		) VALUES (
+			$1, 'Integration Token Exam', $2, 30,
+			2, FALSE, FALSE, 'after_submit',
+			$3, now(), now() + interval '30 minute',
+			TRUE, now()
+		)
+		RETURNING id
+	`, examCode, subjectID, hashExamToken(tokenV1)).Scan(&examID); err != nil {
+		t.Fatalf("insert exam: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	defer cleanupIntegrationFixture(t, dbConn, examID, 0, subjectID, studentID)
+
+	firstAttempt, err := svc.StartAttempt(ctx, examID, studentID, tokenV1)
+	if err != nil {
+		t.Fatalf("start first attempt: %v", err)
+	}
+	if firstAttempt.Status != "in_progress" {
+		t.Fatalf("expected in_progress, got %s", firstAttempt.Status)
+	}
+
+	firstSummary, err := svc.SubmitAttempt(ctx, firstAttempt.ID)
+	if err != nil {
+		t.Fatalf("submit first attempt: %v", err)
+	}
+	if firstSummary.Status != "submitted" {
+		t.Fatalf("expected submitted, got %s", firstSummary.Status)
+	}
+
+	_, err = svc.StartAttempt(ctx, examID, studentID, tokenV1)
+	if !errors.Is(err, ErrExamTokenAlreadyUsed) {
+		t.Fatalf("expected ErrExamTokenAlreadyUsed, got %v", err)
+	}
+
+	if _, err := dbConn.ExecContext(ctx, `
+		UPDATE exams
+		SET exam_token_hash = $2,
+			exam_token_generated_at = now(),
+			exam_token_expires_at = now() + interval '30 minute'
+		WHERE id = $1
+	`, examID, hashExamToken(tokenV2)); err != nil {
+		t.Fatalf("rotate token: %v", err)
+	}
+
+	secondAttempt, err := svc.StartAttempt(ctx, examID, studentID, tokenV2)
+	if err != nil {
+		t.Fatalf("start second attempt with fresh token: %v", err)
+	}
+	if secondAttempt.Status != "in_progress" {
+		t.Fatalf("expected in_progress for second attempt, got %s", secondAttempt.Status)
+	}
+}
+
 func TestSubmitAttempt_ScoringThreeTypes_DBIntegration(t *testing.T) {
 	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
 		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
@@ -603,8 +830,10 @@ func cleanupIntegrationFixture(t *testing.T, db *sql.DB, examID, questionID, sub
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, _ = tx.ExecContext(ctx, `DELETE FROM attempt_scores WHERE question_id = $1`, questionID)
-	_, _ = tx.ExecContext(ctx, `DELETE FROM attempt_answers WHERE question_id = $1`, questionID)
+	if questionID > 0 {
+		_, _ = tx.ExecContext(ctx, `DELETE FROM attempt_scores WHERE question_id = $1`, questionID)
+		_, _ = tx.ExecContext(ctx, `DELETE FROM attempt_answers WHERE question_id = $1`, questionID)
+	}
 	_, _ = tx.ExecContext(ctx, `DELETE FROM attempts WHERE exam_id = $1`, examID)
 	_, _ = tx.ExecContext(ctx, `DELETE FROM exam_questions WHERE exam_id = $1`, examID)
 	_, _ = tx.ExecContext(ctx, `DELETE FROM exams WHERE id = $1`, examID)

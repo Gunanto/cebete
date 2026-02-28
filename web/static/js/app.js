@@ -117,8 +117,6 @@
     return fallback;
   }
 
-  const LOGIN_EXAM_TOKEN_STORAGE_KEY = "cbtlms_login_exam_token";
-
   function shortQuestionTypeLabel(qType) {
     const v = String(qType || "")
       .toLowerCase()
@@ -356,7 +354,6 @@
     const msg = document.getElementById("login-message");
     const passwordInput = document.getElementById("login-password");
     const togglePasswordBtn = document.getElementById("toggle-login-password");
-    const loginExamTokenInput = document.getElementById("login-exam-token");
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -394,56 +391,11 @@
       try {
         const identifier = normalizeCredential(fd.get("identifier"));
         const password = normalizeCredential(fd.get("password"));
-        const examToken = String(fd.get("exam_token") || "").trim();
         await api("/api/v1/auth/login-password", "POST", {
           identifier: identifier,
           password: password,
         });
         const me = await meOrNull();
-        const role = String((me && me.role) || "")
-          .trim()
-          .toLowerCase();
-        if (role === "siswa" && !examToken) {
-          try {
-            await api("/api/v1/auth/logout", "POST");
-          } catch (_) {
-            // no-op
-          }
-          text(msg, "Token ujian wajib diisi untuk login siswa.");
-          if (loginExamTokenInput) loginExamTokenInput.focus();
-          return;
-        }
-        if (role === "siswa") {
-          try {
-            await api("/api/v1/attempts/token/preview", "POST", {
-              exam_token: examToken,
-            });
-          } catch (err) {
-            try {
-              await api("/api/v1/auth/logout", "POST");
-            } catch (_) {
-              // no-op
-            }
-            text(msg, "Login gagal: token ujian salah atau tidak berlaku.");
-            if (loginExamTokenInput) {
-              loginExamTokenInput.focus();
-              loginExamTokenInput.select();
-            }
-            return;
-          }
-        }
-        try {
-          if (role === "siswa") {
-            window.sessionStorage.setItem(
-              LOGIN_EXAM_TOKEN_STORAGE_KEY,
-              examToken,
-            );
-          } else {
-            window.sessionStorage.removeItem(LOGIN_EXAM_TOKEN_STORAGE_KEY);
-          }
-        } catch (_) {
-          // Ignore if storage is unavailable.
-        }
         window.location.href = homeByRole(me);
       } catch (err) {
         text(msg, "Login gagal: " + err.message);
@@ -519,6 +471,21 @@
     const examReadyTokenExpiry = document.getElementById(
       "exam-ready-token-expiry",
     );
+    const examInstructionDialog = document.getElementById(
+      "exam-instruction-dialog",
+    );
+    const examInstructionDialogForm = document.getElementById(
+      "exam-instruction-dialog-form",
+    );
+    const examInstructionDialogHelp = document.getElementById(
+      "exam-instruction-dialog-help",
+    );
+    const examInstructionDialogCancelBtn = document.getElementById(
+      "exam-instruction-dialog-cancel-btn",
+    );
+    const examInstructionConfirm = document.getElementById(
+      "exam-instruction-confirm",
+    );
     const startBtn = document.getElementById("start-btn");
     let pendingStartExamID = 0;
     let pendingStartToken = "";
@@ -535,15 +502,10 @@
       (examReadyDialogHelp && examReadyDialogHelp.textContent) ||
         "Pastikan informasi ujian sudah benar sebelum memulai.",
     ).trim();
-    let loginExamToken = "";
-    try {
-      loginExamToken = String(
-        window.sessionStorage.getItem(LOGIN_EXAM_TOKEN_STORAGE_KEY) || "",
-      ).trim();
-    } catch (_) {
-      loginExamToken = "";
-    }
-
+    const examInstructionHelpDefault = String(
+      (examInstructionDialogHelp && examInstructionDialogHelp.textContent) ||
+        "Baca petunjuk berikut sebelum memulai ujian.",
+    ).trim();
     let subjects = [];
     const initDone = beginBusy(form, msg, "Memuat daftar mapel...");
     try {
@@ -787,6 +749,16 @@
 
     if (examTokenDialogCancelBtn) {
       examTokenDialogCancelBtn.addEventListener("click", function () {
+        if (isStudentRole) {
+          api("/api/v1/auth/logout", "POST")
+            .catch(function () {
+              // no-op
+            })
+            .finally(function () {
+              window.location.href = "/login";
+            });
+          return;
+        }
         pendingStartExamID = 0;
         if (examTokenDialogHelp) {
           examTokenDialogHelp.textContent = tokenDialogHelpDefault;
@@ -819,49 +791,36 @@
         ) {
           studentProfileDialog.close();
         }
-        const stagedToken = String(loginExamToken || "").trim();
-        if (stagedToken) {
-          const done = beginBusy(
-            studentProfileDialogForm,
+        if (!pendingPreviewData || !pendingStartToken) {
+          text(
             msg,
-            "Memvalidasi token ujian...",
+            "Token ujian belum valid. Silakan isi token terlebih dulu.",
           );
-          try {
-            const preview = await previewExamByToken(stagedToken);
-            pendingStartExamID = Number((preview && preview.exam_id) || 0);
-            pendingStartToken = stagedToken;
-            pendingPreviewData = preview;
-            renderExamReadyDialog(preview);
-            if (examReadyDialogHelp) {
-              examReadyDialogHelp.textContent = examReadyHelpDefault;
+          if (examTokenDialogInput) examTokenDialogInput.value = "";
+          if (
+            examTokenDialog &&
+            typeof examTokenDialog.showModal === "function"
+          ) {
+            if (examTokenDialogHelp) {
+              examTokenDialogHelp.textContent = tokenDialogHelpDefault;
             }
-            if (
-              examReadyDialog &&
-              typeof examReadyDialog.showModal === "function"
-            ) {
-              examReadyDialog.showModal();
-            }
+            examTokenDialog.showModal();
             return;
-          } catch (err) {
-            text(msg, "Token ujian salah/tidak valid: " + err.message);
-            window.alert("Token ujian salah atau tidak valid.");
-            return;
-          } finally {
-            done();
           }
-        }
-        if (examTokenDialogInput) examTokenDialogInput.value = "";
-        if (
-          examTokenDialog &&
-          typeof examTokenDialog.showModal === "function"
-        ) {
-          if (examTokenDialogHelp) {
-            examTokenDialogHelp.textContent = tokenDialogHelpDefault;
-          }
-          examTokenDialog.showModal();
+          text(msg, "Dialog token tidak tersedia. Hubungi proktor.");
           return;
         }
-        text(msg, "Dialog token tidak tersedia. Hubungi proktor.");
+        renderExamReadyDialog(pendingPreviewData);
+        if (examReadyDialogHelp) {
+          examReadyDialogHelp.textContent = examReadyHelpDefault;
+        }
+        if (
+          examReadyDialog &&
+          typeof examReadyDialog.showModal === "function"
+        ) {
+          examReadyDialog.showModal();
+          return;
+        }
       });
     }
 
@@ -869,7 +828,7 @@
       examTokenDialogForm.addEventListener("submit", async function (e) {
         e.preventDefault();
         const selectedExamID = Number(pendingStartExamID || 0);
-        if (selectedExamID <= 0) return;
+        if (!isStudentRole && selectedExamID <= 0) return;
         const token = String(
           (examTokenDialogInput && examTokenDialogInput.value) || "",
         ).trim();
@@ -897,12 +856,16 @@
           pendingStartExamID = previewExamID;
           pendingStartToken = token;
           pendingPreviewData = preview;
+          if (examTokenDialog && typeof examTokenDialog.close === "function") {
+            examTokenDialog.close();
+          }
+          if (isStudentRole) {
+            await showStudentProfileStep();
+            return;
+          }
           renderExamReadyDialog(preview);
           if (examReadyDialogHelp) {
             examReadyDialogHelp.textContent = examReadyHelpDefault;
-          }
-          if (examTokenDialog && typeof examTokenDialog.close === "function") {
-            examTokenDialog.close();
           }
           if (
             examReadyDialog &&
@@ -948,6 +911,49 @@
     if (examReadyDialogForm) {
       examReadyDialogForm.addEventListener("submit", async function (e) {
         e.preventDefault();
+        if (examReadyDialog && typeof examReadyDialog.close === "function") {
+          examReadyDialog.close();
+        }
+        if (examInstructionConfirm) {
+          examInstructionConfirm.checked = false;
+        }
+        if (examInstructionDialogHelp) {
+          examInstructionDialogHelp.textContent = examInstructionHelpDefault;
+        }
+        if (
+          examInstructionDialog &&
+          typeof examInstructionDialog.showModal === "function"
+        ) {
+          examInstructionDialog.showModal();
+          return;
+        }
+        text(msg, "Dialog petunjuk tidak tersedia. Hubungi proktor.");
+      });
+    }
+
+    if (examInstructionDialogCancelBtn) {
+      examInstructionDialogCancelBtn.addEventListener("click", function () {
+        if (
+          examInstructionDialog &&
+          typeof examInstructionDialog.close === "function"
+        ) {
+          examInstructionDialog.close();
+        }
+        if (examReadyDialogHelp) {
+          examReadyDialogHelp.textContent = examReadyHelpDefault;
+        }
+        if (
+          examReadyDialog &&
+          typeof examReadyDialog.showModal === "function"
+        ) {
+          examReadyDialog.showModal();
+        }
+      });
+    }
+
+    if (examInstructionDialogForm) {
+      examInstructionDialogForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
         const examID = Number(
           (pendingPreviewData && pendingPreviewData.exam_id) ||
             pendingStartExamID ||
@@ -958,53 +964,40 @@
           text(msg, "Sesi ujian tidak valid. Silakan ulangi dari awal.");
           return;
         }
-        if (examReadyDialogHelp) {
-          examReadyDialogHelp.textContent = examReadyHelpDefault;
+        if (!examInstructionConfirm || !examInstructionConfirm.checked) {
+          if (examInstructionDialogHelp) {
+            examInstructionDialogHelp.textContent =
+              "Centang persetujuan terlebih dulu sebelum mulai ujian.";
+          }
+          return;
+        }
+        if (examInstructionDialogHelp) {
+          examInstructionDialogHelp.textContent = examInstructionHelpDefault;
         }
         try {
-          await startAttemptByExamID(examID, token, examReadyDialogForm);
-          try {
-            window.sessionStorage.removeItem(LOGIN_EXAM_TOKEN_STORAGE_KEY);
-          } catch (_) {
-            // Ignore if storage is unavailable.
-          }
+          await startAttemptByExamID(examID, token, examInstructionDialogForm);
         } catch (err) {
           const errMsg = String((err && err.message) || "").toLowerCase();
           const warn = errMsg.includes("token")
             ? "Token ujian salah atau tidak berlaku."
             : "Gagal memulai ujian: " + err.message;
-          if (examReadyDialogHelp) {
-            examReadyDialogHelp.textContent = warn;
+          if (examInstructionDialogHelp) {
+            examInstructionDialogHelp.textContent = warn;
           }
           window.alert(warn);
         }
       });
     }
 
-    if (isStudentRole && loginExamToken) {
+    if (isStudentRole) {
       if (legacyFlow) legacyFlow.hidden = true;
-      const done = beginBusy(form, msg, "Memvalidasi token dari login...");
-      try {
-        const preview = await previewExamByToken(loginExamToken);
-        pendingStartExamID = Number((preview && preview.exam_id) || 0);
-        pendingStartToken = loginExamToken;
-        pendingPreviewData = preview;
-        text(
-          msg,
-          "Token valid. Lanjutkan konfirmasi data peserta untuk memulai ujian.",
-        );
-        await showStudentProfileStep();
-      } catch (err) {
-        text(msg, "Token dari login tidak valid: " + err.message);
-        window.alert("Token dari login tidak valid. Silakan login ulang.");
-        try {
-          await api("/api/v1/auth/logout", "POST");
-        } catch (_) {
-          // no-op
-        }
-        window.location.href = "/login";
-      } finally {
-        done();
+      if (examTokenDialogInput) examTokenDialogInput.value = "";
+      if (examTokenDialogHelp) {
+        examTokenDialogHelp.textContent = tokenDialogHelpDefault;
+      }
+      text(msg, "Masukkan token ujian untuk melanjutkan.");
+      if (examTokenDialog && typeof examTokenDialog.showModal === "function") {
+        examTokenDialog.showModal();
       }
     }
   }
@@ -1036,6 +1029,8 @@
     let currentQuestion = null;
     let remainInterval = null;
     let attemptEditable = true;
+    let timeoutAutoSubmitFired = false;
+    let submitInProgress = false;
 
     const remainingLabel = document.getElementById("remaining-label");
     const message = document.getElementById("attempt-message");
@@ -1240,9 +1235,15 @@
       let remain = Number(sum.remaining_secs || 0);
       text(remainingLabel, formatRemain(remain));
       if (remainInterval) clearInterval(remainInterval);
+      if (remain <= 0 && attemptEditable) {
+        triggerTimeoutAutoSubmit();
+      }
       remainInterval = setInterval(function () {
         remain = Math.max(0, remain - 1);
         text(remainingLabel, formatRemain(remain));
+        if (remain <= 0 && attemptEditable) {
+          triggerTimeoutAutoSubmit();
+        }
       }, 1000);
       return sum;
     }
@@ -1254,7 +1255,11 @@
       return stem;
     }
 
-    function applyAttemptReadonlyState(summaryStatus) {
+    function applyAttemptReadonlyState(summaryStatus, customMessageHTML) {
+      if (remainInterval) {
+        clearInterval(remainInterval);
+        remainInterval = null;
+      }
       attemptEditable = false;
       prevBtn.disabled = true;
       nextBtn.disabled = true;
@@ -1266,6 +1271,10 @@
         .forEach(function (el) {
           el.disabled = true;
         });
+      if (customMessageHTML) {
+        html(message, customMessageHTML);
+        return;
+      }
       html(
         message,
         "Attempt sudah " +
@@ -1274,6 +1283,43 @@
           encodeURIComponent(String(attemptID)) +
           '">halaman hasil</a>.',
       );
+    }
+
+    async function submitAttemptNow() {
+      if (submitInProgress) return;
+      submitInProgress = true;
+      try {
+        await api("/api/v1/attempts/" + attemptID + "/submit", "POST");
+      } finally {
+        submitInProgress = false;
+      }
+    }
+
+    async function triggerTimeoutAutoSubmit() {
+      if (timeoutAutoSubmitFired) return;
+      timeoutAutoSubmitFired = true;
+      if (remainInterval) {
+        clearInterval(remainInterval);
+        remainInterval = null;
+      }
+      applyAttemptReadonlyState(
+        "expired",
+        "Waktu habis. Jawaban dikunci dan ujian sedang disubmit otomatis...",
+      );
+      try {
+        await submitAttemptNow();
+        text(message, "Waktu habis. Ujian disubmit otomatis.");
+        showAttemptFinishDialog();
+      } catch (err) {
+        html(
+          message,
+          "Waktu habis, jawaban sudah dikunci tetapi submit otomatis gagal: " +
+            escapeHtml(err.message) +
+            '. Buka <a href="/hasil/' +
+            encodeURIComponent(String(attemptID)) +
+            '">halaman hasil</a> atau hubungi pengawas.',
+        );
+      }
     }
 
     async function closeExamAndLogout() {
@@ -1960,18 +2006,8 @@
             return;
           }
           if (!window.confirm("Yakin submit final?")) return;
-          await api("/api/v1/attempts/" + attemptID + "/submit", "POST");
-          attemptEditable = false;
-          prevBtn.disabled = true;
-          nextBtn.disabled = true;
-          submitBtn.disabled = true;
-          submitBtn.hidden = true;
-          doubtCheckbox.disabled = true;
-          optionsBox
-            .querySelectorAll("input, button, select, textarea")
-            .forEach(function (el) {
-              el.disabled = true;
-            });
+          await submitAttemptNow();
+          applyAttemptReadonlyState("submitted", "Ujian telah disubmit.");
           text(message, "Ujian telah disubmit.");
           showAttemptFinishDialog();
         } catch (err) {

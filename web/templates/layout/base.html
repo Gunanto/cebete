@@ -42,6 +42,10 @@
             "attempt_content" .}} {{else if eq .Page "result_content"}}
             {{template "result_content" .}} {{end}}
         </main>
+        <footer class="landing-footer">
+            <p>Dibuat oleh pakgun v0.1 - 2026</p>
+            <small>&copy; 2026 Sistem Manajemen Ujian Digital</small>
+        </footer>
         {{else}} {{template "home_content" .}} {{end}}
         <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
     </body>

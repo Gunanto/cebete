@@ -32,6 +32,7 @@ var (
 	ErrExamTokenInvalid         = errors.New("token ujian tidak valid")
 	ErrExamTokenExpired         = errors.New("token ujian sudah kedaluwarsa")
 	ErrExamTokenUnavailable     = errors.New("token ujian belum disiapkan proktor")
+	ErrExamTokenAlreadyUsed     = errors.New("token ujian sudah digunakan, minta token baru")
 	ErrExamNotAssigned          = errors.New("peserta tidak terdaftar pada ujian ini")
 	ErrExamCodeExists           = errors.New("kode ujian sudah digunakan")
 	ErrAttemptLimitReached      = errors.New("jumlah attempt ujian sudah mencapai batas")
@@ -432,11 +433,12 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	maxAttempts := 1
 	var examTokenHash sql.NullString
 	var examTokenExpires sql.NullTime
+	var examTokenGeneratedAt sql.NullTime
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT duration_minutes, max_attempts, exam_token_hash, exam_token_expires_at
+		SELECT duration_minutes, max_attempts, exam_token_hash, exam_token_expires_at, exam_token_generated_at
 		FROM exams
 		WHERE id = $1 AND is_active = TRUE
-	`, examID).Scan(&duration, &maxAttempts, &examTokenHash, &examTokenExpires); err != nil {
+	`, examID).Scan(&duration, &maxAttempts, &examTokenHash, &examTokenExpires, &examTokenGeneratedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
@@ -487,6 +489,25 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	}
 	if subtle.ConstantTimeCompare([]byte(hashExamToken(inputToken)), []byte(examTokenHash.String)) != 1 {
 		return nil, ErrExamTokenInvalid
+	}
+	if examTokenGeneratedAt.Valid {
+		var tokenAlreadyUsed bool
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1
+				FROM attempts
+				WHERE exam_id = $1
+				  AND student_id = $2
+				  AND status <> 'in_progress'
+				  AND submitted_at IS NOT NULL
+				  AND submitted_at >= $3
+			)
+		`, examID, studentID, examTokenGeneratedAt.Time).Scan(&tokenAlreadyUsed); err != nil {
+			return nil, fmt.Errorf("check exam token usage: %w", err)
+		}
+		if tokenAlreadyUsed {
+			return nil, ErrExamTokenAlreadyUsed
+		}
 	}
 	var totalAttempts int
 	if err := s.db.QueryRowContext(ctx, `
@@ -539,15 +560,16 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 	now := time.Now()
 
 	var (
-		examID          int64
-		examCode        string
-		examTitle       string
-		subjectName     string
-		durationMinutes int
-		maxAttempts     int
-		tokenExpiresAt  time.Time
-		startAt         sql.NullTime
-		endAt           sql.NullTime
+		examID           int64
+		examCode         string
+		examTitle        string
+		subjectName      string
+		durationMinutes  int
+		maxAttempts      int
+		tokenExpiresAt   time.Time
+		tokenGeneratedAt sql.NullTime
+		startAt          sql.NullTime
+		endAt            sql.NullTime
 	)
 
 	err := s.db.QueryRowContext(ctx, `
@@ -559,6 +581,7 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 			e.duration_minutes,
 			e.max_attempts,
 			e.exam_token_expires_at,
+			e.exam_token_generated_at,
 			e.start_at,
 			e.end_at
 		FROM exams e
@@ -577,6 +600,7 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 		&durationMinutes,
 		&maxAttempts,
 		&tokenExpiresAt,
+		&tokenGeneratedAt,
 		&startAt,
 		&endAt,
 	)
@@ -647,6 +671,25 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 	}
 	if totalAttempts >= maxAttempts {
 		return nil, ErrAttemptLimitReached
+	}
+	if tokenGeneratedAt.Valid {
+		var tokenAlreadyUsed bool
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1
+				FROM attempts
+				WHERE exam_id = $1
+				  AND student_id = $2
+				  AND status <> 'in_progress'
+				  AND submitted_at IS NOT NULL
+				  AND submitted_at >= $3
+			)
+		`, examID, studentID, tokenGeneratedAt.Time).Scan(&tokenAlreadyUsed); err != nil {
+			return nil, fmt.Errorf("check exam token usage preview: %w", err)
+		}
+		if tokenAlreadyUsed {
+			return nil, ErrExamTokenAlreadyUsed
+		}
 	}
 
 	out := &ExamTokenPreview{
@@ -3165,7 +3208,12 @@ func (s *Service) finalizeAttempt(ctx context.Context, attemptID int64, finalSta
 		return summary, nil
 	}
 
-	if finalStatus == "expired" && time.Now().Before(row.ExpiresAt) {
+	now := time.Now()
+	if now.After(row.ExpiresAt) && finalStatus == "submitted" {
+		finalStatus = "expired"
+	}
+
+	if finalStatus == "expired" && now.Before(row.ExpiresAt) {
 		summary, err := s.buildSummaryFromRow(ctx, tx, row)
 		if err != nil {
 			return nil, err

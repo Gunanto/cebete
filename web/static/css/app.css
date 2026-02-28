@@ -1443,6 +1443,175 @@ textarea:focus-visible {
     padding: 18px;
 }
 
+#exam-instruction-dialog {
+    width: min(900px, 96vw);
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+#exam-instruction-dialog form {
+    padding: 0;
+}
+
+#exam-instruction-dialog .exam-instruction-card {
+    background: #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow:
+        0 24px 30px -12px rgba(15, 23, 42, 0.2),
+        0 10px 16px -10px rgba(15, 23, 42, 0.2);
+}
+
+#exam-instruction-dialog .exam-instruction-header {
+    background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    text-align: center;
+    padding: 20px 18px;
+}
+
+#exam-instruction-dialog .exam-instruction-header h3 {
+    margin: 0;
+    font-size: 1.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+#exam-instruction-dialog .exam-instruction-brand {
+    margin-top: 8px;
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+
+#exam-instruction-dialog .exam-instruction-header p {
+    margin: 4px 0 0;
+    color: #dbeafe;
+    font-size: 0.86rem;
+}
+
+#exam-instruction-dialog .exam-instruction-body {
+    padding: 18px;
+    display: grid;
+    gap: 12px;
+}
+
+#exam-instruction-dialog .exam-instruction-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: start;
+    border-radius: 12px;
+    border-left: 4px solid;
+    padding: 10px 12px;
+}
+
+#exam-instruction-dialog .exam-instruction-item h4 {
+    margin: 0 0 2px;
+    font-size: 0.98rem;
+}
+
+#exam-instruction-dialog .exam-instruction-item p {
+    margin: 0;
+    color: #475569;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+#exam-instruction-dialog .exam-instruction-no {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-blue {
+    background: #eff6ff;
+    border-left-color: #3b82f6;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-blue .exam-instruction-no {
+    background: #3b82f6;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-green {
+    background: #ecfdf5;
+    border-left-color: #22c55e;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-green .exam-instruction-no {
+    background: #22c55e;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-purple {
+    background: #f5f3ff;
+    border-left-color: #8b5cf6;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-purple .exam-instruction-no {
+    background: #8b5cf6;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-orange {
+    background: #fff7ed;
+    border-left-color: #f97316;
+}
+
+#exam-instruction-dialog .exam-instruction-item.is-orange .exam-instruction-no {
+    background: #f97316;
+}
+
+#exam-instruction-dialog .exam-instruction-warning {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: start;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 0.86rem;
+}
+
+#exam-instruction-dialog .exam-instruction-warning svg {
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+}
+
+#exam-instruction-dialog .exam-instruction-confirm {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: start;
+    font-size: 0.92rem;
+}
+
+#exam-instruction-dialog .exam-instruction-confirm input {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+}
+
+#exam-instruction-dialog .exam-instruction-footer {
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.8rem;
+    padding: 10px 12px;
+}
+
+@media (max-width: 680px) {
+    #exam-instruction-dialog .exam-instruction-body {
+        padding: 14px;
+    }
+}
+
 body[data-page="admin_content"] .container,
 body[data-page="proktor_content"] .container,
 body[data-page="guru_content"] .container {

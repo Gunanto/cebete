@@ -259,6 +259,20 @@ func (h *Handler) ExportLearningGoalsImportTemplateCSV(w http.ResponseWriter, r 
 	}, "\n")))
 }
 
+func (h *Handler) ExportClassesImportTemplateCSV(w http.ResponseWriter, r *http.Request) {
+	filename := fmt.Sprintf("template_import_kelas_%s.csv", time.Now().Format("20060102_150405"))
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(strings.Join([]string{
+		"school_name,class_name,grade_level,is_active",
+		`"SMP Negeri 1 Punggur","Kelas 8.1","Grade 8","true"`,
+		`"SMP Negeri 1 Punggur","Kelas 8.2","Grade 8","true"`,
+		"",
+	}, "\n")))
+}
+
 func (h *Handler) ImportLearningGoalsCSV(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
@@ -746,6 +760,38 @@ func (h *Handler) ImportStudentsCSV(w http.ResponseWriter, r *http.Request) {
 		"report":   report,
 		"summary":  "import completed",
 		"ok_rows":  strconv.Itoa(report.SuccessRows),
+	}})
+}
+
+func (h *Handler) ImportClassesCSV(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid multipart form"})
+		return
+	}
+
+	file, hdr, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "file field is required"})
+		return
+	}
+	defer file.Close()
+
+	report, err := h.svc.ImportClassesCSV(r.Context(), user.ID, file)
+	if err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{
+		"filename": hdr.Filename,
+		"report":   report,
+		"summary":  "import completed",
 	}})
 }
 
