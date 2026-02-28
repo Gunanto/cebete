@@ -1584,6 +1584,199 @@ textarea:focus-visible {
     font-size: 10pt;
 }
 
+.attendance-pages {
+    display: grid;
+    gap: 18px;
+}
+
+.attendance-sheet-page {
+    width: 210mm;
+    min-height: 297mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 10mm 12mm;
+    background: #fff;
+    border: 1px solid #d8e1f0;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    box-sizing: border-box;
+    color: #0f172a;
+    position: relative;
+}
+
+.attendance-title {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.attendance-title h2 {
+    margin: 0;
+    font-size: 19px;
+    letter-spacing: 0.02em;
+    font-weight: 800;
+}
+
+.attendance-title h3 {
+    margin: 2px 0 0;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+    font-weight: 800;
+}
+
+.attendance-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.attendance-info-table td {
+    padding: 1px 0;
+    vertical-align: top;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.attendance-info-table td:nth-child(1),
+.attendance-info-table td:nth-child(4) {
+    width: 110px;
+}
+
+.attendance-info-table td:nth-child(2),
+.attendance-info-table td:nth-child(5) {
+    width: 10px;
+    text-align: center;
+}
+
+.attendance-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #111827;
+    font-size: 12px;
+}
+
+.attendance-list-table th,
+.attendance-list-table td {
+    border: 1px solid #111827;
+    padding: 3px 6px;
+}
+
+.attendance-list-table th {
+    text-align: center;
+    font-weight: 700;
+}
+
+.attendance-list-table td {
+    height: 20px;
+}
+
+.attendance-list-table .col-no {
+    width: 40px;
+    text-align: center;
+}
+
+.attendance-list-table .col-name {
+    width: 40%;
+}
+
+.attendance-list-table .col-participant {
+    width: 20%;
+    text-align: center;
+}
+
+.attendance-list-table .col-sign {
+    width: 24%;
+    vertical-align: top;
+}
+
+.attendance-list-table .col-note {
+    width: 16%;
+}
+
+.attendance-signatures {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 12px;
+}
+
+.attendance-signatures td {
+    text-align: center;
+    padding: 2px 6px;
+}
+
+.attendance-signatures .sign-space {
+    height: 56px;
+}
+
+.attendance-footnote {
+    margin: 12px 0 0;
+    font-size: 9px;
+    font-style: italic;
+    color: #94a3b8;
+    position: absolute;
+    left: 12mm;
+    bottom: 8mm;
+}
+
+.attendance-page-no {
+    position: absolute;
+    right: 12mm;
+    bottom: 8mm;
+    font-size: 11px;
+    color: #475569;
+}
+
+.attendance-dotted {
+    display: inline-block;
+    min-width: 88%;
+    border-bottom: 1px dotted #111827;
+    line-height: 1.1;
+}
+
+.attendance-sheet-page-compact .attendance-title {
+    margin-bottom: 6px;
+}
+
+.attendance-sheet-page-compact .attendance-title h2 {
+    font-size: 17px;
+}
+
+.attendance-sheet-page-compact .attendance-title h3 {
+    font-size: 16px;
+}
+
+.attendance-sheet-page-compact .attendance-info-table {
+    margin-bottom: 6px;
+}
+
+.attendance-sheet-page-compact .attendance-info-table td {
+    font-size: 11px;
+    padding: 0;
+}
+
+.attendance-sheet-page-compact .attendance-list-table {
+    font-size: 11px;
+}
+
+.attendance-sheet-page-compact .attendance-list-table th,
+.attendance-sheet-page-compact .attendance-list-table td {
+    padding: 2px 4px;
+}
+
+.attendance-sheet-page-compact .attendance-list-table td {
+    height: 15px;
+}
+
+.attendance-sheet-page-compact .attendance-signatures {
+    margin-top: 8px;
+    font-size: 11px;
+}
+
+.attendance-sheet-page-compact .attendance-signatures .sign-space {
+    height: 38px;
+}
+
 .admin-dialog {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -2022,6 +2215,8 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     body[data-page="proktor_content"] #proktor-message,
     body[data-page="proktor_content"] #proktor-cards-form,
     body[data-page="proktor_content"] #proktor-cards-meta,
+    body[data-page="proktor_content"] #proktor-attendance-form,
+    body[data-page="proktor_content"] #proktor-attendance-meta,
     body[data-page="proktor_content"] .proktor-card-photo-actions,
     body[data-page="proktor_content"] .admin-section-head {
         display: none !important;
@@ -2030,7 +2225,8 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     body[data-page="proktor_content"] .card,
     body[data-page="proktor_content"] .admin-layout,
     body[data-page="proktor_content"] .admin-content,
-    body[data-page="proktor_content"] #proktor-cards-panel {
+    body[data-page="proktor_content"] #proktor-cards-panel,
+    body[data-page="proktor_content"] #proktor-attendance-panel {
         margin: 0 !important;
         padding: 0 !important;
         background: #fff !important;
@@ -2039,9 +2235,6 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     }
     body[data-page="proktor_content"] .admin-content > section[hidden] {
         display: none !important;
-    }
-    body[data-page="proktor_content"] #proktor-cards-panel {
-        display: block !important;
     }
     body[data-page="proktor_content"] .proktor-cards-pages {
         gap: 0 !important;
@@ -2056,6 +2249,22 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
         page-break-after: always;
     }
     body[data-page="proktor_content"] .proktor-cards-page:last-child {
+        page-break-after: auto;
+    }
+    body[data-page="proktor_content"] .attendance-pages {
+        gap: 0 !important;
+    }
+    body[data-page="proktor_content"] .attendance-sheet-page {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        padding: 8mm 10mm;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+    }
+    body[data-page="proktor_content"] .attendance-sheet-page:last-child {
         page-break-after: auto;
     }
 }

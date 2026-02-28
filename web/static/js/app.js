@@ -4294,6 +4294,34 @@
     const cardsMeta = document.getElementById("proktor-cards-meta");
     const cardsPages = document.getElementById("proktor-cards-pages");
     const cardsPrintBtn = document.getElementById("proktor-cards-print-btn");
+    const attendancePanel = document.getElementById("proktor-attendance-panel");
+    const attendanceForm = document.getElementById("proktor-attendance-form");
+    const attendanceExamSelect = document.getElementById(
+      "proktor-attendance-exam",
+    );
+    const attendanceSchoolSelect = document.getElementById(
+      "proktor-attendance-school",
+    );
+    const attendanceClassSelect = document.getElementById(
+      "proktor-attendance-class",
+    );
+    const attendanceDayInput = document.getElementById(
+      "proktor-attendance-day",
+    );
+    const attendanceDateInput = document.getElementById(
+      "proktor-attendance-date",
+    );
+    const attendanceTimeInput = document.getElementById(
+      "proktor-attendance-time",
+    );
+    const attendanceOnlyActiveInput = document.getElementById(
+      "proktor-attendance-only-active",
+    );
+    const attendanceMeta = document.getElementById("proktor-attendance-meta");
+    const attendancePages = document.getElementById("proktor-attendance-pages");
+    const attendancePrintBtn = document.getElementById(
+      "proktor-attendance-print-btn",
+    );
     const examsPanel = document.getElementById("proktor-exams-panel");
     const examsRefreshBtn = document.getElementById(
       "proktor-exams-refresh-btn",
@@ -4374,6 +4402,8 @@
     let latestResultData = null;
     let cardsStudentsAll = [];
     let cardsPhotoByUserID = {};
+    let attendanceStudentsAll = [];
+    let attendanceExamMetaByID = {};
     let placementUsers = [];
     let placementSchools = [];
     let placementClasses = [];
@@ -4401,6 +4431,10 @@
     const setCardsMeta = function (value) {
       text(cardsMeta, value);
       if (cardsMeta) cardsMeta.classList.remove("muted");
+    };
+    const setAttendanceMeta = function (value) {
+      text(attendanceMeta, value);
+      if (attendanceMeta) attendanceMeta.classList.remove("muted");
     };
     const setResultsSummary = function (value) {
       text(resultsSummary, value);
@@ -4919,6 +4953,7 @@
         "events",
         "token",
         "cards",
+        "attendance",
         "exams",
         "results",
         "master",
@@ -4935,6 +4970,7 @@
       if (eventsPanel) eventsPanel.hidden = key !== "events";
       if (tokenPanel) tokenPanel.hidden = key !== "token";
       if (cardsPanel) cardsPanel.hidden = key !== "cards";
+      if (attendancePanel) attendancePanel.hidden = key !== "attendance";
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
       if (masterPanel) masterPanel.hidden = key !== "master";
@@ -4959,6 +4995,10 @@
         cards: {
           title: "Kartu Ujian",
           desc: "Cetak kartu peserta ujian per event ujian.",
+        },
+        attendance: {
+          title: "Daftar Hadir",
+          desc: "Cetak daftar hadir peserta asesmen per kelas.",
         },
         exams: {
           title: "Kelola Ujian",
@@ -4985,8 +5025,15 @@
     async function loadTokenExamOptions() {
       const exams = await api("/api/v1/admin/exams", "GET");
       const items = Array.isArray(exams) ? exams : [];
+      attendanceExamMetaByID = {};
+      items.forEach(function (it) {
+        const id = Number((it && it.id) || 0);
+        if (id <= 0) return;
+        attendanceExamMetaByID[String(id)] = it;
+      });
       function fillExamSelect(el) {
         if (!el) return;
+        const current = String(el.value || "");
         el.innerHTML = '<option value="">Pilih ujian...</option>';
         items.forEach(function (it) {
           const o = document.createElement("option");
@@ -4997,11 +5044,376 @@
             String(it.subject_name || "").trim(),
           ].filter(Boolean);
           o.textContent = chunks.join(" | ");
+          if (current && current === o.value) o.selected = true;
           el.appendChild(o);
         });
       }
       fillExamSelect(tokenExamSelect);
       fillExamSelect(cardsExamSelect);
+      fillExamSelect(attendanceExamSelect);
+    }
+
+    function getTodayInputDateValue() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return String(y) + "-" + m + "-" + day;
+    }
+
+    function dayNameIDFromDate(raw) {
+      const d = raw ? new Date(raw) : new Date();
+      if (Number.isNaN(d.getTime())) return "";
+      const names = [
+        "Minggu",
+        "Senin",
+        "Selasa",
+        "Rabu",
+        "Kamis",
+        "Jumat",
+        "Sabtu",
+      ];
+      return names[d.getDay()] || "";
+    }
+
+    function formatAttendanceDate(raw) {
+      if (!raw) return "-";
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      return d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+    }
+
+    function resolveAcademicYearLabel(rawDate) {
+      const d = rawDate ? new Date(rawDate) : new Date();
+      if (Number.isNaN(d.getTime())) return "";
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      if (month >= 7) {
+        return String(year) + "/" + String(year + 1);
+      }
+      return String(year - 1) + "/" + String(year);
+    }
+
+    async function loadAttendanceAssignments(examID) {
+      if (!attendancePages) return;
+      const id = Number(examID || 0);
+      if (id <= 0) {
+        attendanceStudentsAll = [];
+        attendancePages.innerHTML =
+          '<div class="muted">Pilih ujian terlebih dahulu.</div>';
+        setAttendanceMeta("Pilih ujian lalu klik Muat Daftar Hadir.");
+        return;
+      }
+      const items = await api(
+        "/api/v1/admin/exams/" + id + "/assignments",
+        "GET",
+      );
+      attendanceStudentsAll = (Array.isArray(items) ? items : []).filter(
+        function (it) {
+          return String((it && it.role) || "").toLowerCase() === "siswa";
+        },
+      );
+      fillAttendanceSchoolOptions(attendanceStudentsAll);
+      fillAttendanceClassOptions(attendanceStudentsAll);
+      renderAttendanceSheets();
+    }
+
+    function fillAttendanceSchoolOptions(students) {
+      if (!attendanceSchoolSelect) return;
+      const selected = String(attendanceSchoolSelect.value || "");
+      const mapByID = {};
+      (students || []).forEach(function (it) {
+        const schoolID = Number((it && it.school_id) || 0);
+        if (schoolID <= 0) return;
+        if (mapByID[String(schoolID)]) return;
+        mapByID[String(schoolID)] = {
+          id: schoolID,
+          name: String((it && it.school_name) || "").trim() || "-",
+        };
+      });
+      attendanceSchoolSelect.innerHTML =
+        '<option value="">Semua sekolah</option>';
+      Object.keys(mapByID)
+        .sort(function (a, b) {
+          return mapByID[a].name.localeCompare(mapByID[b].name, "id");
+        })
+        .forEach(function (k) {
+          const o = document.createElement("option");
+          o.value = String(mapByID[k].id);
+          o.textContent = mapByID[k].name;
+          attendanceSchoolSelect.appendChild(o);
+        });
+      if (
+        selected &&
+        attendanceSchoolSelect.querySelector(
+          'option[value="' + CSS.escape(selected) + '"]',
+        )
+      ) {
+        attendanceSchoolSelect.value = selected;
+      }
+    }
+
+    function fillAttendanceClassOptions(students) {
+      if (!attendanceClassSelect) return;
+      const selected = String(attendanceClassSelect.value || "");
+      const selectedSchoolID = Number(
+        (attendanceSchoolSelect && attendanceSchoolSelect.value) || 0,
+      );
+      const mapByID = {};
+      (students || []).forEach(function (it) {
+        const classID = Number((it && it.class_id) || 0);
+        if (classID <= 0) return;
+        const schoolID = Number((it && it.school_id) || 0);
+        if (selectedSchoolID > 0 && schoolID !== selectedSchoolID) return;
+        if (mapByID[String(classID)]) return;
+        mapByID[String(classID)] = {
+          id: classID,
+          name: String((it && it.class_name) || "").trim() || "-",
+        };
+      });
+      attendanceClassSelect.innerHTML = '<option value="">Semua kelas</option>';
+      Object.keys(mapByID)
+        .sort(function (a, b) {
+          return mapByID[a].name.localeCompare(mapByID[b].name, "id");
+        })
+        .forEach(function (k) {
+          const o = document.createElement("option");
+          o.value = String(mapByID[k].id);
+          o.textContent = mapByID[k].name;
+          attendanceClassSelect.appendChild(o);
+        });
+      if (
+        selected &&
+        attendanceClassSelect.querySelector(
+          'option[value="' + CSS.escape(selected) + '"]',
+        )
+      ) {
+        attendanceClassSelect.value = selected;
+      }
+    }
+
+    function getFilteredAttendanceStudents() {
+      const selectedSchoolID = Number(
+        (attendanceSchoolSelect && attendanceSchoolSelect.value) || 0,
+      );
+      const selectedClassID = Number(
+        (attendanceClassSelect && attendanceClassSelect.value) || 0,
+      );
+      const onlyActive =
+        !attendanceOnlyActiveInput || !!attendanceOnlyActiveInput.checked;
+      return attendanceStudentsAll.filter(function (it) {
+        if (onlyActive && !Boolean(it && it.user_active)) return false;
+        const schoolID = Number((it && it.school_id) || 0);
+        if (selectedSchoolID > 0 && schoolID !== selectedSchoolID) return false;
+        const classID = Number((it && it.class_id) || 0);
+        if (selectedClassID > 0 && classID !== selectedClassID) return false;
+        return true;
+      });
+    }
+
+    function renderAttendanceSheetPage(payload, pageNo, totalPages) {
+      const page = document.createElement("section");
+      page.className = "attendance-sheet-page";
+      const rows = Array.isArray(payload.students) ? payload.students : [];
+      const isCompact = rows.length > 36;
+      if (isCompact) page.classList.add("attendance-sheet-page-compact");
+      const examID = Number(payload.examID || 0);
+      const examMeta = attendanceExamMetaByID[String(examID)] || {};
+      const examLabel =
+        String((examMeta && examMeta.subject_name) || "").trim() ||
+        String((examMeta && examMeta.title) || "").trim() ||
+        String(payload.examLabel || "").trim() ||
+        "-";
+      const dayLabel = String(
+        (attendanceDayInput && attendanceDayInput.value) ||
+          dayNameIDFromDate(
+            (attendanceDateInput && attendanceDateInput.value) || Date.now(),
+          ) ||
+          "-",
+      ).trim();
+      const dateLabel = formatAttendanceDate(
+        (attendanceDateInput && attendanceDateInput.value) || Date.now(),
+      );
+      const timeLabel = String(
+        (attendanceTimeInput && attendanceTimeInput.value) || "-",
+      ).trim();
+      const classLabel = String(payload.className || "-").trim() || "-";
+      const schoolLabel = String(payload.schoolName || "-").trim() || "-";
+      const bodyRowsHTML = rows
+        .map(function (it, idx) {
+          const no = idx + 1;
+          const participantNo = it
+            ? String((it.participant_no || "").trim() || "-")
+            : "";
+          const fullName = it ? String((it.full_name || "").trim() || "-") : "";
+          return (
+            "<tr>" +
+            '<td class="col-no">' +
+            escapeHtml(String(no)) +
+            "</td>" +
+            '<td class="col-name">' +
+            escapeHtml(fullName) +
+            "</td>" +
+            '<td class="col-participant">' +
+            escapeHtml(participantNo) +
+            "</td>" +
+            '<td class="col-sign">' +
+            escapeHtml(String(no) + ".") +
+            "</td>" +
+            '<td class="col-note"></td>' +
+            "</tr>"
+          );
+        })
+        .join("");
+      page.innerHTML = [
+        '<div class="attendance-title">',
+        "<h2>DAFTAR HADIR PESERTA ASESMEN</h2>",
+        "<h3>TAHUN PELAJARAN " +
+          escapeHtml(
+            resolveAcademicYearLabel(
+              (attendanceDateInput && attendanceDateInput.value) || Date.now(),
+            ),
+          ) +
+          "</h3>",
+        "</div>",
+        '<table class="attendance-info-table">',
+        '<tr><td>Sekolah</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(schoolLabel) +
+          '</span></td><td>Kelas</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(classLabel) +
+          "</span></td></tr>",
+        '<tr><td>Hari</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(dayLabel) +
+          '</span></td><td>Mata Pelajaran</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(examLabel) +
+          "</span></td></tr>",
+        '<tr><td>Tanggal</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(dateLabel) +
+          '</span></td><td>Waktu</td><td>:</td><td><span class="attendance-dotted">' +
+          escapeHtml(timeLabel) +
+          "</span></td></tr>",
+        "</table>",
+        '<table class="attendance-list-table">',
+        "<thead><tr><th>No</th><th>Nama Peserta</th><th>Nomor Peserta</th><th>Tanda Tangan</th><th>Keterangan</th></tr></thead>",
+        "<tbody>",
+        bodyRowsHTML,
+        "</tbody></table>",
+        '<table class="attendance-signatures">',
+        "<tr><td>Proktor</td><td>Pengawas 1</td><td>Pengawas 2</td></tr>",
+        '<tr><td class="sign-space"></td><td class="sign-space"></td><td class="sign-space"></td></tr>',
+        "<tr><td>( ............................................ )</td><td>( ............................................ )</td><td>( ............................................ )</td></tr>",
+        "<tr><td>NIP. ....................................</td><td>NIP. ....................................</td><td>NIP. ....................................</td></tr>",
+        "</table>",
+        '<p class="attendance-footnote">* Format satu halaman - ' +
+          escapeHtml(String(rows.length)) +
+          " Peserta.</p>",
+        '<div class="attendance-page-no">Halaman ' +
+          escapeHtml(String(pageNo + 1)) +
+          " / " +
+          escapeHtml(String(totalPages)) +
+          "</div>",
+      ].join("");
+      return page;
+    }
+
+    function renderAttendanceSheets() {
+      if (!attendancePages) return;
+      const students = getFilteredAttendanceStudents()
+        .slice()
+        .sort(function (a, b) {
+          const classA = String((a && a.class_name) || "").trim();
+          const classB = String((b && b.class_name) || "").trim();
+          const schoolA = String((a && a.school_name) || "").trim();
+          const schoolB = String((b && b.school_name) || "").trim();
+          if (schoolA !== schoolB) return schoolA.localeCompare(schoolB, "id");
+          if (classA !== classB) return classA.localeCompare(classB, "id");
+          return String((a && a.full_name) || "").localeCompare(
+            String((b && b.full_name) || ""),
+            "id",
+          );
+        });
+      if (!students.length) {
+        attendancePages.innerHTML =
+          '<div class="muted">Tidak ada peserta sesuai filter saat ini.</div>';
+        setAttendanceMeta("Belum ada lembar hadir yang bisa dicetak.");
+        return;
+      }
+      const grouped = {};
+      students.forEach(function (it) {
+        const schoolID = Number((it && it.school_id) || 0);
+        const classID = Number((it && it.class_id) || 0);
+        const schoolName = String((it && it.school_name) || "").trim() || "-";
+        const className = String((it && it.class_name) || "").trim() || "-";
+        const key =
+          String(schoolID) +
+          "::" +
+          String(classID) +
+          "::" +
+          schoolName +
+          "::" +
+          className;
+        if (!grouped[key]) {
+          grouped[key] = {
+            schoolName: schoolName,
+            className: className,
+            students: [],
+          };
+        }
+        grouped[key].students.push(it);
+      });
+      const pagesData = [];
+      Object.keys(grouped)
+        .sort(function (a, b) {
+          const ga = grouped[a];
+          const gb = grouped[b];
+          if (ga.schoolName !== gb.schoolName) {
+            return ga.schoolName.localeCompare(gb.schoolName, "id");
+          }
+          return ga.className.localeCompare(gb.className, "id");
+        })
+        .forEach(function (k) {
+          const group = grouped[k];
+          pagesData.push({
+            schoolName: group.schoolName,
+            className: group.className,
+            students: group.students,
+            examID: Number(
+              (attendanceExamSelect && attendanceExamSelect.value) || 0,
+            ),
+            examLabel:
+              String(
+                (attendanceExamSelect &&
+                  attendanceExamSelect.options &&
+                  attendanceExamSelect.options[
+                    attendanceExamSelect.selectedIndex
+                  ] &&
+                  attendanceExamSelect.options[
+                    attendanceExamSelect.selectedIndex
+                  ].textContent) ||
+                  "",
+              ).trim() || "-",
+          });
+        });
+      attendancePages.innerHTML = "";
+      pagesData.forEach(function (payload, idx) {
+        attendancePages.appendChild(
+          renderAttendanceSheetPage(payload, idx, pagesData.length),
+        );
+      });
+      const classCount = Object.keys(grouped).length;
+      setAttendanceMeta(
+        "Daftar hadir siap cetak: " +
+          String(students.length) +
+          " peserta, " +
+          String(classCount) +
+          " kelas, " +
+          String(pagesData.length) +
+          " halaman.",
+      );
     }
 
     function renderExamCardsPage(items, startIndex) {
@@ -5554,6 +5966,18 @@
       }
     }
 
+    if (
+      attendanceDateInput &&
+      !String(attendanceDateInput.value || "").trim()
+    ) {
+      attendanceDateInput.value = getTodayInputDateValue();
+    }
+    if (attendanceDayInput && !String(attendanceDayInput.value || "").trim()) {
+      attendanceDayInput.value = dayNameIDFromDate(
+        (attendanceDateInput && attendanceDateInput.value) || Date.now(),
+      );
+    }
+
     try {
       if (String((user && user.role) || "") === "proktor") {
         if (examQuestionForm) examQuestionForm.hidden = true;
@@ -5771,6 +6195,75 @@
         if (!cardsPages) return;
         if (!cardsPages.querySelector(".proktor-card:not(.is-empty)")) {
           setMsg("Belum ada kartu untuk dicetak.");
+          return;
+        }
+        window.print();
+      });
+    }
+
+    if (attendanceForm) {
+      attendanceForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const examID = Number(
+          (attendanceExamSelect && attendanceExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          setMsg("Pilih ujian terlebih dahulu.");
+          return;
+        }
+        const done = beginBusy(attendanceForm, msg, "Memuat daftar hadir...");
+        try {
+          await loadAttendanceAssignments(examID);
+          setMsg("Daftar hadir berhasil dimuat.");
+        } catch (err) {
+          setMsg("Gagal memuat daftar hadir: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (attendanceSchoolSelect) {
+      attendanceSchoolSelect.addEventListener("change", function () {
+        fillAttendanceClassOptions(attendanceStudentsAll);
+        renderAttendanceSheets();
+      });
+    }
+    if (attendanceClassSelect) {
+      attendanceClassSelect.addEventListener("change", function () {
+        renderAttendanceSheets();
+      });
+    }
+    if (attendanceOnlyActiveInput) {
+      attendanceOnlyActiveInput.addEventListener("change", function () {
+        renderAttendanceSheets();
+      });
+    }
+    if (attendanceDateInput) {
+      attendanceDateInput.addEventListener("change", function () {
+        if (attendanceDayInput) {
+          attendanceDayInput.value = dayNameIDFromDate(
+            attendanceDateInput.value,
+          );
+        }
+        renderAttendanceSheets();
+      });
+    }
+    if (attendanceDayInput) {
+      attendanceDayInput.addEventListener("input", function () {
+        renderAttendanceSheets();
+      });
+    }
+    if (attendanceTimeInput) {
+      attendanceTimeInput.addEventListener("input", function () {
+        renderAttendanceSheets();
+      });
+    }
+    if (attendancePrintBtn) {
+      attendancePrintBtn.addEventListener("click", function () {
+        if (!attendancePages) return;
+        if (!attendancePages.querySelector(".attendance-sheet-page")) {
+          setMsg("Belum ada daftar hadir untuk dicetak.");
           return;
         }
         window.print();

@@ -42,6 +42,13 @@
                 <button
                     type="button"
                     class="btn btn-secondary admin-menu-btn"
+                    data-proktor-menu="attendance"
+                >
+                    Daftar Hadir
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary admin-menu-btn"
                     data-proktor-menu="exams"
                 >
                     Kelola Ujian
@@ -107,6 +114,13 @@
                             data-proktor-jump="exams"
                         >
                             Kelola Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary dashboard-quick-btn"
+                            data-proktor-jump="attendance"
+                        >
+                            Daftar Hadir
                         </button>
                         <button
                             type="button"
@@ -307,6 +321,79 @@
                 </p>
                 <div id="proktor-cards-pages" class="proktor-cards-pages mt">
                     <div class="muted">Belum ada data kartu ujian.</div>
+                </div>
+            </section>
+
+            <section id="proktor-attendance-panel" class="panel" hidden>
+                <div class="admin-card">
+                    <div class="admin-section-head">
+                        <h3>Daftar Hadir Peserta Asesmen</h3>
+                    </div>
+                    <form id="proktor-attendance-form" class="form-grid mt">
+                        <label>
+                            Pilih Ujian
+                            <select id="proktor-attendance-exam" required>
+                                <option value="">Pilih ujian...</option>
+                            </select>
+                        </label>
+                        <label>
+                            Filter Sekolah
+                            <select id="proktor-attendance-school">
+                                <option value="">Semua sekolah</option>
+                            </select>
+                        </label>
+                        <label>
+                            Filter Kelas
+                            <select id="proktor-attendance-class">
+                                <option value="">Semua kelas</option>
+                            </select>
+                        </label>
+                        <label>
+                            Hari
+                            <input id="proktor-attendance-day" type="text" />
+                        </label>
+                        <label>
+                            Tanggal
+                            <input id="proktor-attendance-date" type="date" />
+                        </label>
+                        <label>
+                            Waktu
+                            <input
+                                id="proktor-attendance-time"
+                                type="text"
+                                placeholder="07.30 - 09.30 WIB"
+                            />
+                        </label>
+                        <label>
+                            <input
+                                id="proktor-attendance-only-active"
+                                type="checkbox"
+                                checked
+                            />
+                            Hanya peserta aktif
+                        </label>
+                        <div class="actions">
+                            <button class="btn btn-secondary" type="submit">
+                                Muat Daftar Hadir
+                            </button>
+                            <button
+                                id="proktor-attendance-print-btn"
+                                class="btn"
+                                type="button"
+                            >
+                                Cetak Daftar Hadir
+                            </button>
+                        </div>
+                    </form>
+                    <p id="proktor-attendance-meta" class="muted mt">
+                        Pilih ujian lalu klik Muat Daftar Hadir.
+                    </p>
+                    <div
+                        id="proktor-attendance-pages"
+                        class="attendance-pages mt"
+                    >
+                        <div class="muted">Belum ada data daftar hadir.</div>
+                    </div>
                 </div>
             </section>
 
