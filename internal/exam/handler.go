@@ -27,10 +27,10 @@ type examService interface {
 	UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	DeleteExam(ctx context.Context, examID int64) error
 	ResetExamAttempt(ctx context.Context, examID, studentID, actorID int64) (int64, error)
-	ListSubjects(ctx context.Context, level, subjectType string) ([]SubjectOption, error)
+	ListSubjects(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error)
 	CreateSubject(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
 	UpdateSubject(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
-	DeleteSubject(ctx context.Context, subjectID int64) error
+	DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
@@ -236,10 +236,19 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
 	level := strings.TrimSpace(r.URL.Query().Get("level"))
 	subjectType := strings.TrimSpace(r.URL.Query().Get("type"))
-	items, err := h.svc.ListSubjects(r.Context(), level, subjectType)
+	items, err := h.svc.ListSubjects(r.Context(), level, subjectType, user.ID, user.Role)
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+			return
+		}
 		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		return
 	}
@@ -247,6 +256,11 @@ func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateSubject(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
 	var req upsertSubjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
@@ -256,6 +270,7 @@ func (h *Handler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 		EducationLevel: req.EducationLevel,
 		SubjectType:    req.SubjectType,
 		Name:           req.Name,
+		CreatedBy:      user.ID,
 	})
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
@@ -269,6 +284,11 @@ func (h *Handler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
 	subjectID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || subjectID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid subject id"})
@@ -284,6 +304,8 @@ func (h *Handler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
 		EducationLevel: req.EducationLevel,
 		SubjectType:    req.SubjectType,
 		Name:           req.Name,
+		ActorID:        user.ID,
+		ActorRole:      user.Role,
 	})
 	if err != nil {
 		switch {
@@ -291,6 +313,8 @@ func (h *Handler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "education_level, subject_type, name wajib diisi"})
 		case errors.Is(err, ErrSubjectNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "subject not found"})
+		case errors.Is(err, ErrSubjectForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		}
@@ -300,17 +324,24 @@ func (h *Handler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteSubject(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
 	subjectID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || subjectID <= 0 {
 		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid subject id"})
 		return
 	}
-	if err := h.svc.DeleteSubject(r.Context(), subjectID); err != nil {
+	if err := h.svc.DeleteSubject(r.Context(), subjectID, user.ID, user.Role); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid subject id"})
 		case errors.Is(err, ErrSubjectNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "subject not found"})
+		case errors.Is(err, ErrSubjectForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		}

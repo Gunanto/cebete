@@ -20,6 +20,7 @@ var (
 	ErrInvalidInput             = errors.New("invalid input")
 	ErrExamNotFound             = errors.New("exam not found")
 	ErrSubjectNotFound          = errors.New("subject not found")
+	ErrSubjectForbidden         = errors.New("subject forbidden")
 	ErrAttemptNotFound          = errors.New("attempt not found")
 	ErrAttemptNotEditable       = errors.New("attempt is not editable")
 	ErrQuestionNotInExam        = errors.New("question not in exam")
@@ -97,6 +98,7 @@ type CreateSubjectInput struct {
 	EducationLevel string
 	SubjectType    string
 	Name           string
+	CreatedBy      int64
 }
 
 type UpdateSubjectInput struct {
@@ -104,6 +106,8 @@ type UpdateSubjectInput struct {
 	EducationLevel string
 	SubjectType    string
 	Name           string
+	ActorID        int64
+	ActorRole      string
 }
 
 type ExamOption struct {
@@ -2388,9 +2392,10 @@ func (s *Service) GetAttemptOwner(ctx context.Context, attemptID int64) (int64, 
 	return studentID, nil
 }
 
-func (s *Service) ListSubjects(ctx context.Context, level, subjectType string) ([]SubjectOption, error) {
+func (s *Service) ListSubjects(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error) {
 	level = strings.TrimSpace(level)
 	subjectType = strings.TrimSpace(subjectType)
+	role := strings.ToLower(strings.TrimSpace(actorRole))
 
 	query := `
 		SELECT id, education_level, subject_type, name
@@ -2399,6 +2404,14 @@ func (s *Service) ListSubjects(ctx context.Context, level, subjectType string) (
 	`
 	args := make([]any, 0, 2)
 	idx := 1
+	if role == "guru" {
+		if actorID <= 0 {
+			return nil, ErrInvalidInput
+		}
+		query += fmt.Sprintf(" AND created_by = $%d", idx)
+		args = append(args, actorID)
+		idx++
+	}
 	if level != "" {
 		query += fmt.Sprintf(" AND education_level = $%d", idx)
 		args = append(args, level)
@@ -2440,10 +2453,10 @@ func (s *Service) CreateSubject(ctx context.Context, in CreateSubjectInput) (*Su
 	}
 	var out SubjectOption
 	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO subjects (education_level, subject_type, name, is_active)
-		VALUES ($1, $2, $3, TRUE)
+		INSERT INTO subjects (education_level, subject_type, name, is_active, created_by)
+		VALUES ($1, $2, $3, TRUE, NULLIF($4, 0))
 		RETURNING id, education_level, subject_type, name
-	`, level, subjectType, name).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
+	`, level, subjectType, name, in.CreatedBy).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
 		return nil, fmt.Errorf("insert subject: %w", err)
 	}
 	return &out, nil
@@ -2459,17 +2472,36 @@ func (s *Service) UpdateSubject(ctx context.Context, in UpdateSubjectInput) (*Su
 	if level == "" || subjectType == "" || name == "" {
 		return nil, ErrInvalidInput
 	}
+	role := strings.ToLower(strings.TrimSpace(in.ActorRole))
 	var out SubjectOption
-	if err := s.db.QueryRowContext(ctx, `
+	query := `
 		UPDATE subjects
 		SET education_level = $2,
 			subject_type = $3,
 			name = $4
 		WHERE id = $1
 		  AND is_active = TRUE
-		RETURNING id, education_level, subject_type, name
-	`, in.ID, level, subjectType, name).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
+	`
+	args := []any{in.ID, level, subjectType, name}
+	if role == "guru" {
+		if in.ActorID <= 0 {
+			return nil, ErrInvalidInput
+		}
+		query += " AND created_by = $5"
+		args = append(args, in.ActorID)
+	}
+	query += " RETURNING id, education_level, subject_type, name"
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			if role == "guru" {
+				found, checkErr := s.subjectExistsAndActive(ctx, in.ID)
+				if checkErr != nil {
+					return nil, checkErr
+				}
+				if found {
+					return nil, ErrSubjectForbidden
+				}
+			}
 			return nil, ErrSubjectNotFound
 		}
 		return nil, fmt.Errorf("update subject: %w", err)
@@ -2560,24 +2592,58 @@ func isUndefinedTableErr(err error, table string) bool {
 		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
 }
 
-func (s *Service) DeleteSubject(ctx context.Context, subjectID int64) error {
+func (s *Service) DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error {
 	if subjectID <= 0 {
 		return ErrInvalidInput
 	}
-	var id int64
-	if err := s.db.QueryRowContext(ctx, `
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	query := `
 		UPDATE subjects
 		SET is_active = FALSE
 		WHERE id = $1
 		  AND is_active = TRUE
-		RETURNING id
-	`, subjectID).Scan(&id); err != nil {
+	`
+	args := []any{subjectID}
+	if role == "guru" {
+		if actorID <= 0 {
+			return ErrInvalidInput
+		}
+		query += " AND created_by = $2"
+		args = append(args, actorID)
+	}
+	query += " RETURNING id"
+	var id int64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			if role == "guru" {
+				found, checkErr := s.subjectExistsAndActive(ctx, subjectID)
+				if checkErr != nil {
+					return checkErr
+				}
+				if found {
+					return ErrSubjectForbidden
+				}
+			}
 			return ErrSubjectNotFound
 		}
 		return fmt.Errorf("delete subject: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) subjectExistsAndActive(ctx context.Context, subjectID int64) (bool, error) {
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM subjects
+			WHERE id = $1
+			  AND is_active = TRUE
+		)
+	`, subjectID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check subject exists: %w", err)
+	}
+	return exists, nil
 }
 
 func (s *Service) ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error) {

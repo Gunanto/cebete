@@ -23,10 +23,10 @@ type mockExamService struct {
 	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	deleteExamFn                    func(ctx context.Context, examID int64) error
 	resetExamAttemptFn              func(ctx context.Context, examID, studentID, actorID int64) (int64, error)
-	listSubjectsFn                  func(ctx context.Context, level, subjectType string) ([]SubjectOption, error)
+	listSubjectsFn                  func(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error)
 	createSubjectFn                 func(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
 	updateSubjectFn                 func(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
-	deleteSubjectFn                 func(ctx context.Context, subjectID int64) error
+	deleteSubjectFn                 func(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	listExamsFn                     func(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	listExamsForTokenFn             func(ctx context.Context) ([]ExamTokenExam, error)
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
@@ -102,11 +102,11 @@ func (m *mockExamService) ResetExamAttempt(ctx context.Context, examID, studentI
 	return m.resetExamAttemptFn(ctx, examID, studentID, actorID)
 }
 
-func (m *mockExamService) ListSubjects(ctx context.Context, level, subjectType string) ([]SubjectOption, error) {
+func (m *mockExamService) ListSubjects(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error) {
 	if m.listSubjectsFn == nil {
 		return nil, errors.New("not implemented")
 	}
-	return m.listSubjectsFn(ctx, level, subjectType)
+	return m.listSubjectsFn(ctx, level, subjectType, actorID, actorRole)
 }
 
 func (m *mockExamService) CreateSubject(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error) {
@@ -123,11 +123,11 @@ func (m *mockExamService) UpdateSubject(ctx context.Context, in UpdateSubjectInp
 	return m.updateSubjectFn(ctx, in)
 }
 
-func (m *mockExamService) DeleteSubject(ctx context.Context, subjectID int64) error {
+func (m *mockExamService) DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error {
 	if m.deleteSubjectFn == nil {
 		return errors.New("not implemented")
 	}
-	return m.deleteSubjectFn(ctx, subjectID)
+	return m.deleteSubjectFn(ctx, subjectID, actorID, actorRole)
 }
 
 func (m *mockExamService) ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error) {
