@@ -26,6 +26,7 @@ var (
 	ErrOTPExpired           = errors.New("otp expired")
 	ErrRegistrationNotFound = errors.New("registration not found")
 	ErrRegistrationState    = errors.New("registration is not pending")
+	ErrEmailAlreadyUsed     = errors.New("email already used")
 	ErrRateLimited          = errors.New("too many requests")
 	ErrBootstrapDenied      = errors.New("bootstrap denied")
 	ErrUserNotFound         = errors.New("user not found")
@@ -72,6 +73,16 @@ type RegistrationInput struct {
 	RoleRequested   string
 	Email           string
 	Password        string
+	FullName        string
+	Phone           string
+	InstitutionName string
+	FormPayload     string
+}
+
+type SignupVerifyInput struct {
+	Email           string
+	Code            string
+	RoleRequested   string
 	FullName        string
 	Phone           string
 	InstitutionName string
@@ -423,6 +434,246 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string) (*User, err
 	return user, nil
 }
 
+func (s *Service) RequestSignupOTP(ctx context.Context, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil
+	}
+
+	locked, _, err := s.isGuardLocked(ctx, "otp_request", normalizeGuardKey(email))
+	if err != nil {
+		return fmt.Errorf("check signup otp request guard: %w", err)
+	}
+	if locked {
+		return ErrRateLimited
+	}
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE email = $1
+			  AND account_status = 'active'
+		)
+	`, email).Scan(&exists); err != nil {
+		return fmt.Errorf("check existing user by email: %w", err)
+	}
+	if exists {
+		return ErrEmailAlreadyUsed
+	}
+
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM registration_requests
+			WHERE email = $1
+			  AND status = 'pending'
+		)
+	`, email).Scan(&exists); err != nil {
+		return fmt.Errorf("check pending registration by email: %w", err)
+	}
+	if exists {
+		return ErrRegistrationState
+	}
+
+	var lastCreated time.Time
+	err = s.db.QueryRowContext(ctx, `
+		SELECT created_at
+		FROM auth_otp_codes
+		WHERE email = $1 AND purpose = 'verify_email'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, email).Scan(&lastCreated)
+	if err == nil && time.Since(lastCreated) < s.otpResendCooldown {
+		return ErrRateLimited
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("query signup otp latest: %w", err)
+	}
+
+	otpCode, err := generateOTPCode(6)
+	if err != nil {
+		return fmt.Errorf("generate signup otp: %w", err)
+	}
+	otpHash := hashOTP(email, otpCode)
+	expiresAt := time.Now().Add(s.otpTTL)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO auth_otp_codes (
+			user_id, email, code_hash, purpose, expires_at, created_at
+		) VALUES (
+			NULL, $1, $2, 'verify_email', $3, now()
+		)
+	`, email, otpHash, expiresAt)
+	if err != nil {
+		return fmt.Errorf("insert signup otp: %w", err)
+	}
+
+	if s.mailer != nil {
+		if err := s.mailer.SendOTP(ctx, email, otpCode); err != nil {
+			log.Printf("smtp signup otp send failed email=%s err=%v", email, err)
+			fmt.Printf("[DEV-SIGNUP-OTP-FALLBACK] email=%s code=%s\n", email, otpCode)
+		}
+	} else {
+		fmt.Printf("[DEV-SIGNUP-OTP] email=%s code=%s\n", email, otpCode)
+	}
+
+	return nil
+}
+
+func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (int64, error) {
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
+	in.Code = strings.TrimSpace(in.Code)
+	in.RoleRequested = strings.TrimSpace(in.RoleRequested)
+	in.FullName = strings.TrimSpace(in.FullName)
+	in.Phone = strings.TrimSpace(in.Phone)
+	in.InstitutionName = strings.TrimSpace(in.InstitutionName)
+	if strings.TrimSpace(in.FormPayload) == "" {
+		in.FormPayload = "{}"
+	}
+
+	if in.Email == "" || in.Code == "" {
+		return 0, ErrInvalidOTP
+	}
+	if in.RoleRequested != "siswa" && in.RoleRequested != "guru" {
+		return 0, errors.New("role_requested must be siswa or guru")
+	}
+	if in.FullName == "" {
+		return 0, errors.New("full_name is required")
+	}
+
+	guardKey := normalizeGuardKey(in.Email)
+	locked, _, err := s.isGuardLocked(ctx, "otp_verify", guardKey)
+	if err != nil {
+		return 0, fmt.Errorf("check signup otp guard: %w", err)
+	}
+	if locked {
+		return 0, ErrRateLimited
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin signup tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, code_hash, expires_at, attempt_count, max_attempt
+		FROM auth_otp_codes
+		WHERE email = $1
+		  AND purpose = 'verify_email'
+		  AND used_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, in.Email)
+
+	var otpID int64
+	var codeHash string
+	var expiresAt time.Time
+	var attempts int
+	var maxAttempt int
+	if err := row.Scan(&otpID, &codeHash, &expiresAt, &attempts, &maxAttempt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+			return 0, ErrInvalidOTP
+		}
+		return 0, fmt.Errorf("load signup otp: %w", err)
+	}
+
+	if time.Now().After(expiresAt) {
+		_, _ = tx.ExecContext(ctx, `UPDATE auth_otp_codes SET used_at = now() WHERE id = $1`, otpID)
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return 0, ErrOTPExpired
+	}
+	if attempts >= maxAttempt {
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return 0, ErrInvalidOTP
+	}
+
+	expected := hashOTP(in.Email, in.Code)
+	if !secureEqual(expected, codeHash) {
+		_, _ = tx.ExecContext(ctx, `UPDATE auth_otp_codes SET attempt_count = attempt_count + 1 WHERE id = $1`, otpID)
+		if err := tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit signup failed attempt: %w", err)
+		}
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return 0, ErrInvalidOTP
+	}
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE email = $1
+			  AND account_status = 'active'
+		)
+	`, in.Email).Scan(&exists); err != nil {
+		return 0, fmt.Errorf("check active user by email: %w", err)
+	}
+	if exists {
+		return 0, ErrEmailAlreadyUsed
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM registration_requests
+			WHERE email = $1
+			  AND status = 'pending'
+		)
+	`, in.Email).Scan(&exists); err != nil {
+		return 0, fmt.Errorf("check pending registration by email: %w", err)
+	}
+	if exists {
+		return 0, ErrRegistrationState
+	}
+
+	randomPassword, err := generateToken(24)
+	if err != nil {
+		return 0, fmt.Errorf("generate random signup password: %w", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(randomPassword), s.bcryptCost)
+	if err != nil {
+		return 0, fmt.Errorf("hash random signup password: %w", err)
+	}
+
+	var registrationID int64
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO registration_requests (
+			role_requested,
+			email,
+			password_hash,
+			full_name,
+			phone,
+			institution_name,
+			form_payload,
+			status,
+			created_at,
+			updated_at
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7::jsonb,'pending',now(),now()
+		)
+		RETURNING id
+	`, in.RoleRequested, in.Email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload).Scan(&registrationID)
+	if err != nil {
+		return 0, fmt.Errorf("insert signup registration: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_otp_codes SET used_at = now() WHERE id = $1`, otpID); err != nil {
+		return 0, fmt.Errorf("consume signup otp: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit signup: %w", err)
+	}
+
+	_ = s.clearGuard(ctx, "otp_verify", guardKey)
+	return registrationID, nil
+}
+
 func (s *Service) BootstrapAccounts(ctx context.Context, in BootstrapInput) error {
 	if strings.TrimSpace(s.bootstrapToken) == "" {
 		return ErrBootstrapDenied
@@ -538,7 +789,7 @@ func (s *Service) CreateRegistration(ctx context.Context, in RegistrationInput) 
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return 0, errors.New("invalid email")
 	}
-	if len(in.Password) < 8 {
+	if p := strings.TrimSpace(in.Password); p != "" && len(p) < 8 {
 		return 0, errors.New("password must be at least 8 characters")
 	}
 	if in.FullName == "" {
@@ -548,7 +799,16 @@ func (s *Service) CreateRegistration(ctx context.Context, in RegistrationInput) 
 		in.FormPayload = "{}"
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(in.Password), s.bcryptCost)
+	password := strings.TrimSpace(in.Password)
+	if password == "" {
+		generatedPassword, err := generateToken(24)
+		if err != nil {
+			return 0, fmt.Errorf("generate random password: %w", err)
+		}
+		password = generatedPassword
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), s.bcryptCost)
 	if err != nil {
 		return 0, fmt.Errorf("hash password: %w", err)
 	}

@@ -6,6 +6,9 @@
 .env.local
 .env.example
 cookie.txt
+Referensi/
+*.md
+!README.md
 Panduan_Deploy_di_VPS.md
 imports/
 .vscode/

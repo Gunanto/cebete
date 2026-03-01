@@ -349,11 +349,37 @@
   }
 
   async function initLoginPage() {
-    const form = document.getElementById("login-form");
-    if (!form) return;
+    const signinForm = document.getElementById("login-form");
+    if (!signinForm) return;
+    const loginOTPForm = document.getElementById("login-otp-form");
+    const signupForm = document.getElementById("signup-form");
     const msg = document.getElementById("login-message");
     const passwordInput = document.getElementById("login-password");
     const togglePasswordBtn = document.getElementById("toggle-login-password");
+    const signinTabBtn = document.getElementById("login-tab-signin");
+    const signupTabBtn = document.getElementById("login-tab-signup");
+    const signinPanel = document.getElementById("login-signin-panel");
+    const signupPanel = document.getElementById("login-signup-panel");
+    const signupRequestOTPBtn = document.getElementById(
+      "signup-request-otp-btn",
+    );
+    const signupEmailInput = document.getElementById("signup-email");
+    const signupOTPCodeInput = document.getElementById("signup-otp-code");
+    const loginOTPRequestBtn = document.getElementById("login-otp-request-btn");
+    const loginOTPEmailInput = document.getElementById("login-otp-email");
+    const loginOTPCodeInput = document.getElementById("login-otp-code");
+    const passwordMethodTabBtn = document.getElementById(
+      "login-auth-tab-password",
+    );
+    const otpMethodTabBtn = document.getElementById("login-auth-tab-otp");
+    const loginOTPStepRequest = document.getElementById(
+      "login-otp-step-request",
+    );
+    const loginOTPStepVerify = document.getElementById("login-otp-step-verify");
+    const loginOTPResetBtn = document.getElementById("login-otp-reset-btn");
+    const loginOTPDigitInputs = Array.from(
+      document.querySelectorAll(".login-otp-digit"),
+    );
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -364,7 +390,10 @@
           "aria-label",
           show ? "Sembunyikan password" : "Tampilkan password",
         );
-        togglePasswordBtn.textContent = show ? "Sembunyikan" : "Lihat";
+        const eyeOpen = togglePasswordBtn.querySelector("[data-eye-open]");
+        const eyeClosed = togglePasswordBtn.querySelector("[data-eye-closed]");
+        if (eyeOpen) eyeOpen.hidden = show;
+        if (eyeClosed) eyeClosed.hidden = !show;
       });
     }
 
@@ -378,16 +407,141 @@
       return "/ujian";
     }
 
+    function activateLoginTab(tab) {
+      const showSignup = tab === "signup";
+      if (signinPanel) signinPanel.hidden = showSignup;
+      if (signupPanel) signupPanel.hidden = !showSignup;
+      if (signinTabBtn)
+        signinTabBtn.setAttribute(
+          "aria-pressed",
+          showSignup ? "false" : "true",
+        );
+      if (signupTabBtn)
+        signupTabBtn.setAttribute(
+          "aria-pressed",
+          showSignup ? "true" : "false",
+        );
+      text(
+        msg,
+        showSignup
+          ? "Masukkan data pendaftaran, kirim OTP, lalu verifikasi."
+          : "Masukkan username/email dan password untuk login.",
+      );
+    }
+
+    function resetLoginOTPSteps() {
+      if (loginOTPStepRequest) loginOTPStepRequest.hidden = false;
+      if (loginOTPStepVerify) loginOTPStepVerify.hidden = true;
+      if (loginOTPCodeInput) loginOTPCodeInput.value = "";
+      loginOTPDigitInputs.forEach(function (input) {
+        input.value = "";
+      });
+    }
+
+    function syncLoginOTPCode() {
+      if (!loginOTPCodeInput || loginOTPDigitInputs.length === 0) return;
+      loginOTPCodeInput.value = loginOTPDigitInputs
+        .map(function (input) {
+          return String(input.value || "")
+            .replace(/\D/g, "")
+            .slice(0, 1);
+        })
+        .join("");
+    }
+
+    if (loginOTPDigitInputs.length > 0) {
+      loginOTPDigitInputs.forEach(function (input, idx) {
+        input.addEventListener("input", function () {
+          const cleaned = String(input.value || "").replace(/\D/g, "");
+          input.value = cleaned ? cleaned.charAt(cleaned.length - 1) : "";
+          syncLoginOTPCode();
+          if (input.value && idx < loginOTPDigitInputs.length - 1) {
+            loginOTPDigitInputs[idx + 1].focus();
+          }
+        });
+        input.addEventListener("keydown", function (ev) {
+          if (ev.key === "Backspace" && !input.value && idx > 0) {
+            loginOTPDigitInputs[idx - 1].focus();
+          }
+        });
+        input.addEventListener("paste", function (ev) {
+          const pasted = (ev.clipboardData || window.clipboardData || {})
+            .getData?.("text")
+            ?.replace(/\D/g, "")
+            .slice(0, loginOTPDigitInputs.length);
+          if (!pasted) return;
+          ev.preventDefault();
+          loginOTPDigitInputs.forEach(function (slot, slotIdx) {
+            slot.value = pasted.charAt(slotIdx) || "";
+          });
+          syncLoginOTPCode();
+          const nextIdx = Math.min(
+            pasted.length,
+            loginOTPDigitInputs.length - 1,
+          );
+          loginOTPDigitInputs[nextIdx].focus();
+        });
+      });
+    }
+
+    function activateAuthMethod(method) {
+      const useOTP = method === "otp";
+      if (signinForm) signinForm.hidden = useOTP;
+      if (loginOTPForm) loginOTPForm.hidden = !useOTP;
+      if (passwordMethodTabBtn) {
+        passwordMethodTabBtn.setAttribute(
+          "aria-pressed",
+          useOTP ? "false" : "true",
+        );
+        passwordMethodTabBtn.classList.toggle("is-active", !useOTP);
+      }
+      if (otpMethodTabBtn) {
+        otpMethodTabBtn.setAttribute("aria-pressed", useOTP ? "true" : "false");
+        otpMethodTabBtn.classList.toggle("is-active", useOTP);
+      }
+      if (useOTP) resetLoginOTPSteps();
+      text(
+        msg,
+        useOTP
+          ? "Masukkan email, kirim OTP, lalu verifikasi untuk login."
+          : "Masukkan username/email dan password untuk login.",
+      );
+    }
+
+    if (signinTabBtn) {
+      signinTabBtn.addEventListener("click", function () {
+        activateLoginTab("signin");
+      });
+    }
+    if (signupTabBtn) {
+      signupTabBtn.addEventListener("click", function () {
+        activateLoginTab("signup");
+      });
+    }
+    if (passwordMethodTabBtn) {
+      passwordMethodTabBtn.addEventListener("click", function () {
+        activateAuthMethod("password");
+      });
+    }
+    if (otpMethodTabBtn) {
+      otpMethodTabBtn.addEventListener("click", function () {
+        activateAuthMethod("otp");
+      });
+    }
+
+    activateLoginTab("signin");
+    activateAuthMethod("password");
+
     const user = await meOrNull();
     if (user) {
       window.location.href = homeByRole(user);
       return;
     }
 
-    form.addEventListener("submit", async function (e) {
+    signinForm.addEventListener("submit", async function (e) {
       e.preventDefault();
-      const done = beginBusy(form, msg, "Memproses login...");
-      const fd = new FormData(form);
+      const done = beginBusy(signinForm, msg, "Memproses login...");
+      const fd = new FormData(signinForm);
       try {
         const identifier = normalizeCredential(fd.get("identifier"));
         const password = normalizeCredential(fd.get("password"));
@@ -403,6 +557,132 @@
         done();
       }
     });
+
+    if (loginOTPRequestBtn && loginOTPEmailInput) {
+      loginOTPRequestBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          loginOTPForm || loginOTPRequestBtn,
+          msg,
+          "Mengirim OTP login...",
+        );
+        try {
+          const email = normalizeCredential(loginOTPEmailInput.value);
+          await api("/api/v1/auth/otp/request", "POST", { email: email });
+          text(msg, "OTP login sudah dikirim jika akun memenuhi syarat.");
+          if (loginOTPStepRequest) loginOTPStepRequest.hidden = true;
+          if (loginOTPStepVerify) loginOTPStepVerify.hidden = false;
+          if (loginOTPDigitInputs.length > 0 && loginOTPDigitInputs[0].focus) {
+            loginOTPDigitInputs[0].focus();
+          } else if (loginOTPCodeInput && loginOTPCodeInput.focus) {
+            loginOTPCodeInput.focus();
+          }
+        } catch (err) {
+          text(msg, "Gagal kirim OTP login: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (loginOTPForm) {
+      loginOTPForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        syncLoginOTPCode();
+        const done = beginBusy(loginOTPForm, msg, "Memverifikasi OTP login...");
+        const fd = new FormData(loginOTPForm);
+        try {
+          const email = normalizeCredential(fd.get("email"));
+          const code = normalizeCredential(fd.get("code"));
+          await api("/api/v1/auth/otp/verify", "POST", {
+            email: email,
+            code: code,
+          });
+          const me = await meOrNull();
+          window.location.href = homeByRole(me);
+        } catch (err) {
+          text(msg, "Login OTP gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (loginOTPResetBtn) {
+      loginOTPResetBtn.addEventListener("click", function () {
+        resetLoginOTPSteps();
+        if (loginOTPEmailInput && loginOTPEmailInput.focus) {
+          loginOTPEmailInput.focus();
+        }
+      });
+    }
+
+    if (signupRequestOTPBtn && signupEmailInput) {
+      signupRequestOTPBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          signupForm || signupRequestOTPBtn,
+          msg,
+          "Mengirim OTP verifikasi email...",
+        );
+        try {
+          const email = normalizeCredential(signupEmailInput.value);
+          await api("/api/v1/auth/signup/otp/request", "POST", {
+            email: email,
+          });
+          text(
+            msg,
+            "OTP sudah dikirim jika email memenuhi syarat pendaftaran.",
+          );
+          if (signupOTPCodeInput && signupOTPCodeInput.focus)
+            signupOTPCodeInput.focus();
+        } catch (err) {
+          text(msg, "Gagal kirim OTP: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (signupForm) {
+      signupForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const done = beginBusy(
+          signupForm,
+          msg,
+          "Memverifikasi OTP dan membuat pendaftaran...",
+        );
+        const fd = new FormData(signupForm);
+        try {
+          const payload = {
+            role_requested: normalizeCredential(
+              fd.get("role_requested"),
+            ).toLowerCase(),
+            full_name: normalizeCredential(fd.get("full_name")),
+            email: normalizeCredential(fd.get("email")),
+            phone: normalizeCredential(fd.get("phone")),
+            institution_name: normalizeCredential(fd.get("institution_name")),
+            code: normalizeCredential(fd.get("code")),
+          };
+          const data = await api(
+            "/api/v1/auth/signup/otp/verify",
+            "POST",
+            payload,
+          );
+          const regID =
+            data && data.registration_id ? String(data.registration_id) : "-";
+          text(
+            msg,
+            "Pendaftaran terkirim (ID: " +
+              regID +
+              "). Tunggu verifikasi proktor/admin sebelum bisa login.",
+          );
+          signupForm.reset();
+          if (signupOTPCodeInput) signupOTPCodeInput.value = "";
+        } catch (err) {
+          text(msg, "Pendaftaran gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
   }
 
   async function initSimulasiPage() {
@@ -4327,6 +4607,14 @@
       "proktor-exams-refresh-btn",
     );
     const examForm = document.getElementById("proktor-exam-form");
+    const examRandomizeQuestionsInput =
+      examForm && examForm.elements
+        ? examForm.elements.namedItem("randomize_questions")
+        : null;
+    const examRandomizeOptionsInput =
+      examForm && examForm.elements
+        ? examForm.elements.namedItem("randomize_options")
+        : null;
     const examSubjectSelect = document.getElementById("proktor-exam-subject");
     const examsBody = document.getElementById("proktor-exams-body");
     const examAssignForm = document.getElementById("proktor-exam-assign-form");
@@ -6814,6 +7102,12 @@
     const msg = document.getElementById("guru-message");
     const statSubjects = document.getElementById("guru-stat-subjects");
     const statLevels = document.getElementById("guru-stat-levels");
+    const statLearningGoals = document.getElementById(
+      "guru-stat-learning-goals",
+    );
+    const statManuscripts = document.getElementById("guru-stat-manuscripts");
+    const statExams = document.getElementById("guru-stat-exams");
+    const statResults = document.getElementById("guru-stat-results");
     const subjectRefreshBtn = document.getElementById(
       "guru-subjects-refresh-btn",
     );
@@ -7168,6 +7462,27 @@
     let learningGoalSearch = "";
     let questionCodeEditingID = 0;
     let resultsAssignmentsCount = 0;
+
+    function refreshGuruSummaryStats() {
+      if (statLearningGoals) {
+        statLearningGoals.textContent = String(
+          Array.isArray(learningGoalsCache) ? learningGoalsCache.length : 0,
+        );
+      }
+      if (statManuscripts) {
+        statManuscripts.textContent = String(
+          Array.isArray(manuscriptAllItems) ? manuscriptAllItems.length : 0,
+        );
+      }
+      if (statExams) {
+        statExams.textContent = String(
+          Array.isArray(examsManageCache) ? examsManageCache.length : 0,
+        );
+      }
+      if (statResults) {
+        statResults.textContent = String(Number(resultsAssignmentsCount || 0));
+      }
+    }
 
     const setMsg = function (value) {
       text(msg, value);
@@ -9549,6 +9864,7 @@
     async function loadLearningGoals() {
       const items = await api("/api/v1/learning-goals", "GET");
       learningGoalsCache = Array.isArray(items) ? items : [];
+      refreshGuruSummaryStats();
       if (learningGoalsPanel && !learningGoalsPanel.hidden) {
         activateGuruMenu("learning-goals");
       }
@@ -10065,6 +10381,7 @@
     function renderManuscripts(items) {
       if (!manuscriptBody) return;
       manuscriptAllItems = Array.isArray(items) ? items.slice() : [];
+      refreshGuruSummaryStats();
       if (manuscriptsPanel && !manuscriptsPanel.hidden) {
         activateGuruMenu("manuscripts");
       }
@@ -10275,6 +10592,7 @@
       if (statSubjects) statSubjects.textContent = String(subjectItems.length);
       if (statLevels)
         statLevels.textContent = String(Object.keys(levels).length);
+      refreshGuruSummaryStats();
 
       if (!subjectsBody) return subjectItems;
       if (!subjectItems.length) {
@@ -10496,6 +10814,7 @@
     async function loadGuruExamManageTable() {
       const exams = await api("/api/v1/admin/exams/manage", "GET");
       examsManageCache = Array.isArray(exams) ? exams : [];
+      refreshGuruSummaryStats();
       fillGuruResultsExamSelect();
       if (examsPanel && !examsPanel.hidden) {
         activateGuruMenu("exams");
@@ -10600,6 +10919,7 @@
       if (!resultsAssignmentBody) return;
       if (!examID || examID <= 0) {
         resultsAssignmentsCount = 0;
+        refreshGuruSummaryStats();
         latestResultsMatrix = null;
         if (resultsPanel && !resultsPanel.hidden) {
           activateGuruMenu("results");
@@ -10623,6 +10943,7 @@
         ? matrix.question_nos
         : [];
       resultsAssignmentsCount = rows.length;
+      refreshGuruSummaryStats();
       if (resultsPanel && !resultsPanel.hidden) {
         activateGuruMenu("results");
       }

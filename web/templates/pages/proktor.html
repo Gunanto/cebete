@@ -1,79 +1,123 @@
 {{define "proktor_content"}}
 <section class="card">
     <section class="admin-layout">
-        <aside class="panel admin-sidebar">
-            <h3>Menu Proktor</h3>
-            <div class="admin-menu-list mt">
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn active"
-                    data-proktor-menu="dashboard"
-                >
-                    Dashboard
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="registrations"
-                >
-                    Verifikasi Pendaftaran
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="events"
-                >
-                    Monitoring Event
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="token"
-                >
-                    Token Ujian
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="cards"
-                >
-                    Kartu Ujian
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="attendance"
-                >
-                    Daftar Hadir
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="exams"
-                >
-                    Kelola Ujian
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="results"
-                >
-                    Hasil Ujian
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="master"
-                >
-                    Data Master
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-proktor-menu="quick"
-                >
-                    Aksi Cepat
-                </button>
+        <aside class="panel admin-sidebar portal-sidebar">
+            <div class="portal-brand">
+                <div class="portal-brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M3 9l9-4 9 4-9 4-9-4Z" />
+                        <path d="M7 11v4c0 .9 2.2 2 5 2s5-1.1 5-2v-4" />
+                    </svg>
+                </div>
+                <div>
+                    <h3>g-cbt</h3>
+                    <p>Proktor Portal</p>
+                </div>
+            </div>
+
+            <div class="portal-sidebar-scroll">
+                <section class="portal-sidebar-group">
+                    <h4>UTAMA</h4>
+                    <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn active"
+                            data-proktor-menu="dashboard"
+                        >
+                            Dashboard
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="registrations"
+                        >
+                            Verifikasi Pendaftaran
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="events"
+                        >
+                            Monitoring Event
+                        </button>
+                    </div>
+                </section>
+
+                <section class="portal-sidebar-group">
+                    <h4>MANAJEMEN</h4>
+                    <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="token"
+                        >
+                            Token Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="cards"
+                        >
+                            Kartu Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="attendance"
+                        >
+                            Daftar Hadir
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="exams"
+                        >
+                            Kelola Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="results"
+                        >
+                            Hasil Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="master"
+                        >
+                            Data Master
+                        </button>
+                    </div>
+                </section>
+
+                <section class="portal-sidebar-group">
+                    <h4>LINK CEPAT</h4>
+                    <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="quick"
+                        >
+                            Aksi Cepat
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+            <div class="portal-user-card">
+                <div class="portal-user-avatar">P</div>
+                <div class="portal-user-meta">
+                    <strong>Proktor</strong>
+                    <span>Proktor Utama</span>
+                </div>
+                <span class="portal-user-logout" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M10 17l5-5-5-5" />
+                        <path d="M15 12H3" />
+                        <path d="M21 3v18" />
+                    </svg>
+                </span>
             </div>
         </aside>
 

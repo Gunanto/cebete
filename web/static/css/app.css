@@ -154,6 +154,330 @@ body:not(.page-home) .landing-footer {
     margin: 0 auto;
 }
 
+body[data-page="login_content"] {
+    background: radial-gradient(
+        circle at top left,
+        #dbe7ff 0%,
+        #f4f7ff 45%,
+        #ffffff 100%
+    );
+}
+
+body[data-page="login_content"] .container {
+    max-width: 540px;
+    margin: 22px auto;
+}
+
+body[data-page="login_content"] .landing-footer {
+    background: #e8f0ff;
+    color: #5c6e8f;
+    border-top: 1px solid rgba(51, 105, 223, 0.18);
+    backdrop-filter: blur(8px);
+}
+
+body[data-page="login_content"] .landing-footer small {
+    color: #7a8db2;
+}
+
+.login-shell {
+    display: grid;
+    gap: 18px;
+}
+
+.login-brand-head {
+    text-align: center;
+}
+
+.login-brand-badge {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 12px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(145deg, #1d4ed8, #2563eb);
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.3);
+}
+
+.login-brand-badge img {
+    width: 32px;
+    height: 32px;
+}
+
+.login-brand-head h2 {
+    margin: 0;
+    font-size: 29px;
+    line-height: 1.1;
+    color: #1f2f53;
+}
+
+.login-brand-head p {
+    margin: 8px 0 0;
+    color: #607193;
+    font-size: 14px;
+}
+
+.login-modern-card {
+    border-radius: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 22px 46px rgba(32, 86, 168, 0.18);
+    overflow: hidden;
+}
+
+.login-modern-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid #e6eefc;
+}
+
+.login-modern-tab {
+    border: 0;
+    background: transparent;
+    color: #607193;
+    padding: 14px 16px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.login-tab-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+}
+
+.login-tab-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.login-modern-tab.is-active {
+    color: #1f4fd0;
+    border-bottom-color: #1f4fd0;
+}
+
+.login-modern-panel {
+    padding: 24px;
+}
+
+.login-modern-form {
+    display: grid;
+    gap: 16px;
+}
+
+.login-otp-step {
+    display: grid;
+    gap: 12px;
+}
+
+.login-modern-form label {
+    color: #32405d;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.login-row-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.login-help-link {
+    color: #2563eb;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.login-help-link:hover {
+    text-decoration: underline;
+}
+
+.login-modern-form input {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #d7e3f9;
+    background: #f8faff;
+    padding: 12px 13px 12px 42px;
+}
+
+.login-modern-form input:focus {
+    border-color: #3369df;
+    box-shadow: 0 0 0 3px rgba(51, 105, 223, 0.18);
+    outline: 0;
+}
+
+.login-input-wrap {
+    position: relative;
+}
+
+.login-input-icon {
+    position: absolute;
+    inset: 0 auto 0 13px;
+    display: inline-flex;
+    align-items: center;
+    color: #91a0bd;
+    pointer-events: none;
+}
+
+.login-input-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.login-password-wrap {
+    position: relative;
+}
+
+.login-password-wrap input {
+    padding-right: 44px;
+}
+
+.login-toggle-password {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #6d7e9f;
+    padding: 6px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.login-toggle-password:hover {
+    color: #325dc8;
+    background: rgba(37, 99, 235, 0.1);
+}
+
+.login-toggle-password svg {
+    width: 18px;
+    height: 18px;
+}
+
+.login-primary-btn,
+.login-secondary-btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.login-primary-btn {
+    background: linear-gradient(135deg, #1f56d3 0%, #2563eb 100%);
+    color: #fff;
+    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.3);
+}
+
+.login-secondary-btn {
+    background: #fff;
+    color: #1f56d3;
+    border: 2px solid #1f56d3;
+}
+
+.login-hint {
+    margin: -2px 0 2px;
+    color: #66789b;
+    font-size: 12px;
+}
+
+.login-otp-note {
+    margin: 0 0 2px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #edf4ff;
+    border: 1px solid #d6e7ff;
+    color: #2354bf;
+    font-size: 13px;
+}
+
+.login-link-btn {
+    display: block;
+    border: 0;
+    background: transparent;
+    color: #5f6d86;
+    font-size: 12px;
+    justify-self: center;
+    cursor: pointer;
+}
+
+.login-link-btn:hover {
+    color: #1f4fd0;
+}
+
+.login-otp-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
+
+.login-otp-boxes {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.login-otp-digit {
+    width: 100%;
+    text-align: center;
+    padding: 10px 0 !important;
+    border-radius: 10px !important;
+    border: 2px solid #d9e4f8 !important;
+    background: #fff !important;
+    color: #1f2f53;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.login-otp-digit:focus {
+    border-color: #2f67e2 !important;
+    box-shadow: 0 0 0 3px rgba(47, 103, 226, 0.14) !important;
+    outline: 0;
+}
+
+.login-message {
+    min-height: 20px;
+    margin: 0;
+    text-align: center;
+    color: #4a5a76;
+    font-size: 13px;
+}
+
+.login-signup-foot {
+    margin: -4px 0 0;
+    text-align: center;
+    color: #617290;
+    font-size: 14px;
+}
+
+.login-signup-foot a {
+    color: #2563eb;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.login-signup-foot a:hover {
+    text-decoration: underline;
+}
+
 .form-grid {
     display: grid;
     gap: 14px;
@@ -975,6 +1299,180 @@ textarea:focus-visible {
 
 .admin-menu-btn.active .admin-menu-icon {
     color: #fff;
+}
+
+.portal-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+.portal-brand {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid #e7edf7;
+}
+
+.portal-brand-mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: linear-gradient(135deg, #3f46de 0%, #3237c7 100%);
+    box-shadow: 0 10px 20px rgba(50, 55, 199, 0.28);
+}
+
+.portal-brand-mark svg {
+    width: 21px;
+    height: 21px;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.portal-brand h3 {
+    margin: 0;
+    font-size: 31px;
+    line-height: 1;
+    letter-spacing: -0.25px;
+    color: #0f294f;
+}
+
+.portal-brand p {
+    margin: 5px 0 0;
+    color: #8ea0bf;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.portal-sidebar-scroll {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 10px 10px;
+}
+
+.portal-sidebar-group + .portal-sidebar-group {
+    margin-top: 16px;
+}
+
+.portal-sidebar-group h4 {
+    margin: 0 0 10px;
+    padding: 0 12px;
+    color: #99a8c3;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.portal-sidebar .admin-menu-list {
+    gap: 4px;
+}
+
+.portal-sidebar .admin-menu-btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 12px;
+    background: transparent;
+    color: #304669;
+    font-size: 14px;
+    font-weight: 600;
+    transition:
+        transform 0.2s ease,
+        background-color 0.2s ease,
+        color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.portal-sidebar .admin-menu-btn:hover {
+    background: rgba(59, 130, 246, 0.08);
+    color: #2a4eb7;
+    transform: translateX(3px);
+}
+
+.portal-sidebar .admin-menu-btn.active {
+    color: #fff;
+    background: linear-gradient(135deg, #3f46de 0%, #3237c7 100%);
+    box-shadow: 0 8px 18px rgba(50, 55, 199, 0.3);
+}
+
+.portal-sidebar .admin-menu-icon {
+    color: #687a9b;
+}
+
+.portal-sidebar .admin-menu-btn:hover .admin-menu-icon {
+    color: #2a4eb7;
+}
+
+.portal-user-card {
+    margin: 10px;
+    border-radius: 14px;
+    border: 1px solid #e8eef8;
+    background: #f8fbff;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.portal-user-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #dfe8ff;
+    color: #3557c8;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.portal-user-meta {
+    display: grid;
+    min-width: 0;
+}
+
+.portal-user-meta strong {
+    color: #193864;
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+.portal-user-meta span {
+    margin-top: 2px;
+    color: #7587a8;
+    font-size: 11px;
+}
+
+.portal-user-logout {
+    width: 22px;
+    height: 22px;
+    color: #8ca0c2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.portal-user-logout svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .admin-content {
@@ -1975,6 +2473,15 @@ textarea:focus-visible {
 @media (max-width: 680px) {
     #exam-instruction-dialog .exam-instruction-body {
         padding: 14px;
+    }
+    body[data-page="login_content"] .container {
+        padding: 0 10px;
+    }
+    .login-modern-panel {
+        padding: 18px;
+    }
+    .login-brand-head h2 {
+        font-size: 24px;
     }
 }
 

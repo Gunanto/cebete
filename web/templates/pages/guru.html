@@ -1,102 +1,147 @@
 {{define "guru_content"}}
 <section class="card">
     <section class="admin-layout">
-        <aside class="panel admin-sidebar">
-            <h3>Menu Guru</h3>
-            <div class="admin-menu-list mt">
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn active"
-                    data-guru-menu="dashboard"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path
-                                d="M4 13h7V4H4zM13 20h7v-7h-7zM13 4h7v7h-7zM4 20h7v-5H4z"
-                            />
-                        </svg>
-                    </span>
-                    Dashboard
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="subjects"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path
-                                d="M5 3h14a2 2 0 0 1 2 2v14l-4-3-4 3-4-3-4 3V5a2 2 0 0 1 2-2z"
-                            />
-                        </svg>
-                    </span>
-                    Mapel Aktif
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="learning-goals"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path d="M4 5h16v14H4z" />
-                            <path d="M8 9h8M8 13h6" />
-                        </svg>
-                    </span>
-                    Tujuan Pembelajaran
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="manuscripts"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path
-                                d="M4 19.5V5a2 2 0 0 1 2-2h11l3 3v13.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5z"
-                            />
-                            <path d="M14 3v4h4" />
-                        </svg>
-                    </span>
-                    Naskah Soal
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="exams"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path d="M5 5h14v14H5z" />
-                            <path d="M8 9h8M8 13h6M8 17h4" />
-                        </svg>
-                    </span>
-                    Kelola Ujian
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-secondary admin-menu-btn"
-                    data-guru-menu="results"
-                >
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path d="M4 19h16M7 15l3-3 3 2 4-5" />
-                        </svg>
-                    </span>
-                    Hasil Ujian
-                </button>
+        <aside class="panel admin-sidebar portal-sidebar">
+            <div class="portal-brand">
+                <div class="portal-brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M3 9l9-4 9 4-9 4-9-4Z" />
+                        <path d="M7 11v4c0 .9 2.2 2 5 2s5-1.1 5-2v-4" />
+                    </svg>
+                </div>
+                <div>
+                    <h3>g-cbt</h3>
+                    <p>Teacher Portal</p>
+                </div>
             </div>
-            <div class="admin-menu-list mt">
-                <a class="btn btn-secondary admin-menu-btn" href="/ujian">
-                    <span class="admin-menu-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <path
-                                d="M5 3h14a2 2 0 0 1 2 2v14l-4-3-4 3-4-3-4 3V5a2 2 0 0 1 2-2z"
-                            />
-                        </svg>
-                    </span>
-                    Buka Halaman Ujian
-                </a>
+
+            <div class="portal-sidebar-scroll">
+                <section class="portal-sidebar-group">
+                    <h4>UTAMA</h4>
+                    <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn active"
+                            data-guru-menu="dashboard"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M4 13h7V4H4zM13 20h7v-7h-7zM13 4h7v7h-7zM4 20h7v-5H4z"
+                                    />
+                                </svg>
+                            </span>
+                            Dashboard
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="subjects"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M5 3h14a2 2 0 0 1 2 2v14l-4-3-4 3-4-3-4 3V5a2 2 0 0 1 2-2z"
+                                    />
+                                </svg>
+                            </span>
+                            Mapel Aktif
+                        </button>
+                    </div>
+                </section>
+
+                <section class="portal-sidebar-group">
+                    <h4>MANAJEMEN</h4>
+                    <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="learning-goals"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M4 5h16v14H4z" />
+                                    <path d="M8 9h8M8 13h6" />
+                                </svg>
+                            </span>
+                            Tujuan Pembelajaran
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="manuscripts"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M4 19.5V5a2 2 0 0 1 2-2h11l3 3v13.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5z"
+                                    />
+                                    <path d="M14 3v4h4" />
+                                </svg>
+                            </span>
+                            Naskah Soal
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="exams"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M5 5h14v14H5z" />
+                                    <path d="M8 9h8M8 13h6M8 17h4" />
+                                </svg>
+                            </span>
+                            Kelola Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="results"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M4 19h16M7 15l3-3 3 2 4-5" />
+                                </svg>
+                            </span>
+                            Hasil Ujian
+                        </button>
+                    </div>
+                </section>
+
+                <section class="portal-sidebar-group">
+                    <h4>LINK CEPAT</h4>
+                    <div class="admin-menu-list">
+                        <a
+                            class="btn btn-secondary admin-menu-btn"
+                            href="/ujian"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M7 7h10v10H7zM10 10h4v4h-4zM5 3h3M3 5v3M19 3h3M21 5v3M3 19h3M5 21v-3M21 19h-3M19 21v-3"
+                                    />
+                                </svg>
+                            </span>
+                            Halaman Ujian
+                        </a>
+                    </div>
+                </section>
+            </div>
+
+            <div class="portal-user-card">
+                <div class="portal-user-avatar">G</div>
+                <div class="portal-user-meta">
+                    <strong>Guru</strong>
+                    <span>Guru Utama</span>
+                </div>
+                <span class="portal-user-logout" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M10 17l5-5-5-5" />
+                        <path d="M15 12H3" />
+                        <path d="M21 3v18" />
+                    </svg>
+                </span>
             </div>
         </aside>
 
@@ -162,6 +207,26 @@
                     <article class="admin-stat-card stat-admin">
                         <div class="stat-label">Jenjang Tersedia</div>
                         <div id="guru-stat-levels" class="stat-value">0</div>
+                    </article>
+                    <article class="admin-stat-card stat-sekolah">
+                        <div class="stat-label">Tujuan Pembelajaran</div>
+                        <div id="guru-stat-learning-goals" class="stat-value">
+                            0
+                        </div>
+                    </article>
+                    <article class="admin-stat-card stat-proktor">
+                        <div class="stat-label">Naskah Soal</div>
+                        <div id="guru-stat-manuscripts" class="stat-value">
+                            0
+                        </div>
+                    </article>
+                    <article class="admin-stat-card stat-admin">
+                        <div class="stat-label">Kelola Ujian</div>
+                        <div id="guru-stat-exams" class="stat-value">0</div>
+                    </article>
+                    <article class="admin-stat-card stat-siswa">
+                        <div class="stat-label">Hasil Ujian</div>
+                        <div id="guru-stat-results" class="stat-value">0</div>
                     </article>
                 </div>
             </section>

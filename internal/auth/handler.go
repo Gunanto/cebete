@@ -49,6 +49,20 @@ type otpVerifyRequest struct {
 	Code  string `json:"code"`
 }
 
+type signupOTPRequest struct {
+	Email string `json:"email"`
+}
+
+type signupVerifyOTPRequest struct {
+	Email           string          `json:"email"`
+	Code            string          `json:"code"`
+	RoleRequested   string          `json:"role_requested"`
+	FullName        string          `json:"full_name"`
+	Phone           string          `json:"phone"`
+	InstitutionName string          `json:"institution_name"`
+	FormPayload     json.RawMessage `json:"form_payload"`
+}
+
 type createRegistrationRequest struct {
 	RoleRequested   string          `json:"role_requested"`
 	Email           string          `json:"email"`
@@ -182,6 +196,79 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: user})
+}
+
+func (h *Handler) RequestSignupOTP(w http.ResponseWriter, r *http.Request) {
+	var req signupOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	err := h.svc.RequestSignupOTP(r.Context(), req.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrRateLimited):
+			writeJSON(w, r, http.StatusTooManyRequests, apiResponse{OK: false, Error: "otp requested too frequently"})
+		case errors.Is(err, ErrEmailAlreadyUsed):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "email already registered"})
+		case errors.Is(err, ErrRegistrationState):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "registration already pending"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"status": "if eligible, otp has been sent"}})
+}
+
+func (h *Handler) VerifySignupOTP(w http.ResponseWriter, r *http.Request) {
+	var req signupVerifyOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	formPayload := strings.TrimSpace(string(req.FormPayload))
+	if formPayload == "" {
+		formPayload = "{}"
+	}
+
+	registrationID, err := h.svc.VerifySignupOTP(r.Context(), SignupVerifyInput{
+		Email:           req.Email,
+		Code:            req.Code,
+		RoleRequested:   req.RoleRequested,
+		FullName:        req.FullName,
+		Phone:           req.Phone,
+		InstitutionName: req.InstitutionName,
+		FormPayload:     formPayload,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrRateLimited):
+			writeJSON(w, r, http.StatusTooManyRequests, apiResponse{OK: false, Error: "too many otp attempts"})
+		case errors.Is(err, ErrInvalidOTP):
+			writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "invalid otp"})
+		case errors.Is(err, ErrOTPExpired):
+			writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "otp expired"})
+		case errors.Is(err, ErrEmailAlreadyUsed):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "email already registered"})
+		case errors.Is(err, ErrRegistrationState):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "registration already pending"})
+		default:
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusCreated, apiResponse{
+		OK: true,
+		Data: map[string]interface{}{
+			"registration_id": registrationID,
+			"status":          "pending",
+		},
+	})
 }
 
 func (h *Handler) BootstrapInit(w http.ResponseWriter, r *http.Request) {
