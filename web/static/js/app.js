@@ -7462,6 +7462,7 @@
     let learningGoalSearch = "";
     let questionCodeEditingID = 0;
     let resultsAssignmentsCount = 0;
+    let classesCache = [];
 
     function refreshGuruSummaryStats() {
       if (statLearningGoals) {
@@ -7482,6 +7483,22 @@
       if (statResults) {
         statResults.textContent = String(Number(resultsAssignmentsCount || 0));
       }
+    }
+
+    function ensureLearningGoalKelasOption(value) {
+      if (!learningGoalKelasInput) return;
+      const val = String(value || "").trim();
+      if (!val) return;
+      const exists = Array.from(learningGoalKelasInput.options).some(
+        function (opt) {
+          return opt.value === val;
+        },
+      );
+      if (exists) return;
+      const legacy = document.createElement("option");
+      legacy.value = val;
+      legacy.textContent = val + " (legacy)";
+      learningGoalKelasInput.appendChild(legacy);
     }
 
     const setMsg = function (value) {
@@ -9797,7 +9814,10 @@
       learningGoalEditingID = Number(item.id || 0);
       if (idField) idField.value = String(item.id || "");
       if (mapelField) mapelField.value = String(item.mata_pelajaran || "");
-      if (kelasField) kelasField.value = String(item.kelas || "");
+      if (kelasField) {
+        kelasField.value = String(item.kelas || "");
+        ensureLearningGoalKelasOption(kelasField.value);
+      }
       if (semesterField) semesterField.value = String(item.semester || "");
       if (materiField) materiField.value = String(item.materi || "");
       if (tujuanField) {
@@ -9817,19 +9837,26 @@
         learningGoalKelasInput.innerHTML =
           '<option value="">Pilih Tingkat/Grade</option>';
         const grades = new Set();
-        (Array.isArray(educationLevelsCache)
-          ? educationLevelsCache
-          : []
-        ).forEach(function (it) {
-          const value = String((it && it.name) || "").trim();
-          if (value) grades.add(value);
-        });
-        (Array.isArray(subjectsCache) ? subjectsCache : []).forEach(
+        try {
+          const items = await api("/api/v1/admin/classes?all=1", "GET");
+          classesCache = Array.isArray(items) ? items : [];
+        } catch (_) {
+          classesCache = [];
+        }
+        (Array.isArray(classesCache) ? classesCache : []).forEach(
           function (it) {
-            const value = String((it && it.education_level) || "").trim();
+            const value = String((it && it.grade_level) || "").trim();
             if (value) grades.add(value);
           },
         );
+        if (grades.size === 0) {
+          (Array.isArray(subjectsCache) ? subjectsCache : []).forEach(
+            function (it) {
+              const value = String((it && it.education_level) || "").trim();
+              if (value) grades.add(value);
+            },
+          );
+        }
         Array.from(grades)
           .sort(function (a, b) {
             return a.localeCompare(b, "id", {
@@ -10651,10 +10678,6 @@
         if (defaultSubject) {
           if (learningGoalMapelInput)
             learningGoalMapelInput.value = String(defaultSubject.name || "");
-          if (learningGoalKelasInput)
-            learningGoalKelasInput.value = String(
-              defaultSubject.education_level || "",
-            );
         }
       }
       syncManuscriptSubjectState();
