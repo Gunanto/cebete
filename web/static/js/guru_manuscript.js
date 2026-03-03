@@ -922,20 +922,10 @@
       "Muat ulang naskah...",
     );
     try {
-      const questionID = Number(
-        (deps.manuscriptQuestionSelect &&
-          deps.manuscriptQuestionSelect.value) ||
-          0,
-      );
       const versions =
-        questionID > 0
-          ? await deps.api(
-              "/api/v1/questions/" + questionID + "/versions",
-              "GET",
-            )
-          : typeof deps.loadAllManuscriptVersionsFromBlueprints === "function"
-            ? await deps.loadAllManuscriptVersionsFromBlueprints()
-            : [];
+        typeof deps.loadAllManuscriptVersionsFromBlueprints === "function"
+          ? await deps.loadAllManuscriptVersionsFromBlueprints()
+          : [];
       if (typeof deps.renderManuscripts === "function") {
         deps.renderManuscripts(versions);
       }
