@@ -172,6 +172,16 @@
     return Array.isArray(allItems) ? allItems.length : 0;
   }
 
+  function getQuestionCount() {
+    if (!Array.isArray(allItems) || !allItems.length) return 0;
+    var ids = new Set();
+    allItems.forEach(function (it) {
+      var id = Number((it && it.question_id) || 0);
+      if (id > 0) ids.add(id);
+    });
+    return ids.size;
+  }
+
   function setPage(nextPage) {
     var p = Number(nextPage || 1);
     if (!isFinite(p) || p <= 0) p = 1;
@@ -514,6 +524,7 @@
     reloadByCurrentScope: reloadByCurrentScope,
     findItemByKey: findItemByKey,
     getCount: getCount,
+    getQuestionCount: getQuestionCount,
     setPage: setPage,
   };
 })();

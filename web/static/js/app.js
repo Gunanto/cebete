@@ -4006,8 +4006,9 @@
       }
       if (statManuscripts) {
         const count =
-          ManuscriptTable && typeof ManuscriptTable.getCount === "function"
-            ? ManuscriptTable.getCount()
+          ManuscriptTable &&
+          typeof ManuscriptTable.getQuestionCount === "function"
+            ? ManuscriptTable.getQuestionCount()
             : 0;
         statManuscripts.textContent = String(Number(count || 0));
       }
