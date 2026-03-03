@@ -395,23 +395,6 @@
                 <section class="panel mt">
                     <div class="admin-section-head">
                         <h4>Kode Soal</h4>
-                        <div class="action-icons">
-                            <button
-                                id="guru-question-code-bulk-delete-btn"
-                                class="btn btn-danger btn-inline"
-                                type="button"
-                                disabled
-                            >
-                                Hapus Terpilih
-                            </button>
-                            <button
-                                id="guru-question-code-refresh-btn"
-                                class="btn btn-secondary btn-inline"
-                                type="button"
-                            >
-                                Muat Kode Soal
-                            </button>
-                        </div>
                     </div>
                     <form id="guru-question-code-form" class="form-grid mt">
                         <input type="hidden" name="id" />
@@ -462,6 +445,26 @@
                             </button>
                         </div>
                     </form>
+                    <div class="admin-section-head mt">
+                        <div></div>
+                        <div class="action-icons">
+                            <button
+                                id="guru-question-code-bulk-delete-btn"
+                                class="btn btn-danger btn-inline"
+                                type="button"
+                                disabled
+                            >
+                                Hapus Terpilih
+                            </button>
+                            <button
+                                id="guru-question-code-refresh-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Muat Kode Soal
+                            </button>
+                        </div>
+                    </div>
                     <div class="table-wrap mt">
                         <table class="bs-table">
                             <thead>
@@ -493,13 +496,6 @@
                 <div class="admin-section-head mt">
                     <h4>Daftar Soal</h4>
                     <div class="action-icons">
-                        <label class="muted">
-                            Scope Soal
-                            <select id="guru-question-owner-scope">
-                                <option value="mine" selected>Soal Saya</option>
-                                <option value="all">Semua Soal Mapel</option>
-                            </select>
-                        </label>
                         <button
                             id="guru-manuscript-bulk-delete-btn"
                             class="btn btn-danger btn-inline"

@@ -290,13 +290,6 @@
     const id = Number(subjectID || 0);
     const params = new URLSearchParams();
     if (id > 0) params.set("subject_id", String(id));
-    if (
-      deps &&
-      typeof deps.isOwnerOnlyQuestionsEnabled === "function" &&
-      deps.isOwnerOnlyQuestionsEnabled()
-    ) {
-      params.set("owner_only", "true");
-    }
     const qs = params.toString() ? "?" + params.toString() : "";
     const items = await deps.api("/api/v1/questions" + qs, "GET");
     cache = Array.isArray(items) ? items : [];

@@ -3802,9 +3802,6 @@
     const manuscriptImportBtn = document.getElementById(
       "guru-manuscript-import-btn",
     );
-    const questionOwnerScopeSelect = document.getElementById(
-      "guru-question-owner-scope",
-    );
     const manuscriptImportDialog = document.getElementById(
       "guru-manuscript-import-dialog",
     );
@@ -4038,15 +4035,6 @@
       if (manuscriptMessage) text(manuscriptMessage, message);
       setMsg(message);
     };
-    function isOwnerOnlyQuestionsEnabled() {
-      const scope = String(
-        (questionOwnerScopeSelect && questionOwnerScopeSelect.value) || "",
-      )
-        .trim()
-        .toLowerCase();
-      return scope === "mine";
-    }
-
     const fmtDate = function (raw) {
       if (!raw) return "-";
       const d = new Date(raw);
@@ -4317,7 +4305,6 @@
         learningGoalLabel: learningGoalLabel,
         fillLearningGoalSelect: fillLearningGoalSelect,
         fillQuestionCodeSelect: fillQuestionCodeSelect,
-        isOwnerOnlyQuestionsEnabled: isOwnerOnlyQuestionsEnabled,
         manuscriptQuestionSelect: manuscriptQuestionSelect,
         manuscriptSubjectSelect: manuscriptSubjectSelect,
         manuscriptLearningGoalSelect: manuscriptLearningGoalSelect,
@@ -5289,12 +5276,6 @@
 
     try {
       await ensureQuillReady();
-      if (questionOwnerScopeSelect) {
-        const role = String((user && user.role) || "")
-          .trim()
-          .toLowerCase();
-        questionOwnerScopeSelect.value = role === "admin" ? "all" : "mine";
-      }
       if (
         GuruManuscript &&
         typeof GuruManuscript.ensureEditors === "function"
@@ -5311,36 +5292,6 @@
       setMsg("Dashboard guru siap.");
     } catch (err) {
       setMsg("Gagal memuat dashboard guru: " + err.message);
-    }
-
-    if (questionOwnerScopeSelect) {
-      questionOwnerScopeSelect.addEventListener("change", async function () {
-        const done = beginBusy(
-          questionOwnerScopeSelect,
-          msg,
-          "Memuat data soal sesuai scope...",
-        );
-        try {
-          await loadBlueprints(
-            Number(
-              (blueprintFilterSubject && blueprintFilterSubject.value) || 0,
-            ),
-          );
-          const versions = await loadAllManuscriptVersionsFromBlueprints();
-          if (
-            ManuscriptTable &&
-            typeof ManuscriptTable.setPage === "function"
-          ) {
-            ManuscriptTable.setPage(1);
-          }
-          renderManuscripts(versions);
-          setManuscriptMsg("Scope soal berhasil diperbarui.");
-        } catch (err) {
-          setManuscriptMsg("Gagal memuat scope soal: " + err.message);
-        } finally {
-          done();
-        }
-      });
     }
   }
 
