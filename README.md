@@ -1,6 +1,7 @@
 # CBT LMS Starter
 
-Starter project CBT LMS berbasis Go (SSR), PostgreSQL, Redis, dan MinIO.
+CBT LMS berbasis Go (SSR) + PostgreSQL dengan frontend vanilla JS.
+Redis dan MinIO bersifat opsional.
 
 ## Jalankan dependency lokal
 
@@ -58,7 +59,7 @@ Image target:
 Contoh pull di server:
 
 ```bash
-docker pull ghcr.io/gunanto/cbtlms:latest
+docker pull ghcr.io/gunanto/cebete:latest
 ```
 
 Catatan izin:
@@ -92,6 +93,17 @@ Urutan migration saat ini:
 - `000016_question_reopen_workflow`
 - `000017_learning_goals`
 - `000018_link_learning_goals_to_questions_and_stimuli`
+- `000019_learning_goals_materi`
+- `000020_learning_goal_created_by_owner`
+- `000021_backfill_learning_goal_created_by`
+- `000022_backfill_learning_goal_owner_from_audit`
+- `000023_question_codes_and_exam_rules`
+- `000024_exam_max_attempts_and_reset`
+- `000025_question_version_stimulus_html`
+- `000026_remove_question_version_stimulus_id`
+- `000027_subject_owner_scope`
+- `000028_user_photo_data_url`
+- `000029_question_version_content_hash`
 
 Gunakan runner:
 
