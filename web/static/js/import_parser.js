@@ -29,6 +29,12 @@
           .toLowerCase(),
       );
     };
+    const hasCoreHeader =
+      idx("mapel") >= 0 ||
+      idx("soal") >= 0 ||
+      idx("opsi") >= 0 ||
+      idx("kunci jawaban") >= 0;
+    if (!hasCoreHeader) return [];
     const idxMapel = idx("mapel");
     const idxKode = idx("kode soal");
     const idxNama = idx("nama kode");
@@ -218,7 +224,8 @@
   }
 
   function parseImportQuestionFromParts(item, blockNo) {
-    item.question_type = inferImportQuestionType(item);
+    item.question_type =
+      mapImportQuestionType(item.type_raw) || inferImportQuestionType(item);
     if (!item.question_type) {
       throw new Error("Blok " + String(blockNo) + ": TYPE harus MC/MR/TF.");
     }
