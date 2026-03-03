@@ -145,9 +145,7 @@
         .toUpperCase();
       const body = String((it && it.option_html) || "").trim();
       if (!key)
-        throw new Error(
-          "Kode opsi baris " + String(idx + 1) + " wajib diisi.",
-        );
+        throw new Error("Kode opsi baris " + String(idx + 1) + " wajib diisi.");
       if (seen[key]) throw new Error("Kode opsi duplikat: " + key);
       if (!body) throw new Error("Konten opsi " + key + " wajib diisi.");
       seen[key] = true;
@@ -289,7 +287,9 @@
         const correctSelect = row.querySelector("[data-statement-correct]");
         const id = String((idInput && idInput.value) || "").trim();
         const statement = String((textInput && textInput.value) || "").trim();
-        const correct = String((correctSelect && correctSelect.value) || "true");
+        const correct = String(
+          (correctSelect && correctSelect.value) || "true",
+        );
         if (!id) {
           throw new Error(
             "ID pernyataan TF baris " + String(idx + 1) + " wajib diisi.",
@@ -858,10 +858,7 @@
       );
       if (!isEditMode || hasContentChanges) {
         const endpoint = isEditMode
-          ? "/api/v1/questions/" +
-            questionID +
-            "/versions/" +
-            editingVersionNo
+          ? "/api/v1/questions/" + questionID + "/versions/" + editingVersionNo
           : "/api/v1/questions/" + questionID + "/versions";
         const method = isEditMode ? "PUT" : "POST";
         await deps.api(endpoint, method, payload);
@@ -872,12 +869,16 @@
       if (blueprintChanged && typeof deps.loadBlueprints === "function") {
         await deps.loadBlueprints(0);
       }
-      const versions = await deps.api(
-        "/api/v1/questions/" + questionID + "/versions",
-        "GET",
-      );
-      if (typeof deps.renderManuscripts === "function") {
-        deps.renderManuscripts(versions);
+      if (typeof deps.reloadManuscriptsByCurrentTableScope === "function") {
+        await deps.reloadManuscriptsByCurrentTableScope(questionID);
+      } else {
+        const versions = await deps.api(
+          "/api/v1/questions/" + questionID + "/versions",
+          "GET",
+        );
+        if (typeof deps.renderManuscripts === "function") {
+          deps.renderManuscripts(versions);
+        }
       }
       resetEditors();
       deps.manuscriptForm.reset();
@@ -954,7 +955,8 @@
       deps.syncManuscriptSubjectState();
     }
     resetEditors();
-    if (deps.manuscriptStatementsWrap) deps.manuscriptStatementsWrap.innerHTML = "";
+    if (deps.manuscriptStatementsWrap)
+      deps.manuscriptStatementsWrap.innerHTML = "";
     if (deps.manuscriptOptionsWrap) deps.manuscriptOptionsWrap.innerHTML = "";
     ensureOptionRows();
     ensureTFStatementRows();
@@ -1065,8 +1067,7 @@
     }
     if (deps.manuscriptOptionsWrap) {
       deps.manuscriptOptionsWrap.addEventListener("click", function (e) {
-        const btn =
-          e.target && e.target.closest("button[data-option-remove]");
+        const btn = e.target && e.target.closest("button[data-option-remove]");
         if (!btn) return;
         const row = btn.closest("[data-option-row]");
         if (row) row.remove();

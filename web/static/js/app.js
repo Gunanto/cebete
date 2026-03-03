@@ -4986,6 +4986,8 @@
         fillBlueprintSelect: fillBlueprintSelect,
         loadAllManuscriptVersionsFromBlueprints:
           loadAllManuscriptVersionsFromBlueprints,
+        reloadManuscriptsByCurrentTableScope:
+          reloadManuscriptsByCurrentTableScope,
         renderManuscripts: renderManuscripts,
         manuscriptForm: manuscriptForm,
         manuscriptQuestionSelect: manuscriptQuestionSelect,
