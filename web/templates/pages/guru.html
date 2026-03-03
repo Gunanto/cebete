@@ -434,13 +434,23 @@
                 <section class="panel mt">
                     <div class="admin-section-head">
                         <h4>Kode Soal</h4>
-                        <button
-                            id="guru-question-code-refresh-btn"
-                            class="btn btn-secondary btn-inline"
-                            type="button"
-                        >
-                            Muat Kode Soal
-                        </button>
+                        <div class="action-icons">
+                            <button
+                                id="guru-question-code-bulk-delete-btn"
+                                class="btn btn-danger btn-inline"
+                                type="button"
+                                disabled
+                            >
+                                Hapus Terpilih
+                            </button>
+                            <button
+                                id="guru-question-code-refresh-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Muat Kode Soal
+                            </button>
+                        </div>
                     </div>
                     <form id="guru-question-code-form" class="form-grid mt">
                         <input type="hidden" name="id" />
@@ -495,6 +505,13 @@
                         <table class="bs-table">
                             <thead>
                                 <tr>
+                                    <th>
+                                        <input
+                                            id="guru-question-code-select-all"
+                                            type="checkbox"
+                                            aria-label="Pilih semua kode soal"
+                                        />
+                                    </th>
                                     <th>ID</th>
                                     <th>Mapel</th>
                                     <th>Kode</th>
@@ -504,7 +521,7 @@
                             </thead>
                             <tbody id="guru-question-code-body">
                                 <tr>
-                                    <td colspan="5" class="muted">
+                                    <td colspan="6" class="muted">
                                         Belum ada data kode soal.
                                     </td>
                                 </tr>
@@ -512,6 +529,9 @@
                         </table>
                     </div>
                 </section>
+                <div class="admin-section-head mt">
+                    <h4>Daftar Soal</h4>
+                </div>
                 <div class="table-wrap mt">
                     <table class="bs-table">
                         <thead>
@@ -1216,6 +1236,7 @@
             <select
                 id="guru-manuscript-import-subject-select"
                 name="subject_id"
+                required
             ></select>
         </label>
         <label>
