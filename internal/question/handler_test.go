@@ -21,6 +21,7 @@ type mockQuestionService struct {
 	deleteQuestionCodeFn func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	createQuestionFn     func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
 	assignQuestionCodeFn func(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
+	assignLearningGoalFn func(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error)
 	listQuestionsFn      func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
 	createVersionFn      func(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
 	updateVersionFn      func(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
@@ -79,6 +80,13 @@ func (m *mockQuestionService) AssignQuestionCode(ctx context.Context, in AssignQ
 		return nil, errors.New("not implemented")
 	}
 	return m.assignQuestionCodeFn(ctx, in)
+}
+
+func (m *mockQuestionService) AssignQuestionLearningGoal(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error) {
+	if m.assignLearningGoalFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.assignLearningGoalFn(ctx, in)
 }
 
 func (m *mockQuestionService) ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
@@ -341,6 +349,49 @@ func TestUpdateQuestionVersionOK(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAssignQuestionLearningGoalOK(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		assignLearningGoalFn: func(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error) {
+			if in.QuestionID != 10 || in.LearningGoalID != 200 {
+				t.Fatalf("unexpected input: %+v", in)
+			}
+			return &QuestionBlueprint{ID: in.QuestionID, LearningGoalID: in.LearningGoalID}, nil
+		},
+	}}
+
+	payload := []byte(`{"learning_goal_id":200}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/questions/10/learning-goal", bytes.NewReader(payload))
+	req = withParam(req, "id", "10")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 99, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.AssignQuestionLearningGoal(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAssignQuestionLearningGoalNotFound(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		assignLearningGoalFn: func(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error) {
+			return nil, ErrLearningGoalNotFound
+		},
+	}}
+
+	payload := []byte(`{"learning_goal_id":200}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/questions/10/learning-goal", bytes.NewReader(payload))
+	req = withParam(req, "id", "10")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 1, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.AssignQuestionLearningGoal(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 

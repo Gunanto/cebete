@@ -167,6 +167,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/question-codes/{id}", questionHandler.DeleteQuestionCode)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/questions", questionHandler.CreateQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/questions/{id}/code", questionHandler.AssignQuestionCode)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/questions/{id}/learning-goal", questionHandler.AssignQuestionLearningGoal)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/questions", questionHandler.ListQuestions)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/questions/{id}/versions", questionHandler.CreateQuestionVersion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/questions/{id}/versions/{version}", questionHandler.UpdateQuestionVersion)

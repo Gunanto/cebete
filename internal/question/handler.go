@@ -25,6 +25,7 @@ type questionService interface {
 	DeleteQuestionCode(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	CreateQuestion(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
 	AssignQuestionCode(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
+	AssignQuestionLearningGoal(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error)
 	ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
 	CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
 	UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
@@ -78,6 +79,10 @@ type assignQuestionCodeRequest struct {
 	QuestionCodeID *int64 `json:"question_code_id"`
 }
 
+type assignQuestionLearningGoalRequest struct {
+	LearningGoalID int64 `json:"learning_goal_id"`
+}
+
 type createQuestionVersionRequest struct {
 	StimulusHTML    *string               `json:"stimulus_html"`
 	StemHTML        *string               `json:"stem_html"`
@@ -88,6 +93,7 @@ type createQuestionVersionRequest struct {
 	DurationSeconds *int                  `json:"duration_seconds"`
 	Weight          *float64              `json:"weight"`
 	ChangeNote      *string               `json:"change_note"`
+	Dedup           bool                  `json:"dedup"`
 }
 
 type updateQuestionVersionRequest struct {
@@ -350,6 +356,47 @@ func (h *Handler) AssignQuestionCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
 }
 
+func (h *Handler) AssignQuestionLearningGoal(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	questionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || questionID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
+		return
+	}
+
+	var req assignQuestionLearningGoalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	item, err := h.svc.AssignQuestionLearningGoal(r.Context(), AssignQuestionLearningGoalInput{
+		QuestionID:     questionID,
+		LearningGoalID: req.LearningGoalID,
+		ActorID:        user.ID,
+		EnforceOwner:   strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionNotFound), errors.Is(err, ErrLearningGoalNotFound), errors.Is(err, ErrSubjectNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
+}
+
 func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
@@ -433,8 +480,21 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		ChangeNote:      req.ChangeNote,
 		CreatedBy:       user.ID,
 		EnforceOwner:    strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+		Dedup:           req.Dedup,
 	})
 	if err != nil {
+		var dupErr *DuplicateQuestionError
+		if errors.As(err, &dupErr) {
+			writeJSON(w, r, http.StatusOK, apiResponse{
+				OK: true,
+				Data: map[string]any{
+					"deduped":              true,
+					"existing_question_id": dupErr.ExistingQuestionID,
+					"question_id":          dupErr.ExistingQuestionID,
+				},
+			})
+			return
+		}
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})

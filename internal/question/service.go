@@ -2,10 +2,13 @@ package question
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -27,6 +30,14 @@ var (
 	ErrReopenNotAllowed     = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
 	ErrReopenPending        = errors.New("permintaan reopen final masih menunggu persetujuan")
 )
+
+type DuplicateQuestionError struct {
+	ExistingQuestionID int64
+}
+
+func (e *DuplicateQuestionError) Error() string {
+	return "duplicate question content"
+}
 
 type Service struct {
 	db *sql.DB
@@ -81,6 +92,7 @@ type CreateQuestionVersionInput struct {
 	ChangeNote      *string
 	CreatedBy       int64
 	EnforceOwner    bool
+	Dedup           bool
 }
 
 type QuestionCode struct {
@@ -113,6 +125,13 @@ type UpdateQuestionCodeInput struct {
 type AssignQuestionCodeInput struct {
 	QuestionID     int64
 	QuestionCodeID *int64
+	ActorID        int64
+	EnforceOwner   bool
+}
+
+type AssignQuestionLearningGoalInput struct {
+	QuestionID     int64
+	LearningGoalID int64
 	ActorID        int64
 	EnforceOwner   bool
 }
@@ -639,7 +658,13 @@ func (s *Service) DeleteQuestionCode(ctx context.Context, id int64, actorID int6
 		ownerFilter = actorID
 	}
 	var deletedID int64
-	if err := s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete question code tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := tx.QueryRowContext(ctx, `
 		UPDATE question_codes
 		SET is_active = FALSE
 		WHERE id = $1
@@ -654,6 +679,16 @@ func (s *Service) DeleteQuestionCode(ctx context.Context, id int64, actorID int6
 			return ErrQuestionCodeNotFound
 		}
 		return fmt.Errorf("delete question code: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE questions
+		SET question_code_id = NULL
+		WHERE question_code_id = $1
+	`, deletedID); err != nil {
+		return fmt.Errorf("clear question code on questions: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete question code: %w", err)
 	}
 	return nil
 }
@@ -741,6 +776,89 @@ func (s *Service) AssignQuestionCode(ctx context.Context, in AssignQuestionCodeI
 	return out, nil
 }
 
+func (s *Service) AssignQuestionLearningGoal(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error) {
+	if in.QuestionID <= 0 || in.LearningGoalID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if in.EnforceOwner && in.ActorID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin assign learning goal tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var subjectID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id
+		FROM questions
+		WHERE id = $1 AND is_active = TRUE
+	`, in.QuestionID).Scan(&subjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotFound
+		}
+		return nil, fmt.Errorf("load question subject: %w", err)
+	}
+
+	if in.EnforceOwner {
+		ok, err := s.canCreateVersionTx(ctx, tx, in.QuestionID, in.ActorID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrForbidden
+		}
+	}
+
+	var subjectName string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT name
+		FROM subjects
+		WHERE id = $1 AND is_active = TRUE
+	`, subjectID).Scan(&subjectName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSubjectNotFound
+		}
+		return nil, fmt.Errorf("load subject: %w", err)
+	}
+
+	var validGoal bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM learning_goals lg
+			WHERE lg.id = $1
+			  AND lg.mata_pelajaran = $2
+		)
+	`, in.LearningGoalID, subjectName).Scan(&validGoal); err != nil {
+		return nil, fmt.Errorf("check learning goal: %w", err)
+	}
+	if !validGoal {
+		return nil, ErrLearningGoalNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE questions
+		SET learning_goal_id = $2,
+			updated_at = now()
+		WHERE id = $1
+	`, in.QuestionID, in.LearningGoalID); err != nil {
+		return nil, fmt.Errorf("assign learning goal: %w", err)
+	}
+
+	out, err := s.getQuestionBlueprintTx(ctx, tx, in.QuestionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit assign learning goal tx: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error) {
 	if in.QuestionID <= 0 {
 		return nil, ErrInvalidInput
@@ -754,7 +872,12 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 
 	var currentStem string
 	var questionType string
-	err = tx.QueryRowContext(ctx, `SELECT stem_html, question_type FROM questions WHERE id = $1`, in.QuestionID).Scan(&currentStem, &questionType)
+	var subjectID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT stem_html, question_type, subject_id
+		FROM questions
+		WHERE id = $1
+	`, in.QuestionID).Scan(&currentStem, &questionType, &subjectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrQuestionNotFound
@@ -839,19 +962,73 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		return nil, err
 	}
 
+	contentHash, err := computeQuestionContentHash(
+		questionType,
+		base.StemHTML,
+		base.StimulusHTML,
+		base.ExplanationHTML,
+		base.HintHTML,
+		base.AnswerKey,
+		normalizedOptions,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if in.Dedup {
+		if err := s.backfillContentHashCandidates(ctx, tx, subjectID, questionType, base.StemHTML); err != nil {
+			return nil, err
+		}
+		var existingID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT q.id
+			FROM questions q
+			JOIN question_versions qv ON qv.question_id = q.id
+			WHERE q.is_active = TRUE
+			  AND q.subject_id = $1
+			  AND qv.content_hash = $2
+			LIMIT 1
+		`, subjectID, contentHash).Scan(&existingID)
+		if err == nil {
+			var versionsCount int
+			if err := tx.QueryRowContext(ctx, `
+				SELECT COUNT(1)
+				FROM question_versions
+				WHERE question_id = $1
+			`, in.QuestionID).Scan(&versionsCount); err != nil {
+				return nil, fmt.Errorf("check question versions: %w", err)
+			}
+			if versionsCount == 0 {
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE questions
+					SET is_active = FALSE, updated_at = now()
+					WHERE id = $1
+				`, in.QuestionID); err != nil {
+					return nil, fmt.Errorf("deactivate duplicate question: %w", err)
+				}
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("commit dedup tx: %w", err)
+			}
+			return nil, &DuplicateQuestionError{ExistingQuestionID: existingID}
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("check duplicate question: %w", err)
+		}
+	}
+
 	row := tx.QueryRowContext(ctx, `
 			INSERT INTO question_versions (
 				question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
-				created_by, created_at
+				content_hash, created_by, created_at
 			) VALUES (
 				$1, $2, $3, $4, $5, $6,
 				$7::jsonb, 'draft', FALSE, TRUE, $8, $9, $10,
-				NULLIF($11, 0), now()
+				$11, NULLIF($12, 0), now()
 			)
 			RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), in.CreatedBy)
+		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
@@ -1291,6 +1468,18 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	if err != nil {
 		return nil, err
 	}
+	contentHash, err := computeQuestionContentHash(
+		questionType,
+		next.StemHTML,
+		next.StimulusHTML,
+		next.ExplanationHTML,
+		next.HintHTML,
+		next.AnswerKey,
+		normalizedOptions,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	updatedRow := tx.QueryRowContext(ctx, `
 		UPDATE question_versions
@@ -1301,11 +1490,12 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 			answer_key = $7::jsonb,
 			duration_seconds = $8,
 			weight = $9,
-			change_note = $10
+			change_note = $10,
+			content_hash = $11
 		WHERE question_id = $1 AND version_no = $2
 		RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote))
+	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
 	out, err := scanQuestionVersion(updatedRow)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2135,6 +2325,227 @@ func normalizeAndValidateOptions(questionType string, options []QuestionOptionIn
 		}
 	}
 	return out, correctKeys, nil
+}
+
+type normalizedStatement struct {
+	ID        string `json:"id"`
+	Statement string `json:"statement"`
+	Correct   bool   `json:"correct"`
+}
+
+type normalizedAnswerKey struct {
+	Correct    string                `json:"correct,omitempty"`
+	CorrectSet []string              `json:"correct_set,omitempty"`
+	Mode       string                `json:"mode,omitempty"`
+	Statements []normalizedStatement `json:"statements,omitempty"`
+}
+
+type questionContentForHash struct {
+	QuestionType    string                `json:"question_type"`
+	StemHTML        string                `json:"stem_html"`
+	StimulusHTML    string                `json:"stimulus_html,omitempty"`
+	ExplanationHTML string                `json:"explanation_html,omitempty"`
+	HintHTML        string                `json:"hint_html,omitempty"`
+	Options         []QuestionOptionInput `json:"options,omitempty"`
+	AnswerKey       normalizedAnswerKey   `json:"answer_key"`
+}
+
+func computeQuestionContentHash(questionType string, stemHTML string, stimulusHTML *string, explanationHTML *string, hintHTML *string, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
+	qType := strings.TrimSpace(strings.ToLower(questionType))
+	var obj map[string]any
+	if err := json.Unmarshal(answerKey, &obj); err != nil {
+		return "", fmt.Errorf("%w: answer_key must be object", ErrInvalidInput)
+	}
+
+	var normalized normalizedAnswerKey
+	switch qType {
+	case "pg_tunggal":
+		correct, _ := obj["correct"].(string)
+		normalized.Correct = strings.TrimSpace(strings.ToUpper(correct))
+	case "multi_jawaban":
+		rawKeys, _ := obj["correct"].([]any)
+		keys := make([]string, 0, len(rawKeys))
+		for _, item := range rawKeys {
+			v, _ := item.(string)
+			v = strings.TrimSpace(strings.ToUpper(v))
+			if v == "" {
+				continue
+			}
+			keys = append(keys, v)
+		}
+		sort.Strings(keys)
+		normalized.CorrectSet = keys
+		if modeRaw, ok := obj["mode"]; ok {
+			mode, _ := modeRaw.(string)
+			normalized.Mode = strings.TrimSpace(strings.ToLower(mode))
+		}
+	case "benar_salah_pernyataan":
+		rawStatements, _ := obj["statements"].([]any)
+		stmts := make([]normalizedStatement, 0, len(rawStatements))
+		for _, item := range rawStatements {
+			stmt, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			id, _ := stmt["id"].(string)
+			statement, _ := stmt["statement"].(string)
+			correct, _ := stmt["correct"].(bool)
+			id = strings.TrimSpace(strings.ToUpper(id))
+			statement = strings.TrimSpace(statement)
+			if id == "" || statement == "" {
+				continue
+			}
+			stmts = append(stmts, normalizedStatement{
+				ID:        id,
+				Statement: statement,
+				Correct:   correct,
+			})
+		}
+		sort.Slice(stmts, func(i, j int) bool {
+			return stmts[i].ID < stmts[j].ID
+		})
+		normalized.Statements = stmts
+	}
+
+	normalizedOptions := make([]QuestionOptionInput, 0, len(options))
+	for _, opt := range options {
+		normalizedOptions = append(normalizedOptions, QuestionOptionInput{
+			OptionKey:  strings.TrimSpace(strings.ToUpper(opt.OptionKey)),
+			OptionHTML: strings.TrimSpace(opt.OptionHTML),
+		})
+	}
+	sort.Slice(normalizedOptions, func(i, j int) bool {
+		return normalizedOptions[i].OptionKey < normalizedOptions[j].OptionKey
+	})
+
+	payload := questionContentForHash{
+		QuestionType: qType,
+		StemHTML:     strings.TrimSpace(stemHTML),
+		Options:      normalizedOptions,
+		AnswerKey:    normalized,
+	}
+	if stimulusHTML != nil {
+		payload.StimulusHTML = strings.TrimSpace(*stimulusHTML)
+	}
+	if explanationHTML != nil {
+		payload.ExplanationHTML = strings.TrimSpace(*explanationHTML)
+	}
+	if hintHTML != nil {
+		payload.HintHTML = strings.TrimSpace(*hintHTML)
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal content hash: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx, subjectID int64, questionType string, stemHTML string) error {
+	if subjectID <= 0 || strings.TrimSpace(questionType) == "" || strings.TrimSpace(stemHTML) == "" {
+		return nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT qv.id, qv.question_id, qv.stimulus_html, qv.stem_html, qv.explanation_html, qv.hint_html, qv.answer_key
+		FROM question_versions qv
+		JOIN questions q ON q.id = qv.question_id
+		WHERE q.is_active = TRUE
+		  AND q.subject_id = $1
+		  AND q.question_type = $2
+		  AND qv.stem_html = $3
+		  AND qv.content_hash IS NULL
+	`, subjectID, strings.TrimSpace(strings.ToLower(questionType)), strings.TrimSpace(stemHTML))
+	if err != nil {
+		return fmt.Errorf("list content hash candidates: %w", err)
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id              int64
+		questionID      int64
+		stimulusHTML    sql.NullString
+		stemHTML        string
+		explanationHTML sql.NullString
+		hintHTML        sql.NullString
+		answerKey       json.RawMessage
+	}
+	candidates := make([]candidate, 0)
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.questionID, &c.stimulusHTML, &c.stemHTML, &c.explanationHTML, &c.hintHTML, &c.answerKey); err != nil {
+			return fmt.Errorf("scan content hash candidate: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate content hash candidates: %w", err)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	for _, c := range candidates {
+		opts := []QuestionOptionInput{}
+		if strings.TrimSpace(strings.ToLower(questionType)) != "benar_salah_pernyataan" {
+			optRows, err := tx.QueryContext(ctx, `
+				SELECT option_key, option_html
+				FROM question_options
+				WHERE question_id = $1
+				ORDER BY option_key ASC
+			`, c.questionID)
+			if err != nil {
+				return fmt.Errorf("load options for hash: %w", err)
+			}
+			for optRows.Next() {
+				var opt QuestionOptionInput
+				if err := optRows.Scan(&opt.OptionKey, &opt.OptionHTML); err != nil {
+					_ = optRows.Close()
+					return fmt.Errorf("scan options for hash: %w", err)
+				}
+				opts = append(opts, opt)
+			}
+			if err := optRows.Err(); err != nil {
+				_ = optRows.Close()
+				return fmt.Errorf("iterate options for hash: %w", err)
+			}
+			_ = optRows.Close()
+		}
+
+		var stimPtr *string
+		if c.stimulusHTML.Valid {
+			stimPtr = &c.stimulusHTML.String
+		}
+		var explPtr *string
+		if c.explanationHTML.Valid {
+			explPtr = &c.explanationHTML.String
+		}
+		var hintPtr *string
+		if c.hintHTML.Valid {
+			hintPtr = &c.hintHTML.String
+		}
+		hash, err := computeQuestionContentHash(
+			questionType,
+			c.stemHTML,
+			stimPtr,
+			explPtr,
+			hintPtr,
+			c.answerKey,
+			opts,
+		)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE question_versions
+			SET content_hash = $2
+			WHERE id = $1
+		`, c.id, hash); err != nil {
+			return fmt.Errorf("update content hash: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) loadReopenRequestTx(ctx context.Context, tx *sql.Tx, requestID int64) (*ReopenFinalRequest, error) {

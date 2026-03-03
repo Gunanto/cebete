@@ -9,6 +9,8 @@ cookie.txt
 Referensi/
 *.md
 !README.md
+Build_Server_Cebete.md
+scripts/build_server_cebete.sh
 Panduan_Deploy_di_VPS.md
 imports/
 .vscode/
