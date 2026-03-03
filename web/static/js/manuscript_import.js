@@ -34,7 +34,7 @@
         if (manuscriptImportForm) manuscriptImportForm.reset();
         if (manuscriptImportOutput) {
           manuscriptImportOutput.textContent =
-            "Format didukung: (1) TYPE/Stimulus/Q/Opsi/Kunci, atau (2) CSV header Mapel,Kode Soal,Nama Kode,stimulus,soal,opsi,kunci jawaban,Penjelasan. Mapel akan dipaksa ke pilihan dialog.";
+            "Format didukung: (1) TYPE/Stimulus/Q/Opsi/Kunci + opsional KodeTP, atau (2) CSV header Mapel,Kode Soal,Kode TP,Nama Kode,stimulus,soal,opsi,kunci jawaban,Penjelasan. Mapel akan dipaksa ke pilihan dialog.";
         }
         if (
           manuscriptImportDialog &&
@@ -126,6 +126,26 @@
                 defaultLearningGoalBySubject[subjectID] = resolved;
               }
               let learningGoalID = defaultLearningGoalBySubject[subjectID];
+              if (parsed.learning_goal_code) {
+                const resolvedByCode = Number(
+                  (typeof deps.resolveLearningGoalIDByCode === "function"
+                    ? deps.resolveLearningGoalIDByCode(
+                        subjectID,
+                        parsed.learning_goal_code,
+                      )
+                    : 0) || 0,
+                );
+                if (resolvedByCode <= 0) {
+                  throw new Error(
+                    "Blok " +
+                      String(blockNo) +
+                      ': KodeTP "' +
+                      String(parsed.learning_goal_code || "") +
+                      '" tidak ditemukan untuk mapel terpilih.',
+                  );
+                }
+                learningGoalID = resolvedByCode;
+              }
               let stimulusHTML = "";
               const questionCodeID = await deps.ensureQuestionCodeForImport(
                 subjectID,
@@ -216,7 +236,10 @@
           if (importedQuestionIDs.length) {
             const batches = await Promise.all(
               importedQuestionIDs.map(function (qid) {
-                return deps.api("/api/v1/questions/" + qid + "/versions", "GET");
+                return deps.api(
+                  "/api/v1/questions/" + qid + "/versions",
+                  "GET",
+                );
               }),
             );
             const mergedVersions = batches

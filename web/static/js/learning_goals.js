@@ -97,6 +97,28 @@
     return Number((goals[0] && goals[0].id) || 0);
   }
 
+  function normalizeLearningGoalCode(raw) {
+    const val = String(raw || "")
+      .trim()
+      .toUpperCase();
+    if (!val) return 0;
+    const m = val.match(/^TP[\s\-_]*([0-9]+)$/);
+    if (m && m[1]) return Number(m[1]) || 0;
+    if (/^[0-9]+$/.test(val)) return Number(val) || 0;
+    return 0;
+  }
+
+  function resolveLearningGoalIDByCode(subjectID, codeRaw) {
+    const goalID = normalizeLearningGoalCode(codeRaw);
+    if (goalID <= 0) return 0;
+    const goals = filterBySubject(subjectID);
+    const hit = goals.find(function (it) {
+      return Number((it && it.id) || 0) === goalID;
+    });
+    if (!hit) return 0;
+    return Number((hit && hit.id) || 0);
+  }
+
   function fillSelect(selectEl, subjectID) {
     if (!selectEl) return;
     const current = String(selectEl.value || "");
@@ -144,12 +166,7 @@
     const to = pageItems.length ? start + pageItems.length : 0;
     if (deps.learningGoalPageInfo) {
       deps.learningGoalPageInfo.textContent =
-        "Baris " +
-        String(from) +
-        " - " +
-        String(to) +
-        " dari " +
-        String(total);
+        "Baris " + String(from) + " - " + String(to) + " dari " + String(total);
     }
     if (deps.learningGoalPrevBtn) deps.learningGoalPrevBtn.disabled = page <= 1;
     if (deps.learningGoalNextBtn)
@@ -259,7 +276,8 @@
   function startEdit(item) {
     if (!deps || !deps.learningGoalForm || !item) return;
     const idField = deps.learningGoalForm.elements.namedItem("id");
-    const mapelField = deps.learningGoalForm.elements.namedItem("mata_pelajaran");
+    const mapelField =
+      deps.learningGoalForm.elements.namedItem("mata_pelajaran");
     const kelasField = deps.learningGoalForm.elements.namedItem("kelas");
     const semesterField = deps.learningGoalForm.elements.namedItem("semester");
     const materiField = deps.learningGoalForm.elements.namedItem("materi");
@@ -471,7 +489,11 @@
             semester: Number(fd.get("semester") || 0),
           };
           if (isEdit && targetID > 0) {
-            await deps.api("/api/v1/learning-goals/" + targetID, "PUT", payload);
+            await deps.api(
+              "/api/v1/learning-goals/" + targetID,
+              "PUT",
+              payload,
+            );
           } else {
             await deps.api("/api/v1/learning-goals", "POST", payload);
           }
@@ -613,66 +635,69 @@
     }
 
     if (deps.learningGoalImportForm) {
-      deps.learningGoalImportForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const file =
-          deps.learningGoalImportFile &&
-          deps.learningGoalImportFile.files &&
-          deps.learningGoalImportFile.files[0];
-        if (!file) {
-          deps.setMsg("Pilih file CSV terlebih dahulu.");
-          return;
-        }
-        const fd = new FormData();
-        fd.append("file", file);
-        const done = deps.beginBusy(
-          deps.learningGoalImportForm,
-          deps.msg,
-          "Mengimpor tujuan pembelajaran dari CSV...",
-        );
-        try {
-          const out = await deps.apiMultipart(
-            "/api/v1/learning-goals/import",
-            "POST",
-            fd,
+      deps.learningGoalImportForm.addEventListener(
+        "submit",
+        async function (e) {
+          e.preventDefault();
+          const file =
+            deps.learningGoalImportFile &&
+            deps.learningGoalImportFile.files &&
+            deps.learningGoalImportFile.files[0];
+          if (!file) {
+            deps.setMsg("Pilih file CSV terlebih dahulu.");
+            return;
+          }
+          const fd = new FormData();
+          fd.append("file", file);
+          const done = deps.beginBusy(
+            deps.learningGoalImportForm,
+            deps.msg,
+            "Mengimpor tujuan pembelajaran dari CSV...",
           );
-          const report = (out && out.report) || {};
-          const total = Number(report.total_rows || 0);
-          const okRows = Number(report.success_rows || 0);
-          const failRows = Number(report.failed_rows || 0);
-          const errors = Array.isArray(report.errors) ? report.errors : [];
-          if (deps.learningGoalImportOutput) {
-            deps.learningGoalImportOutput.textContent =
-              failRows > 0
-                ? formatImportErrorsMultiline(errors)
-                : "Import berhasil tanpa error.";
+          try {
+            const out = await deps.apiMultipart(
+              "/api/v1/learning-goals/import",
+              "POST",
+              fd,
+            );
+            const report = (out && out.report) || {};
+            const total = Number(report.total_rows || 0);
+            const okRows = Number(report.success_rows || 0);
+            const failRows = Number(report.failed_rows || 0);
+            const errors = Array.isArray(report.errors) ? report.errors : [];
+            if (deps.learningGoalImportOutput) {
+              deps.learningGoalImportOutput.textContent =
+                failRows > 0
+                  ? formatImportErrorsMultiline(errors)
+                  : "Import berhasil tanpa error.";
+            }
+            deps.setMsg(
+              "Import tujuan pembelajaran selesai. Total: " +
+                String(total) +
+                ", berhasil: " +
+                String(okRows) +
+                ", gagal: " +
+                String(failRows),
+            );
+            deps.learningGoalImportForm.reset();
+            await load();
+            if (
+              deps.learningGoalImportDialog &&
+              typeof deps.learningGoalImportDialog.close === "function"
+            ) {
+              deps.learningGoalImportDialog.close();
+            }
+          } catch (err) {
+            if (deps.learningGoalImportOutput) {
+              deps.learningGoalImportOutput.textContent =
+                "Import gagal:\n" + String(err.message || "Request failed");
+            }
+            deps.setMsg("Import tujuan pembelajaran gagal: " + err.message);
+          } finally {
+            done();
           }
-          deps.setMsg(
-            "Import tujuan pembelajaran selesai. Total: " +
-              String(total) +
-              ", berhasil: " +
-              String(okRows) +
-              ", gagal: " +
-              String(failRows),
-          );
-          deps.learningGoalImportForm.reset();
-          await load();
-          if (
-            deps.learningGoalImportDialog &&
-            typeof deps.learningGoalImportDialog.close === "function"
-          ) {
-            deps.learningGoalImportDialog.close();
-          }
-        } catch (err) {
-          if (deps.learningGoalImportOutput) {
-            deps.learningGoalImportOutput.textContent =
-              "Import gagal:\n" + String(err.message || "Request failed");
-          }
-          deps.setMsg("Import tujuan pembelajaran gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
+        },
+      );
     }
 
     if (deps.learningGoalBody) {
@@ -738,7 +763,10 @@
   function init(opts) {
     setDeps(opts);
     if (deps && deps.learningGoalPageSizeSelect) {
-      pageSize = Math.max(1, Number(deps.learningGoalPageSizeSelect.value) || 10);
+      pageSize = Math.max(
+        1,
+        Number(deps.learningGoalPageSizeSelect.value) || 10,
+      );
     }
     bindHandlers();
   }
@@ -751,6 +779,7 @@
     findByID: findByID,
     fillSelect: fillSelect,
     resolveDefaultLearningGoalID: resolveDefaultLearningGoalID,
+    resolveLearningGoalIDByCode: resolveLearningGoalIDByCode,
     load: load,
     loadClasses: loadClasses,
     fillSubjectSelect: fillSubjectSelect,

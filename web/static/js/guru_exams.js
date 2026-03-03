@@ -2,6 +2,7 @@
   var deps = null;
   var examsCache = [];
   var examFormSubmitting = false;
+  var pickQuestionsCache = [];
 
   function setDeps(opts) {
     deps = opts || {};
@@ -44,6 +45,107 @@
       opt.textContent = "Belum ada kode soal mapel ini";
       deps.examQuestionCodeSelect.appendChild(opt);
     }
+  }
+
+  function fillExamIDSelect(el, currentValue) {
+    if (!el) return;
+    const current = String(currentValue || el.value || "");
+    el.innerHTML = '<option value="">Pilih ujian...</option>';
+    const list = Array.isArray(examsCache) ? examsCache : [];
+    list.forEach(function (it) {
+      const o = document.createElement("option");
+      o.value = String(it.id || "");
+      const chunks = [
+        String(it.code || "").trim(),
+        String(it.title || "").trim(),
+        String(it.subject_name || "").trim(),
+      ].filter(Boolean);
+      o.textContent = chunks.join(" | ");
+      if (current && current === o.value) o.selected = true;
+      el.appendChild(o);
+    });
+  }
+
+  function fillExamIDSelects(currentExamID) {
+    if (!deps) return;
+    const current = String(currentExamID || "");
+    fillExamIDSelect(deps.questionExamIDInput, current);
+    fillExamIDSelect(deps.examQuestionCodeRuleExamIDInput, current);
+    fillExamIDSelect(deps.questionPickExamIDInput, current);
+  }
+
+  function fillExamQuestionPickCodeSelectByExam(examID) {
+    if (!deps || typeof deps.fillQuestionCodeSelect !== "function") return;
+    const id = Number(examID || 0);
+    const exam = findExamByID(id);
+    const subjectID = Number((exam && exam.subject_id) || 0);
+    deps.fillQuestionCodeSelect(
+      deps.examQuestionPickCodeSelect,
+      subjectID,
+      false,
+    );
+    if (
+      deps.examQuestionPickCodeSelect &&
+      deps.examQuestionPickCodeSelect.options.length === 0
+    ) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Belum ada kode soal mapel ini";
+      deps.examQuestionPickCodeSelect.appendChild(opt);
+    }
+  }
+
+  function renderPickQuestions(items) {
+    if (!deps || !deps.examQuestionPickBody) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      deps.examQuestionPickBody.innerHTML =
+        '<tr><td colspan="5" class="muted">Tidak ada soal untuk kode soal ini.</td></tr>';
+      return;
+    }
+    deps.examQuestionPickBody.innerHTML = "";
+    items.forEach(function (it) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = [
+        '<td><input type="checkbox" data-pick-id="' +
+          deps.escapeHtml(String(it.id || "")) +
+          '"></td>',
+        "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
+        "<td>" +
+          deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
+          "</td>",
+        "<td>" + deps.escapeHtml(String(it.title || "")) + "</td>",
+        '<td><input type="number" min="0.1" step="0.1" value="1" class="input-inline" data-pick-weight="' +
+          deps.escapeHtml(String(it.id || "")) +
+          '"></td>',
+      ].join("");
+      deps.examQuestionPickBody.appendChild(tr);
+    });
+  }
+
+  async function loadPickQuestions(examID, questionCodeID) {
+    if (!deps) return [];
+    const id = Number(examID || 0);
+    const codeID = Number(questionCodeID || 0);
+    if (id <= 0 || codeID <= 0) {
+      renderPickQuestions([]);
+      return [];
+    }
+    const exam = findExamByID(id);
+    const subjectID = Number((exam && exam.subject_id) || 0);
+    if (subjectID <= 0) {
+      renderPickQuestions([]);
+      return [];
+    }
+    const rows = await deps.api(
+      "/api/v1/questions?subject_id=" + subjectID,
+      "GET",
+    );
+    const items = Array.isArray(rows) ? rows : [];
+    pickQuestionsCache = items.filter(function (it) {
+      return Number((it && it.question_code_id) || 0) === codeID;
+    });
+    renderPickQuestions(pickQuestionsCache);
+    return pickQuestionsCache;
   }
 
   function renderExamQuestionCodeRules(items) {
@@ -119,6 +221,7 @@
   async function loadExamManageTable() {
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     examsCache = Array.isArray(exams) ? exams : [];
+    fillExamIDSelects();
     if (deps && typeof deps.refreshStats === "function") {
       deps.refreshStats();
     }
@@ -249,7 +352,7 @@
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
-          review_policy: String(fd.get("review_policy") || "score_only"),
+          review_policy: String(fd.get("review_policy") || "after_submit"),
           randomize_questions: fd.get("randomize_questions") !== null,
           randomize_options: fd.get("randomize_options") !== null,
           is_active: true,
@@ -316,7 +419,9 @@
               maxAttemptField.value = String(examRow.max_attempts || 1);
             }
             if (policyField) {
-              policyField.value = String(examRow.review_policy || "score_only");
+              policyField.value = String(
+                examRow.review_policy || "after_submit",
+              );
             }
             resetRandomizeInputsToExam(examRow);
           }
@@ -326,7 +431,9 @@
           if (deps.examQuestionCodeRuleExamIDInput) {
             deps.examQuestionCodeRuleExamIDInput.value = String(examID);
           }
+          fillExamIDSelects(examID);
           fillExamQuestionCodeSelectByExam(examID);
+          fillExamQuestionPickCodeSelectByExam(examID);
           if (typeof deps.onExamSelected === "function") {
             deps.onExamSelected(examID);
           }
@@ -363,7 +470,7 @@
         const fd = new FormData(deps.examQuestionForm);
         const examID = Number(fd.get("exam_id") || 0);
         if (examID <= 0) {
-          deps.setMsg("Isi Exam ID untuk menambah naskah.");
+          deps.setMsg("Pilih ujian untuk menambah naskah.");
           return;
         }
         const payload = {
@@ -399,7 +506,11 @@
           deps.examQuestionCodeRuleExamIDInput.value =
             examID > 0 ? String(examID) : "";
         }
+        if (deps.questionPickExamIDInput) {
+          deps.questionPickExamIDInput.value = examID > 0 ? String(examID) : "";
+        }
         fillExamQuestionCodeSelectByExam(examID);
+        fillExamQuestionPickCodeSelectByExam(examID);
       });
     }
 
@@ -411,6 +522,7 @@
             deps.examQuestionCodeRuleExamIDInput.value || 0,
           );
           fillExamQuestionCodeSelectByExam(examID);
+          fillExamQuestionPickCodeSelectByExam(examID);
           try {
             await loadExamQuestionCodeRules(examID);
           } catch (_) {
@@ -418,6 +530,132 @@
           }
         },
       );
+    }
+
+    if (deps.questionPickExamIDInput) {
+      deps.questionPickExamIDInput.addEventListener("change", function () {
+        const examID = Number(deps.questionPickExamIDInput.value || 0);
+        if (deps.questionExamIDInput) {
+          deps.questionExamIDInput.value = examID > 0 ? String(examID) : "";
+        }
+        if (deps.examQuestionCodeRuleExamIDInput) {
+          deps.examQuestionCodeRuleExamIDInput.value =
+            examID > 0 ? String(examID) : "";
+        }
+        fillExamQuestionCodeSelectByExam(examID);
+        fillExamQuestionPickCodeSelectByExam(examID);
+      });
+    }
+
+    if (deps.examQuestionPickLoadBtn) {
+      deps.examQuestionPickLoadBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (deps.questionPickExamIDInput &&
+            deps.questionPickExamIDInput.value) ||
+            0,
+        );
+        const codeID = Number(
+          (deps.examQuestionPickCodeSelect &&
+            deps.examQuestionPickCodeSelect.value) ||
+            0,
+        );
+        if (examID <= 0) {
+          deps.setMsg("Pilih ujian untuk memuat soal.");
+          return;
+        }
+        if (codeID <= 0) {
+          deps.setMsg("Pilih kode soal untuk memuat daftar soal.");
+          return;
+        }
+        const done = deps.beginBusy(
+          deps.examQuestionPickLoadBtn,
+          deps.msg,
+          "Memuat daftar soal...",
+        );
+        try {
+          await loadPickQuestions(examID, codeID);
+          deps.setMsg("Daftar soal berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat daftar soal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (deps.examQuestionPickToggleBtn) {
+      deps.examQuestionPickToggleBtn.addEventListener("click", function () {
+        if (!deps.examQuestionPickBody) return;
+        const checks = deps.examQuestionPickBody.querySelectorAll(
+          'input[type="checkbox"][data-pick-id]',
+        );
+        if (!checks.length) return;
+        const shouldCheck = Array.from(checks).some(function (c) {
+          return !c.checked;
+        });
+        checks.forEach(function (c) {
+          c.checked = shouldCheck;
+        });
+      });
+    }
+
+    if (deps.examQuestionPickAddBtn) {
+      deps.examQuestionPickAddBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (deps.questionPickExamIDInput &&
+            deps.questionPickExamIDInput.value) ||
+            0,
+        );
+        if (examID <= 0) {
+          deps.setMsg("Pilih ujian sebelum menambahkan soal.");
+          return;
+        }
+        if (!deps.examQuestionPickBody) return;
+        const checks = Array.from(
+          deps.examQuestionPickBody.querySelectorAll(
+            'input[type="checkbox"][data-pick-id]',
+          ),
+        ).filter(function (c) {
+          return c.checked;
+        });
+        if (!checks.length) {
+          deps.setMsg("Pilih minimal satu soal.");
+          return;
+        }
+        const done = deps.beginBusy(
+          deps.examQuestionPickAddBtn,
+          deps.msg,
+          "Menambahkan soal ke ujian...",
+        );
+        try {
+          for (let i = 0; i < checks.length; i += 1) {
+            const id = Number(checks[i].getAttribute("data-pick-id") || 0);
+            if (id <= 0) continue;
+            const weightEl = deps.examQuestionPickBody.querySelector(
+              'input[data-pick-weight="' + String(id) + '"]',
+            );
+            const weight = Number((weightEl && weightEl.value) || 1);
+            await deps.api(
+              "/api/v1/admin/exams/" + examID + "/questions",
+              "POST",
+              {
+                question_id: id,
+                seq_no: 0,
+                weight: weight > 0 ? weight : 1,
+              },
+            );
+          }
+          await Promise.all([loadExamQuestions(examID), loadExamManageTable()]);
+          deps.setMsg(
+            "Soal terpilih berhasil ditambahkan. Total: " +
+              String(checks.length),
+          );
+        } catch (err) {
+          deps.setMsg("Gagal menambahkan soal: " + err.message);
+        } finally {
+          done();
+        }
+      });
     }
 
     if (deps.examQuestionCodeRuleForm) {
@@ -428,7 +666,7 @@
           const fd = new FormData(deps.examQuestionCodeRuleForm);
           const examID = Number(fd.get("exam_id") || 0);
           if (examID <= 0) {
-            deps.setMsg("Isi Exam ID untuk menyimpan rule kode soal.");
+            deps.setMsg("Pilih ujian untuk menyimpan rule kode soal.");
             return;
           }
           const strategy = String(fd.get("strategy") || "")
@@ -477,7 +715,7 @@
             0,
         );
         if (examID <= 0) {
-          deps.setMsg("Pilih Exam ID sebelum sinkronisasi dari kode soal.");
+          deps.setMsg("Pilih ujian sebelum sinkronisasi dari kode soal.");
           return;
         }
         const done = deps.beginBusy(

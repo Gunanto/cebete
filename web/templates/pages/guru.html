@@ -56,6 +56,19 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="exams"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M5 5h14v14H5z" />
+                                    <path d="M8 9h8M8 13h6M8 17h4" />
+                                </svg>
+                            </span>
+                            Kelola Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
                             data-guru-menu="learning-goals"
                         >
                             <span class="admin-menu-icon" aria-hidden="true">
@@ -80,19 +93,6 @@
                                 </svg>
                             </span>
                             Naskah Soal
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-secondary admin-menu-btn"
-                            data-guru-menu="exams"
-                        >
-                            <span class="admin-menu-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" focusable="false">
-                                    <path d="M5 5h14v14H5z" />
-                                    <path d="M8 9h8M8 13h6M8 17h4" />
-                                </svg>
-                            </span>
-                            Kelola Ujian
                         </button>
                         <button
                             type="button"
@@ -232,150 +232,355 @@
             </section>
 
             <section id="guru-learning-goals-panel" class="panel" hidden>
-                <div class="admin-section-head">
-                    <h3>Tujuan Pembelajaran</h3>
-                    <div class="action-icons">
-                        <button
-                            id="guru-learning-goals-template-btn"
-                            class="btn btn-secondary btn-inline"
-                            type="button"
-                        >
-                            Template CSV
-                        </button>
-                        <button
-                            id="guru-learning-goals-import-btn"
-                            class="btn btn-secondary btn-inline"
-                            type="button"
-                        >
-                            Import CSV
-                        </button>
-                        <button
-                            id="guru-learning-goals-refresh-btn"
-                            class="btn btn-secondary btn-inline"
-                            type="button"
-                        >
-                            Muat Tujuan Pembelajaran
-                        </button>
-                    </div>
-                </div>
+                <div class="learning-goals-pro">
+                    <style>
+                        .learning-goals-pro {
+                            --primary: #2d31a6;
+                            --primary-hover: #1e217a;
+                            --bg-card: #ffffff;
+                            --text-main: #1e293b;
+                            --text-muted: #64748b;
+                            --border-color: #e2e8f0;
+                            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                        }
+                        .learning-goals-pro .lg-header {
+                            background: linear-gradient(
+                                135deg,
+                                #2d31a6 0%,
+                                #4c51bf 100%
+                            );
+                            color: #fff;
+                            padding: 1.25rem 1.5rem;
+                            border-radius: 0.75rem;
+                            margin-bottom: 1.5rem;
+                            box-shadow: var(--shadow);
+                        }
+                        .learning-goals-pro .lg-header h3 {
+                            margin: 0 0 0.25rem 0;
+                            font-size: 1.35rem;
+                        }
+                        .learning-goals-pro .lg-header p {
+                            margin: 0;
+                            font-size: 0.875rem;
+                            opacity: 0.9;
+                        }
+                        .learning-goals-pro .lg-card {
+                            background: var(--bg-card);
+                            border-radius: 0.75rem;
+                            border: 1px solid var(--border-color);
+                            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+                            margin-bottom: 1.5rem;
+                            overflow: hidden;
+                        }
+                        .learning-goals-pro .lg-card-header {
+                            padding: 1rem 1.25rem;
+                            border-bottom: 1px solid var(--border-color);
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 0.75rem;
+                            flex-wrap: wrap;
+                        }
+                        .learning-goals-pro .lg-card-header h4 {
+                            margin: 0;
+                            font-size: 1.05rem;
+                            font-weight: 600;
+                            color: var(--text-main);
+                        }
+                        .learning-goals-pro .lg-card-body {
+                            padding: 1.25rem;
+                        }
+                        .learning-goals-pro .lg-actions {
+                            display: flex;
+                            gap: 0.5rem;
+                            flex-wrap: wrap;
+                        }
+                        .learning-goals-pro .lg-grid {
+                            display: grid;
+                            grid-template-columns: repeat(
+                                auto-fit,
+                                minmax(240px, 1fr)
+                            );
+                            gap: 1.25rem;
+                            margin-bottom: 1rem;
+                        }
+                        .learning-goals-pro .lg-form-group label {
+                            display: block;
+                            font-size: 0.875rem;
+                            font-weight: 600;
+                            margin-bottom: 0.5rem;
+                            color: var(--text-main);
+                        }
+                        .learning-goals-pro .lg-form-group input,
+                        .learning-goals-pro .lg-form-group select,
+                        .learning-goals-pro .lg-form-group textarea {
+                            width: 100%;
+                            padding: 0.625rem 0.875rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            color: var(--text-main);
+                            outline: none;
+                            transition: border-color 0.2s;
+                        }
+                        .learning-goals-pro .lg-form-group input:focus,
+                        .learning-goals-pro .lg-form-group select:focus,
+                        .learning-goals-pro .lg-form-group textarea:focus {
+                            border-color: var(--primary);
+                            box-shadow: 0 0 0 3px rgba(45, 49, 166, 0.1);
+                        }
+                        .learning-goals-pro .lg-form-group textarea {
+                            resize: vertical;
+                            min-height: 80px;
+                        }
+                        .learning-goals-pro .lg-search {
+                            margin-bottom: 1rem;
+                        }
+                        .learning-goals-pro .lg-search input {
+                            width: 100%;
+                            padding: 0.75rem 1rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            background-color: #f8fafc;
+                        }
+                        .learning-goals-pro .lg-table-wrap {
+                            overflow-x: auto;
+                        }
+                        .learning-goals-pro table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            font-size: 0.875rem;
+                        }
+                        .learning-goals-pro th {
+                            background-color: #f8fafc;
+                            padding: 0.875rem 1rem;
+                            text-align: left;
+                            font-weight: 600;
+                            color: var(--text-muted);
+                            border-bottom: 2px solid var(--border-color);
+                        }
+                        .learning-goals-pro td {
+                            padding: 1rem;
+                            border-bottom: 1px solid #f1f5f9;
+                            vertical-align: middle;
+                        }
+                        .learning-goals-pro tr:hover {
+                            background-color: #f8fafc;
+                        }
+                        .learning-goals-pro .lg-pagination {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-top: 1rem;
+                            padding-top: 1rem;
+                            border-top: 1px solid var(--border-color);
+                            flex-wrap: wrap;
+                            gap: 0.75rem;
+                        }
+                        .learning-goals-pro .lg-pagination .muted {
+                            color: var(--text-muted);
+                        }
+                        .learning-goals-pro .btn.btn-primary {
+                            background: var(--primary);
+                            color: #fff;
+                        }
+                        .learning-goals-pro .btn.btn-primary:hover {
+                            background: var(--primary-hover);
+                        }
+                        .learning-goals-pro .btn.btn-outline {
+                            background: #fff;
+                            border: 1px solid var(--border-color);
+                            color: var(--text-muted);
+                        }
+                        .learning-goals-pro .btn.btn-outline:hover {
+                            background: #f8fafc;
+                            border-color: var(--primary);
+                            color: var(--primary);
+                        }
+                    </style>
 
-                <form id="guru-learning-goal-form" class="form-grid mt">
-                    <input type="hidden" name="id" />
-                    <label
-                        >Mata Pelajaran
-                        <select
-                            id="guru-learning-goal-mapel"
-                            name="mata_pelajaran"
-                            required
-                        >
-                            <option value="">Pilih Mata Pelajaran</option>
-                        </select>
-                    </label>
-                    <label
-                        >Tingkat/Grade
-                        <select
-                            id="guru-learning-goal-kelas"
-                            name="kelas"
-                            required
-                        >
-                            <option value="">Pilih Tingkat/Grade</option>
-                        </select>
-                    </label>
-                    <label
-                        >Semester
-                        <input type="number" name="semester" min="1" required />
-                    </label>
-                    <label
-                        >Materi
-                        <input type="text" name="materi" required />
-                    </label>
-                    <label
-                        >Tujuan Pembelajaran
-                        <textarea
-                            name="tujuan_pembelajaran"
-                            rows="2"
-                            required
-                        ></textarea>
-                    </label>
-                    <div class="action-icons">
-                        <button
-                            id="guru-learning-goal-submit-btn"
-                            class="btn"
-                            type="submit"
-                        >
-                            Simpan Tujuan Pembelajaran
-                        </button>
-                        <button
-                            id="guru-learning-goal-cancel-edit-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                            hidden
-                        >
-                            Batal Edit
-                        </button>
+                    <div class="lg-header">
+                        <h3>Tujuan Pembelajaran</h3>
+                        <p>
+                            Kelola tujuan pembelajaran per mapel dan jenjang
+                            dengan mudah.
+                        </p>
                     </div>
-                </form>
 
-                <form id="guru-learning-goals-search-form" class="form-grid mt">
-                    <label>
-                        Pencarian
-                        <input
-                            id="guru-learning-goals-search"
-                            type="search"
-                            placeholder="Cari mapel, tingkat/grade, materi, tujuan, semester..."
-                        />
-                    </label>
-                </form>
+                    <section class="lg-card">
+                        <div class="lg-card-header">
+                            <h4>Tambah Tujuan Pembelajaran</h4>
+                            <div class="lg-actions">
+                                <button
+                                    id="guru-learning-goals-template-btn"
+                                    class="btn btn-secondary btn-inline"
+                                    type="button"
+                                >
+                                    Template CSV
+                                </button>
+                                <button
+                                    id="guru-learning-goals-import-btn"
+                                    class="btn btn-secondary btn-inline"
+                                    type="button"
+                                >
+                                    Import CSV
+                                </button>
+                                <button
+                                    id="guru-learning-goals-refresh-btn"
+                                    class="btn btn-secondary btn-inline"
+                                    type="button"
+                                >
+                                    Muat Tujuan Pembelajaran
+                                </button>
+                            </div>
+                        </div>
+                        <div class="lg-card-body">
+                            <form id="guru-learning-goal-form">
+                                <input type="hidden" name="id" />
+                                <div class="lg-grid">
+                                    <div class="lg-form-group">
+                                        <label>Mata Pelajaran</label>
+                                        <select
+                                            id="guru-learning-goal-mapel"
+                                            name="mata_pelajaran"
+                                            required
+                                        >
+                                            <option value="">
+                                                Pilih Mata Pelajaran
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="lg-form-group">
+                                        <label>Tingkat/Grade</label>
+                                        <select
+                                            id="guru-learning-goal-kelas"
+                                            name="kelas"
+                                            required
+                                        >
+                                            <option value="">
+                                                Pilih Tingkat/Grade
+                                            </option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="lg-form-group">
+                                    <label>Semester</label>
+                                    <input
+                                        type="number"
+                                        name="semester"
+                                        min="1"
+                                        required
+                                    />
+                                </div>
+                                <div class="lg-form-group">
+                                    <label>Materi</label>
+                                    <input type="text" name="materi" required />
+                                </div>
+                                <div class="lg-form-group">
+                                    <label>Tujuan Pembelajaran</label>
+                                    <textarea
+                                        name="tujuan_pembelajaran"
+                                        rows="2"
+                                        required
+                                    ></textarea>
+                                </div>
+                                <div class="lg-actions">
+                                    <button
+                                        id="guru-learning-goal-submit-btn"
+                                        class="btn btn-primary"
+                                        type="submit"
+                                    >
+                                        Simpan Tujuan Pembelajaran
+                                    </button>
+                                    <button
+                                        id="guru-learning-goal-cancel-edit-btn"
+                                        class="btn btn-secondary"
+                                        type="button"
+                                        hidden
+                                    >
+                                        Batal Edit
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
 
-                <div class="table-wrap mt">
-                    <table class="bs-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Mapel</th>
-                                <th>Tingkat/Grade</th>
-                                <th>Semester</th>
-                                <th>Materi</th>
-                                <th>Tujuan</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="guru-learning-goal-body">
-                            <tr>
-                                <td colspan="7" class="muted">
-                                    Belum ada data tujuan pembelajaran.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="action-icons mt">
-                    <label class="muted">
-                        Per halaman
-                        <select id="guru-learning-goals-page-size">
-                            <option value="10">10</option>
-                            <option value="20">20</option>
-                            <option value="30">30</option>
-                            <option value="50">50</option>
-                        </select>
-                    </label>
-                    <button
-                        id="guru-learning-goals-prev-btn"
-                        class="btn btn-secondary btn-inline"
-                        type="button"
-                    >
-                        Sebelumnya
-                    </button>
-                    <button
-                        id="guru-learning-goals-next-btn"
-                        class="btn btn-secondary btn-inline"
-                        type="button"
-                    >
-                        Berikutnya
-                    </button>
-                    <div id="guru-learning-goals-page-info" class="muted">
-                        Baris 0 - 0
-                    </div>
+                    <section class="lg-card">
+                        <div class="lg-card-body">
+                            <form
+                                id="guru-learning-goals-search-form"
+                                class="lg-search"
+                            >
+                                <label>Pencarian</label>
+                                <input
+                                    id="guru-learning-goals-search"
+                                    type="search"
+                                    placeholder="Cari mapel, tingkat/grade, materi, tujuan, semester..."
+                                />
+                            </form>
+
+                            <div class="lg-table-wrap">
+                                <table class="bs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Mapel</th>
+                                            <th>Tingkat/Grade</th>
+                                            <th>Semester</th>
+                                            <th>Materi</th>
+                                            <th>Tujuan</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="guru-learning-goal-body">
+                                        <tr>
+                                            <td colspan="7" class="muted">
+                                                Belum ada data tujuan
+                                                pembelajaran.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="lg-pagination">
+                                <label class="muted">
+                                    Per halaman
+                                    <select
+                                        id="guru-learning-goals-page-size"
+                                        style="width: auto"
+                                    >
+                                        <option value="10">10</option>
+                                        <option value="20">20</option>
+                                        <option value="30">30</option>
+                                        <option value="50">50</option>
+                                    </select>
+                                </label>
+                                <div class="lg-actions">
+                                    <button
+                                        id="guru-learning-goals-prev-btn"
+                                        class="btn btn-outline btn-inline"
+                                        type="button"
+                                    >
+                                        Sebelumnya
+                                    </button>
+                                    <button
+                                        id="guru-learning-goals-next-btn"
+                                        class="btn btn-outline btn-inline"
+                                        type="button"
+                                    >
+                                        Berikutnya
+                                    </button>
+                                </div>
+                                <div
+                                    id="guru-learning-goals-page-info"
+                                    class="muted"
+                                >
+                                    Baris 0 - 0
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </section>
 
@@ -866,8 +1071,8 @@
                         <label>
                             Lihat Setelah Mengerjakan
                             <select name="review_policy">
-                                <option value="score_only">
-                                    Tampilkan Nilai Akhir saja
+                                <option value="immediate">
+                                    Tampilkan langsung
                                 </option>
                                 <option value="after_submit">
                                     Tampilkan setelah submit
@@ -875,8 +1080,8 @@
                                 <option value="after_exam_end">
                                     Tampilkan setelah ujian berakhir
                                 </option>
-                                <option value="manual_release">
-                                    Tampilkan setelah dirilis manual
+                                <option value="disabled">
+                                    Tidak ditampilkan
                                 </option>
                             </select>
                         </label>
@@ -926,14 +1131,14 @@
                     <h4>Naskah ke Ujian</h4>
                     <form id="guru-exam-question-form" class="form-grid">
                         <label>
-                            Exam ID
-                            <input
+                            Pilih Ujian
+                            <select
                                 id="guru-question-exam-id"
                                 name="exam_id"
-                                type="number"
-                                min="1"
                                 required
-                            />
+                            >
+                                <option value="">Pilih ujian...</option>
+                            </select>
                         </label>
                         <label>
                             Question ID
@@ -978,14 +1183,14 @@
                         class="form-grid"
                     >
                         <label>
-                            Exam ID
-                            <input
+                            Pilih Ujian
+                            <select
                                 id="guru-question-code-rule-exam-id"
                                 name="exam_id"
-                                type="number"
-                                min="1"
                                 required
-                            />
+                            >
+                                <option value="">Pilih ujian...</option>
+                            </select>
                         </label>
                         <label>
                             Kode Soal
@@ -1005,7 +1210,7 @@
                             </select>
                         </label>
                         <label>
-                            Pick Count (jika random)
+                            Jumlah Soal (acak)
                             <input name="pick_count" type="number" min="1" />
                         </label>
                         <label>
@@ -1075,6 +1280,78 @@
                                 <tr>
                                     <td colspan="5" class="muted">
                                         Pilih exam lalu muat soal ujian.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="admin-card">
+                    <h4 class="admin-card-title-lg">
+                        Pilih Soal per Kode Soal
+                    </h4>
+                    <form id="guru-exam-question-pick-form" class="form-grid">
+                        <label>
+                            Pilih Ujian
+                            <select
+                                id="guru-question-pick-exam-id"
+                                name="exam_id"
+                                required
+                            >
+                                <option value="">Pilih ujian...</option>
+                            </select>
+                        </label>
+                        <label>
+                            Kode Soal
+                            <select
+                                id="guru-exam-question-pick-code-select"
+                                name="question_code_id"
+                                required
+                            >
+                                <option value="">Pilih kode soal</option>
+                            </select>
+                        </label>
+                        <button
+                            id="guru-exam-question-pick-load-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Muat Soal
+                        </button>
+                    </form>
+                    <div class="mt">
+                        <button
+                            id="guru-exam-question-pick-toggle-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Pilih semua
+                        </button>
+                        <button
+                            id="guru-exam-question-pick-add-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Tambahkan Soal Terpilih
+                        </button>
+                    </div>
+                    <div class="table-wrap mt">
+                        <table class="bs-table">
+                            <thead>
+                                <tr>
+                                    <th>Pilih</th>
+                                    <th>ID</th>
+                                    <th>Tipe</th>
+                                    <th>Judul</th>
+                                    <th>Bobot</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guru-exam-question-pick-body">
+                                <tr>
+                                    <td colspan="5" class="muted">
+                                        Pilih ujian dan kode soal, lalu muat
+                                        daftar soal.
                                     </td>
                                 </tr>
                             </tbody>

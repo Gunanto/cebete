@@ -343,7 +343,7 @@
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
-          review_policy: String(fd.get("review_policy") || "score_only"),
+          review_policy: String(fd.get("review_policy") || "after_submit"),
           randomize_questions: nextRandomizeQuestions,
           randomize_options: nextRandomizeOptions,
           is_active: true,

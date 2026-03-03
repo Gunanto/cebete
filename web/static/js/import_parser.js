@@ -37,6 +37,7 @@
     if (!hasCoreHeader) return [];
     const idxMapel = idx("mapel");
     const idxKode = idx("kode soal");
+    const idxKodeTP = idx("kode tp");
     const idxNama = idx("nama kode");
     const idxStimulus = idx("stimulus");
     const idxSoal = idx("soal");
@@ -48,6 +49,7 @@
       return {
         mapel: parts[idxMapel] || "",
         kode_soal: parts[idxKode] || "",
+        kode_tp: parts[idxKodeTP] || "",
         nama_kode: parts[idxNama] || "",
         stimulus: parts[idxStimulus] || "",
         soal: parts[idxSoal] || "",
@@ -366,6 +368,7 @@
       mapel: String(item.mapel || "").trim(),
       question_code_code: String(item.question_code_code || "").trim(),
       question_code_name: String(item.question_code_name || "").trim(),
+      learning_goal_code: String(item.learning_goal_code || "").trim(),
     };
   }
 
@@ -389,6 +392,7 @@
       mapel: "",
       question_code_code: "",
       question_code_name: "",
+      learning_goal_code: "",
       explanation: "",
       question_type: "",
       stimulus: "",
@@ -455,6 +459,7 @@
         keyCompact === "MATAPELAJARAN" ||
         keyCompact === "KODESOAL" ||
         keyCompact === "KODE" ||
+        keyCompact === "KODETP" ||
         keyCompact === "NAMAKODE" ||
         keyCompact === "NAMAKODESOAL" ||
         keyCompact === "PENJELASAN" ||
@@ -483,6 +488,11 @@
       if (keyCompact === "KODESOAL" || keyCompact === "KODE") {
         item.question_code_code = val;
         lastField = "kode";
+        return;
+      }
+      if (keyCompact === "KODETP") {
+        item.learning_goal_code = val;
+        lastField = "kodetp";
         return;
       }
       if (keyCompact === "NAMAKODE" || keyCompact === "NAMAKODESOAL") {
@@ -537,6 +547,7 @@
       mapel: String((record && record.mapel) || "").trim(),
       question_code_code: String((record && record.kode_soal) || "").trim(),
       question_code_name: String((record && record.nama_kode) || "").trim(),
+      learning_goal_code: String((record && record.kode_tp) || "").trim(),
       explanation: String((record && record.penjelasan) || "").trim(),
       stimulus: String((record && record.stimulus) || "").trim(),
       question: String((record && record.soal) || "").trim(),

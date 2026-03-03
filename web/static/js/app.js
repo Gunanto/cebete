@@ -3972,6 +3972,27 @@
     const examQuestionCodeSyncBtn = document.getElementById(
       "guru-exam-question-code-sync-btn",
     );
+    const examQuestionPickForm = document.getElementById(
+      "guru-exam-question-pick-form",
+    );
+    const questionPickExamIDInput = document.getElementById(
+      "guru-question-pick-exam-id",
+    );
+    const examQuestionPickCodeSelect = document.getElementById(
+      "guru-exam-question-pick-code-select",
+    );
+    const examQuestionPickLoadBtn = document.getElementById(
+      "guru-exam-question-pick-load-btn",
+    );
+    const examQuestionPickToggleBtn = document.getElementById(
+      "guru-exam-question-pick-toggle-btn",
+    );
+    const examQuestionPickAddBtn = document.getElementById(
+      "guru-exam-question-pick-add-btn",
+    );
+    const examQuestionPickBody = document.getElementById(
+      "guru-exam-question-pick-body",
+    );
     const resultsRefreshBtn = document.getElementById(
       "guru-results-refresh-btn",
     );
@@ -4268,6 +4289,16 @@
       return 0;
     }
 
+    function resolveLearningGoalIDByCode(subjectID, codeRaw) {
+      if (
+        LearningGoals &&
+        typeof LearningGoals.resolveLearningGoalIDByCode === "function"
+      ) {
+        return LearningGoals.resolveLearningGoalIDByCode(subjectID, codeRaw);
+      }
+      return 0;
+    }
+
     async function loadLearningGoals() {
       if (LearningGoals && typeof LearningGoals.load === "function") {
         return LearningGoals.load();
@@ -4519,6 +4550,13 @@
         examQuestionCodeSelect: examQuestionCodeSelect,
         examQuestionCodeRuleBody: examQuestionCodeRuleBody,
         examQuestionCodeSyncBtn: examQuestionCodeSyncBtn,
+        examQuestionPickForm: examQuestionPickForm,
+        questionPickExamIDInput: questionPickExamIDInput,
+        examQuestionPickCodeSelect: examQuestionPickCodeSelect,
+        examQuestionPickLoadBtn: examQuestionPickLoadBtn,
+        examQuestionPickToggleBtn: examQuestionPickToggleBtn,
+        examQuestionPickAddBtn: examQuestionPickAddBtn,
+        examQuestionPickBody: examQuestionPickBody,
         onExamsLoaded: function (exams) {
           if (GuruResults && typeof GuruResults.setExams === "function") {
             GuruResults.setExams(exams);
@@ -4584,6 +4622,7 @@
         resolveImportSubjectID: resolveImportSubjectID,
         ensureQuestionCodeForImport: ensureQuestionCodeForImport,
         resolveDefaultLearningGoalID: resolveDefaultLearningGoalID,
+        resolveLearningGoalIDByCode: resolveLearningGoalIDByCode,
         findSubjectByID: findSubjectByID,
         escapeHtml: escapeHtml,
         loadBlueprints: loadBlueprints,
@@ -4942,6 +4981,17 @@
           subjects: subjectsPanel,
         },
         getMenuInfo: getGuruMenuInfo,
+        onMenuActivated: async function (key) {
+          if (key !== "exams") return;
+          try {
+            await Promise.all([
+              loadGuruExamManageTable(),
+              loadGuruExamSubjectOptions(),
+            ]);
+          } catch (_) {
+            // error already surfaced by the module
+          }
+        },
       });
     }
 

@@ -59,6 +59,9 @@
     toggleMenuButtons(key);
     togglePanels(key);
     updateHeader(key);
+    if (deps && typeof deps.onMenuActivated === "function") {
+      deps.onMenuActivated(key);
+    }
     return key;
   }
 
