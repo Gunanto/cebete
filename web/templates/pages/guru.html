@@ -125,6 +125,21 @@
                             </span>
                             Halaman Ujian
                         </a>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="guide"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M4 5h14a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2z"
+                                    />
+                                    <path d="M6 19V5a2 2 0 0 0-2-2h12" />
+                                </svg>
+                            </span>
+                            Petunjuk Penggunaan
+                        </button>
                     </div>
                 </section>
             </div>
@@ -671,7 +686,15 @@
                         </div>
                     </div>
                     <div class="table-wrap mt">
-                        <table class="bs-table">
+                        <table class="bs-table exam-pick-table">
+                            <colgroup>
+                                <col class="col-id" />
+                                <col class="col-type" />
+                                <col class="col-title" />
+                                <col class="col-code" />
+                                <col class="col-weight" />
+                                <col class="col-actions" />
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>
@@ -1013,7 +1036,7 @@
             <section id="guru-exams-panel" class="panel" hidden>
                 <div class="admin-card">
                     <div class="admin-section-head">
-                        <h3>Pengelolaan Pelaksanaan Ujian</h3>
+                        <h3>Daftar Nama Ujian</h3>
                         <button
                             id="guru-exams-refresh-btn"
                             class="btn btn-secondary"
@@ -1021,6 +1044,33 @@
                         >
                             Muat Ujian
                         </button>
+                    </div>
+                    <div class="table-wrap mt">
+                        <table class="bs-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nama Ujian</th>
+                                    <th>Mapel</th>
+                                    <th>Durasi</th>
+                                    <th>Attempt</th>
+                                    <th>Soal</th>
+                                    <th>Peserta</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guru-exams-body">
+                                <tr>
+                                    <td colspan="8" class="muted">
+                                        Belum ada data ujian.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="admin-section-head mt">
+                        <h3>Buat atau Perbaiki Nama Ujian</h3>
                     </div>
 
                     <form id="guru-exam-form" class="form-grid mt">
@@ -1101,196 +1151,12 @@
                             Simpan Ujian
                         </button>
                     </form>
-
-                    <div class="table-wrap mt">
-                        <table class="bs-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Kode/Judul</th>
-                                    <th>Mapel</th>
-                                    <th>Durasi</th>
-                                    <th>Attempt</th>
-                                    <th>Soal</th>
-                                    <th>Peserta</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="guru-exams-body">
-                                <tr>
-                                    <td colspan="8" class="muted">
-                                        Belum ada data ujian.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
                 </div>
 
                 <div class="admin-card">
-                    <h4>Naskah ke Ujian</h4>
-                    <form id="guru-exam-question-form" class="form-grid">
-                        <label>
-                            Pilih Ujian
-                            <select
-                                id="guru-question-exam-id"
-                                name="exam_id"
-                                required
-                            >
-                                <option value="">Pilih ujian...</option>
-                            </select>
-                        </label>
-                        <label>
-                            Question ID
-                            <input
-                                name="question_id"
-                                type="number"
-                                min="1"
-                                required
-                            />
-                        </label>
-                        <label>
-                            Urutan (seq_no)
-                            <input
-                                name="seq_no"
-                                type="number"
-                                min="1"
-                                placeholder="auto jika kosong"
-                            />
-                        </label>
-                        <label>
-                            Bobot
-                            <input
-                                name="weight"
-                                type="number"
-                                step="0.1"
-                                min="0.1"
-                                value="1"
-                            />
-                        </label>
-                        <button class="btn btn-secondary" type="submit">
-                            Tambah/Update Soal
-                        </button>
-                    </form>
-                </div>
-
-                <div class="admin-card">
-                    <h4 class="admin-card-title-lg">
-                        Masukkan Soal ke Ujian via Kode Soal
-                    </h4>
-                    <form
-                        id="guru-exam-question-code-rule-form"
-                        class="form-grid"
-                    >
-                        <label>
-                            Pilih Ujian
-                            <select
-                                id="guru-question-code-rule-exam-id"
-                                name="exam_id"
-                                required
-                            >
-                                <option value="">Pilih ujian...</option>
-                            </select>
-                        </label>
-                        <label>
-                            Kode Soal
-                            <select
-                                id="guru-exam-question-code-select"
-                                name="question_code_id"
-                                required
-                            >
-                                <option value="">Pilih kode soal</option>
-                            </select>
-                        </label>
-                        <label>
-                            Strategi
-                            <select name="strategy" required>
-                                <option value="all">all (ambil semua)</option>
-                                <option value="random">random (acak)</option>
-                            </select>
-                        </label>
-                        <label>
-                            Jumlah Soal (acak)
-                            <input name="pick_count" type="number" min="1" />
-                        </label>
-                        <label>
-                            Bobot
-                            <input
-                                name="weight"
-                                type="number"
-                                step="0.1"
-                                min="0.1"
-                                value="1"
-                            />
-                        </label>
-                        <button class="btn btn-secondary" type="submit">
-                            Simpan Rule Kode
-                        </button>
-                    </form>
-                    <div class="mt">
-                        <button
-                            id="guru-exam-question-code-sync-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            Sinkronkan Soal dari Rule Kode
-                        </button>
+                    <div class="admin-section-head">
+                        <h3>Masukkan Soal ke Ujian</h3>
                     </div>
-                    <div class="table-wrap mt">
-                        <table class="bs-table">
-                            <thead>
-                                <tr>
-                                    <th>Kode</th>
-                                    <th>Strategi</th>
-                                    <th>Pick</th>
-                                    <th>Bobot</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="guru-exam-question-code-rule-body">
-                                <tr>
-                                    <td colspan="5" class="muted">
-                                        Pilih exam untuk melihat rule kode soal.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <button
-                        id="guru-exam-questions-load-btn"
-                        class="btn btn-secondary mt"
-                        type="button"
-                    >
-                        Muat Soal Ujian Terpilih
-                    </button>
-
-                    <div class="table-wrap mt">
-                        <table class="bs-table">
-                            <thead>
-                                <tr>
-                                    <th>Seq</th>
-                                    <th>Tipe</th>
-                                    <th>Soal</th>
-                                    <th>Bobot</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="guru-exam-questions-body">
-                                <tr>
-                                    <td colspan="5" class="muted">
-                                        Pilih exam lalu muat soal ujian.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="admin-card">
-                    <h4 class="admin-card-title-lg">
-                        Pilih Soal per Kode Soal
-                    </h4>
                     <form id="guru-exam-question-pick-form" class="form-grid">
                         <label>
                             Pilih Ujian
@@ -1303,10 +1169,11 @@
                             </select>
                         </label>
                         <label>
-                            Kode Soal
+                            Kode Soal (bisa pilih lebih dari satu)
                             <select
                                 id="guru-exam-question-pick-code-select"
                                 name="question_code_id"
+                                multiple
                                 required
                             >
                                 <option value="">Pilih kode soal</option>
@@ -1320,38 +1187,32 @@
                             Muat Soal
                         </button>
                     </form>
-                    <div class="mt">
-                        <button
-                            id="guru-exam-question-pick-toggle-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            Pilih semua
-                        </button>
-                        <button
-                            id="guru-exam-question-pick-add-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            Tambahkan Soal Terpilih
-                        </button>
-                    </div>
                     <div class="table-wrap mt">
-                        <table class="bs-table">
+                        <table class="bs-table exam-pick-table">
+                            <colgroup>
+                                <col />
+                                <col />
+                                <col />
+                                <col />
+                                <col class="col-weight" />
+                                <col class="col-actions" />
+                            </colgroup>
                             <thead>
                                 <tr>
-                                    <th>Pilih</th>
                                     <th>ID</th>
                                     <th>Tipe</th>
                                     <th>Judul</th>
-                                    <th>Bobot</th>
+                                    <th>Kode Soal</th>
+                                    <th class="cell-weight">Bobot</th>
+                                    <th class="cell-actions">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="guru-exam-question-pick-body">
                                 <tr>
-                                    <td colspan="5" class="muted">
+                                    <td colspan="6" class="muted">
                                         Pilih ujian dan kode soal, lalu muat
-                                        daftar soal.
+                                        daftar soal. Gunakan kolom Aksi untuk
+                                        menambah atau menghapus soal dari ujian.
                                     </td>
                                 </tr>
                             </tbody>
@@ -1438,6 +1299,68 @@
                 <div id="guru-results-extra" class="box mt muted">
                     Laporan/statistik/grafik akan diringkas dari tabel hasil
                     ujian yang dimuat.
+                </div>
+            </section>
+
+            <section id="guru-guide-panel" class="panel" hidden>
+                <div class="admin-card">
+                    <h3>Petunjuk Penggunaan</h3>
+                    <p class="muted">
+                        Panduan singkat penggunaan menu utama untuk guru.
+                    </p>
+                    <ol class="mt">
+                        <li>
+                            <strong>Dashboard</strong>
+                            <p class="mt">
+                                Menampilkan ringkasan aktivitas guru, jumlah
+                                mapel, naskah, ujian, dan hasil yang tersedia.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Mapel Aktif</strong>
+                            <p class="mt">
+                                Kelola mata pelajaran yang Anda ampu. Tambah,
+                                ubah, atau nonaktifkan mapel sesuai kebutuhan.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Kelola Ujian</strong>
+                            <p class="mt">
+                                Membuat dan mengelola ujian: judul, mapel,
+                                durasi, aturan, serta keterkaitannya dengan
+                                naskah soal.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Tujuan Pembelajaran</strong>
+                            <p class="mt">
+                                Menyusun dan mengelola tujuan pembelajaran
+                                sebagai dasar pemetaan naskah soal.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Naskah Soal</strong>
+                            <p class="mt">
+                                Menulis, mengedit, dan memfinalisasi soal.
+                                Gunakan fitur impor bila menyiapkan soal dalam
+                                jumlah besar.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Hasil Ujian</strong>
+                            <p class="mt">
+                                Melihat rekap hasil ujian peserta, termasuk
+                                nilai dan status pengerjaan.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Halaman Ujian</strong>
+                            <p class="mt">
+                                Akses halaman peserta untuk uji coba alur ujian
+                                atau simulasi token.
+                            </p>
+                        </li>
+                    </ol>
                 </div>
             </section>
         </div>

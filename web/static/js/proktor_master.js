@@ -6,6 +6,7 @@
   }
 
   async function loadMasterReadonly() {
+    if (!deps || typeof deps.api !== "function") return;
     const results = await Promise.all([
       deps.api("/api/v1/levels?all=1", "GET"),
       deps.api("/api/v1/admin/schools?all=1", "GET"),
@@ -62,7 +63,7 @@
     if (deps.classesBody) {
       if (!classItems.length) {
         deps.classesBody.innerHTML =
-          '<tr><td colspan="4" class="muted">Tidak ada data kelas.</td></tr>';
+          '<tr><td colspan="5" class="muted">Tidak ada data kelas.</td></tr>';
       } else {
         deps.classesBody.innerHTML = "";
         classItems.forEach(function (it) {
@@ -74,6 +75,7 @@
             "<td>" + deps.escapeHtml(String(schoolText || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.grade_level || "")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.name || "")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.student_count || 0)) + "</td>",
           ].join("");
           deps.classesBody.appendChild(tr);
         });

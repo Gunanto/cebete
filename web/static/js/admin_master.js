@@ -118,7 +118,7 @@
     if (deps.classTableBody) {
       if (!classItems.length) {
         deps.classTableBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Belum ada data kelas.</td></tr>';
+          '<tr><td colspan="6" class="muted">Belum ada data kelas.</td></tr>';
       } else {
         deps.classTableBody.innerHTML = "";
         classItems.forEach(function (it) {
@@ -130,6 +130,7 @@
             "<td>" + deps.escapeHtml(deps.schoolLabel(school)) + "</td>",
             "<td>" + deps.escapeHtml(String(it.grade_level || "")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.name || "")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.student_count || 0)) + "</td>",
             "<td>" +
               (canEditMaster
                 ? '<span class="action-icons">' +
@@ -342,7 +343,8 @@
             "POST",
             fd,
           );
-          if (deps.masterOut) deps.masterOut.textContent = JSON.stringify(out, null, 2);
+          if (deps.masterOut)
+            deps.masterOut.textContent = JSON.stringify(out, null, 2);
           const report =
             out && out.report && typeof out.report === "object"
               ? out.report
@@ -445,7 +447,10 @@
     }
     if (deps.schoolDialogCancelBtn) {
       deps.schoolDialogCancelBtn.addEventListener("click", function () {
-        if (deps.schoolDialog && typeof deps.schoolDialog.close === "function") {
+        if (
+          deps.schoolDialog &&
+          typeof deps.schoolDialog.close === "function"
+        ) {
           deps.schoolDialog.close();
         }
       });
@@ -577,7 +582,10 @@
             await deps.api("/api/v1/admin/levels", "POST", { name: name });
             setMasterMsg("Jenjang berhasil ditambahkan.");
           }
-          if (deps.levelDialog && typeof deps.levelDialog.close === "function") {
+          if (
+            deps.levelDialog &&
+            typeof deps.levelDialog.close === "function"
+          ) {
             deps.levelDialog.close();
           }
           await loadMasterSummaryTable();
@@ -612,7 +620,10 @@
             await deps.api("/api/v1/admin/schools", "POST", payload);
             setMasterMsg("Sekolah berhasil ditambahkan.");
           }
-          if (deps.schoolDialog && typeof deps.schoolDialog.close === "function") {
+          if (
+            deps.schoolDialog &&
+            typeof deps.schoolDialog.close === "function"
+          ) {
             deps.schoolDialog.close();
           }
           await loadMasterSummaryTable();
@@ -649,7 +660,10 @@
             await deps.api("/api/v1/admin/classes", "POST", payload);
             setMasterMsg("Kelas berhasil ditambahkan.");
           }
-          if (deps.classDialog && typeof deps.classDialog.close === "function") {
+          if (
+            deps.classDialog &&
+            typeof deps.classDialog.close === "function"
+          ) {
             deps.classDialog.close();
           }
           await loadMasterSummaryTable();

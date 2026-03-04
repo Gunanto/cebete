@@ -6,6 +6,13 @@
   }
 
   async function loadProktorStatsAndPending() {
+    if (
+      !deps ||
+      typeof deps.api !== "function" ||
+      typeof deps.loadPendingRegistrations !== "function"
+    ) {
+      return;
+    }
     const results = await Promise.all([
       deps.api("/api/v1/admin/dashboard/stats", "GET"),
       deps.loadPendingRegistrations(),

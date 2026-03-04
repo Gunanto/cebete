@@ -264,6 +264,13 @@ type ReplaceExamAssignmentsByClassInput struct {
 	AssignedBy int64
 }
 
+type AppendExamAssignmentsByClassInput struct {
+	ExamID     int64
+	SchoolID   int64
+	ClassID    int64
+	AssignedBy int64
+}
+
 type ExamQuestionManageItem struct {
 	ExamID        int64   `json:"exam_id"`
 	QuestionID    int64   `json:"question_id"`
@@ -416,8 +423,14 @@ func NewService(db *sql.DB, defaultExamMinutes int) *Service {
 }
 
 func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
-	if err := s.ensureStudentAttemptProfileComplete(ctx, studentID); err != nil {
+	isSimulation, err := s.isSimulationStudent(ctx, studentID)
+	if err != nil {
 		return nil, err
+	}
+	if !isSimulation {
+		if err := s.ensureStudentAttemptProfileComplete(ctx, studentID); err != nil {
+			return nil, err
+		}
 	}
 
 	row := s.db.QueryRowContext(ctx, `
@@ -466,7 +479,7 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 		}
 		assignmentCount = 0
 	}
-	if assignmentCount > 0 {
+	if !isSimulation && assignmentCount > 0 {
 		var assigned bool
 		if err := s.db.QueryRowContext(ctx, `
 			SELECT EXISTS(
@@ -497,7 +510,7 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	if subtle.ConstantTimeCompare([]byte(hashExamToken(inputToken)), []byte(examTokenHash.String)) != 1 {
 		return nil, ErrExamTokenInvalid
 	}
-	if examTokenGeneratedAt.Valid {
+	if !isSimulation && examTokenGeneratedAt.Valid {
 		var tokenAlreadyUsed bool
 		if err := s.db.QueryRowContext(ctx, `
 			SELECT EXISTS(
@@ -524,7 +537,7 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	`, examID, studentID).Scan(&totalAttempts); err != nil {
 		return nil, fmt.Errorf("count attempts: %w", err)
 	}
-	if totalAttempts >= maxAttempts {
+	if !isSimulation && totalAttempts >= maxAttempts {
 		return nil, ErrAttemptLimitReached
 	}
 
@@ -553,82 +566,31 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	return &created, nil
 }
 
+func (s *Service) isSimulationStudent(ctx context.Context, userID int64) (bool, error) {
+	var role string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT role
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, userID).Scan(&role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrInvalidInput
+		}
+		return false, fmt.Errorf("load user role: %w", err)
+	}
+	return strings.TrimSpace(strings.ToLower(role)) == "guru", nil
+}
+
 func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error) {
 	if err := s.ensureStudentAttemptProfileComplete(ctx, studentID); err != nil {
 		return nil, err
 	}
 
-	inputToken := normalizeExamToken(examToken)
-	if inputToken == "" {
-		return nil, ErrExamTokenRequired
-	}
-
-	tokenHash := hashExamToken(inputToken)
-	now := time.Now()
-
-	var (
-		examID           int64
-		examCode         string
-		examTitle        string
-		subjectName      string
-		durationMinutes  int
-		maxAttempts      int
-		tokenExpiresAt   time.Time
-		tokenGeneratedAt sql.NullTime
-		startAt          sql.NullTime
-		endAt            sql.NullTime
-	)
-
-	err := s.db.QueryRowContext(ctx, `
-		SELECT
-			e.id,
-			e.code,
-			e.title,
-			s.name AS subject_name,
-			e.duration_minutes,
-			e.max_attempts,
-			e.exam_token_expires_at,
-			e.exam_token_generated_at,
-			e.start_at,
-			e.end_at
-		FROM exams e
-		JOIN subjects s ON s.id = e.subject_id
-		WHERE e.is_active = TRUE
-		  AND e.exam_token_hash = $1
-		  AND e.exam_token_expires_at IS NOT NULL
-		  AND e.exam_token_expires_at > $2
-		ORDER BY e.created_at DESC, e.id DESC
-		LIMIT 1
-	`, tokenHash, now).Scan(
-		&examID,
-		&examCode,
-		&examTitle,
-		&subjectName,
-		&durationMinutes,
-		&maxAttempts,
-		&tokenExpiresAt,
-		&tokenGeneratedAt,
-		&startAt,
-		&endAt,
-	)
+	examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, tokenGeneratedAt, startAt, endAt, err :=
+		s.lookupExamByToken(ctx, examToken)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			var exists int
-			errExpired := s.db.QueryRowContext(ctx, `
-				SELECT COUNT(*)
-				FROM exams
-				WHERE is_active = TRUE
-				  AND exam_token_hash = $1
-			`, tokenHash).Scan(&exists)
-			if errExpired != nil {
-				return nil, fmt.Errorf("query exam token existence: %w", errExpired)
-			}
-			if exists > 0 {
-				return nil, ErrExamTokenExpired
-			}
-			return nil, ErrExamTokenInvalid
-		}
-		return nil, fmt.Errorf("query exam by token: %w", err)
+		return nil, err
 	}
 
 	if maxAttempts <= 0 {
@@ -717,6 +679,117 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 		out.EndAt = &endAt.Time
 	}
 	return out, nil
+}
+
+func (s *Service) PreviewExamByTokenForStaff(ctx context.Context, examToken string) (*ExamTokenPreview, error) {
+	examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, _, startAt, endAt, err :=
+		s.lookupExamByToken(ctx, examToken)
+	if err != nil {
+		return nil, err
+	}
+
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+	if durationMinutes <= 0 {
+		durationMinutes = s.defaultExamMinutes
+	}
+
+	out := &ExamTokenPreview{
+		ExamID:            examID,
+		ExamCode:          examCode,
+		ExamTitle:         examTitle,
+		SubjectName:       subjectName,
+		DurationMinutes:   durationMinutes,
+		MaxAttempts:       maxAttempts,
+		AttemptsUsed:      0,
+		AttemptsRemaining: maxAttempts,
+		TokenExpiresAt:    tokenExpiresAt,
+	}
+	if startAt.Valid {
+		out.StartAt = &startAt.Time
+	}
+	if endAt.Valid {
+		out.EndAt = &endAt.Time
+	}
+	return out, nil
+}
+
+func (s *Service) lookupExamByToken(ctx context.Context, examToken string) (int64, string, string, string, int, int, time.Time, sql.NullTime, sql.NullTime, sql.NullTime, error) {
+	inputToken := normalizeExamToken(examToken)
+	if inputToken == "" {
+		return 0, "", "", "", 0, 0, time.Time{}, sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, ErrExamTokenRequired
+	}
+
+	tokenHash := hashExamToken(inputToken)
+	now := time.Now()
+
+	var (
+		examID           int64
+		examCode         string
+		examTitle        string
+		subjectName      string
+		durationMinutes  int
+		maxAttempts      int
+		tokenExpiresAt   time.Time
+		tokenGeneratedAt sql.NullTime
+		startAt          sql.NullTime
+		endAt            sql.NullTime
+	)
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			e.id,
+			e.code,
+			e.title,
+			s.name AS subject_name,
+			e.duration_minutes,
+			e.max_attempts,
+			e.exam_token_expires_at,
+			e.exam_token_generated_at,
+			e.start_at,
+			e.end_at
+		FROM exams e
+		JOIN subjects s ON s.id = e.subject_id
+		WHERE e.is_active = TRUE
+		  AND e.exam_token_hash = $1
+		  AND e.exam_token_expires_at IS NOT NULL
+		  AND e.exam_token_expires_at > $2
+		ORDER BY e.created_at DESC, e.id DESC
+		LIMIT 1
+	`, tokenHash, now).Scan(
+		&examID,
+		&examCode,
+		&examTitle,
+		&subjectName,
+		&durationMinutes,
+		&maxAttempts,
+		&tokenExpiresAt,
+		&tokenGeneratedAt,
+		&startAt,
+		&endAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			var exists int
+			errExpired := s.db.QueryRowContext(ctx, `
+				SELECT COUNT(*)
+				FROM exams
+				WHERE is_active = TRUE
+				  AND exam_token_hash = $1
+			`, tokenHash).Scan(&exists)
+			if errExpired != nil {
+				return 0, "", "", "", 0, 0, time.Time{}, sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, fmt.Errorf("query exam token existence: %w", errExpired)
+			}
+			if exists > 0 {
+				return 0, "", "", "", 0, 0, time.Time{}, sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, ErrExamTokenExpired
+			}
+			return 0, "", "", "", 0, 0, time.Time{}, sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, ErrExamTokenInvalid
+		}
+		return 0, "", "", "", 0, 0, time.Time{}, sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, fmt.Errorf("query exam by token: %w", err)
+	}
+
+	return examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, tokenGeneratedAt, startAt, endAt, nil
 }
 
 func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, studentID int64) error {
@@ -1828,6 +1901,117 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 		UserIDs:    userIDs,
 		AssignedBy: in.AssignedBy,
 	})
+}
+
+func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+	if in.ExamID <= 0 || in.SchoolID <= 0 || in.ClassID <= 0 || in.AssignedBy <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
+		return nil, err
+	}
+
+	var classValid bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM classes c
+			JOIN schools s ON s.id = c.school_id
+			WHERE c.id = $1
+			  AND c.school_id = $2
+			  AND c.is_active = TRUE
+			  AND s.is_active = TRUE
+		)
+	`, in.ClassID, in.SchoolID).Scan(&classValid); err != nil {
+		return nil, fmt.Errorf("validate class for exam assignment: %w", err)
+	}
+	if !classValid {
+		return nil, ErrInvalidInput
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT e.user_id
+		FROM enrollments e
+		JOIN users u ON u.id = e.user_id
+		WHERE e.school_id = $1
+		  AND e.class_id = $2
+		  AND e.status = 'active'
+		  AND u.is_active = TRUE
+		  AND u.role = 'siswa'
+		ORDER BY e.user_id
+	`, in.SchoolID, in.ClassID)
+	if err != nil {
+		return nil, fmt.Errorf("list class users for exam assignment: %w", err)
+	}
+	defer rows.Close()
+
+	userIDs := make([]int64, 0)
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("scan class user for exam assignment: %w", err)
+		}
+		userIDs = append(userIDs, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate class users for exam assignment: %w", err)
+	}
+
+	for _, userID := range userIDs {
+		var role string
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT role
+			FROM users
+			WHERE id = $1
+			  AND is_active = TRUE
+		`, userID).Scan(&role); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, fmt.Errorf("load assignment user role: %w", err)
+		}
+		if role != "guru" && role != "siswa" {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO exam_assignments (
+				exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at
+			) VALUES ($1, $2, 'active', $3, now(), now(), now())
+			ON CONFLICT (exam_id, user_id)
+			DO UPDATE SET
+				status = 'active',
+				assigned_by = EXCLUDED.assigned_by,
+				assigned_at = now(),
+				updated_at = now()
+		`, in.ExamID, userID, in.AssignedBy); err != nil {
+			return nil, fmt.Errorf("upsert exam assignment: %w", err)
+		}
+	}
+
+	return s.ListExamAssignments(ctx, in.ExamID)
+}
+
+func (s *Service) RemoveExamAssignment(ctx context.Context, examID, userID, actorID int64) error {
+	if examID <= 0 || userID <= 0 || actorID <= 0 {
+		return ErrInvalidInput
+	}
+	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE exam_assignments
+		SET status = 'inactive',
+			updated_at = now()
+		WHERE exam_id = $1
+		  AND user_id = $2
+		  AND status = 'active'
+	`, examID, userID); err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return ErrAssignmentFeature
+		}
+		return fmt.Errorf("deactivate exam assignment: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error) {

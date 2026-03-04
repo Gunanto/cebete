@@ -1856,6 +1856,53 @@ textarea:focus-visible {
     white-space: nowrap;
 }
 
+.exam-pick-table th.cell-weight,
+.exam-pick-table td.cell-weight {
+    width: 40px;
+}
+
+.exam-pick-table th.cell-actions,
+.exam-pick-table td.cell-actions {
+    width: 380px;
+}
+
+.exam-pick-table td.cell-weight .input-inline {
+    max-width: 40px;
+}
+
+.exam-pick-table {
+    table-layout: fixed;
+}
+
+.exam-pick-table .col-id {
+    width: 6%;
+}
+
+.exam-pick-table .col-type {
+    width: 6%;
+}
+
+.exam-pick-table .col-title {
+    width: 58%;
+}
+
+.exam-pick-table .col-code {
+    width: 10%;
+}
+
+.exam-pick-table .col-weight {
+    width: 6%;
+}
+
+.exam-pick-table .col-actions {
+    width: 14%;
+}
+
+.exam-pick-table td.cell-weight .input-inline {
+    width: 100%;
+    min-width: 48px;
+}
+
 #admin-master-panel .bs-table tbody tr:nth-child(even) {
     background: #fbfdff;
 }

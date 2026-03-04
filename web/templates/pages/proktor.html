@@ -29,6 +29,13 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="master"
+                        >
+                            Data Master
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
                             data-proktor-menu="registrations"
                         >
                             Verifikasi Pendaftaran
@@ -46,6 +53,13 @@
                 <section class="portal-sidebar-group">
                     <h4>MANAJEMEN</h4>
                     <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="exams"
+                        >
+                            Enroll Peserta
+                        </button>
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
@@ -70,23 +84,9 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
-                            data-proktor-menu="exams"
-                        >
-                            Kelola Ujian
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-secondary admin-menu-btn"
                             data-proktor-menu="results"
                         >
                             Hasil Ujian
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-secondary admin-menu-btn"
-                            data-proktor-menu="master"
-                        >
-                            Data Master
                         </button>
                     </div>
                 </section>
@@ -94,6 +94,13 @@
                 <section class="portal-sidebar-group">
                     <h4>LINK CEPAT</h4>
                     <div class="admin-menu-list">
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="guide"
+                        >
+                            Petunjuk Penggunaan
+                        </button>
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
@@ -157,7 +164,7 @@
                             class="btn btn-secondary dashboard-quick-btn"
                             data-proktor-jump="exams"
                         >
-                            Kelola Ujian
+                            Enroll Peserta
                         </button>
                         <button
                             type="button"
@@ -444,132 +451,29 @@
             <section id="proktor-exams-panel" class="panel" hidden>
                 <div class="admin-card">
                     <div class="admin-section-head">
-                        <h3>Pengelolaan Pelaksanaan Ujian</h3>
+                        <h3>Enroll Peserta Ujian</h3>
                         <button
                             id="proktor-exams-refresh-btn"
                             class="btn btn-secondary"
                             type="button"
                         >
-                            Muat Ujian
+                            Muat Daftar Ujian
                         </button>
                     </div>
-
-                    <form id="proktor-exam-form" class="form-grid mt">
-                        <input type="hidden" name="exam_id" />
+                    <p class="muted mt">
+                        Menu ini khusus untuk menambahkan peserta ke ujian per
+                        kelas.
+                    </p>
+                    <form id="proktor-exam-assign-form" class="form-grid mt">
                         <label>
-                            Kode Ujian
-                            <input
-                                name="code"
-                                type="text"
-                                maxlength="50"
-                                placeholder="AUTO jika kosong"
-                            />
-                        </label>
-                        <label>
-                            Judul Ujian
-                            <input name="title" type="text" required />
-                        </label>
-                        <label>
-                            Mata Pelajaran (Mapel)
+                            Pilih Ujian
                             <select
-                                id="proktor-exam-subject"
-                                name="subject_id"
-                                required
-                            >
-                                <option value="">Pilih mapel...</option>
-                            </select>
-                        </label>
-                        <label>
-                            Alokasi Waktu Mengerjakan (menit)
-                            <input
-                                name="duration_minutes"
-                                type="number"
-                                min="1"
-                                value="90"
-                                required
-                            />
-                        </label>
-                        <label>
-                            Batas Pengerjaan Ujian (kali)
-                            <input
-                                name="max_attempts"
-                                type="number"
-                                min="1"
-                                value="1"
-                                required
-                            />
-                        </label>
-                        <label>
-                            Lihat Setelah Mengerjakan
-                            <select name="review_policy">
-                                <option value="immediate">
-                                    Tampilkan langsung
-                                </option>
-                                <option value="after_submit">
-                                    Tampilkan setelah submit
-                                </option>
-                                <option value="after_exam_end">
-                                    Tampilkan setelah ujian berakhir
-                                </option>
-                                <option value="disabled">
-                                    Tidak ditampilkan
-                                </option>
-                            </select>
-                        </label>
-                        <label>
-                            <input name="randomize_questions" type="checkbox" />
-                            Acak Soal
-                        </label>
-                        <label>
-                            <input name="randomize_options" type="checkbox" />
-                            Acak Opsi Jawaban
-                        </label>
-                        <button
-                            id="proktor-exam-save-btn"
-                            class="btn btn-secondary"
-                            type="submit"
-                        >
-                            Simpan Ujian
-                        </button>
-                    </form>
-
-                    <div class="table-wrap mt">
-                        <table class="bs-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Kode/Judul</th>
-                                    <th>Mapel</th>
-                                    <th>Durasi</th>
-                                    <th>Attempt</th>
-                                    <th>Soal</th>
-                                    <th>Peserta</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="proktor-exams-body">
-                                <tr>
-                                    <td colspan="8" class="muted">
-                                        Belum ada data ujian.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="admin-card">
-                    <h4>Enroll Peserta Ujian</h4>
-                    <form id="proktor-exam-assign-form" class="form-grid">
-                        <label>
-                            Exam ID
-                            <input
                                 id="proktor-assign-exam-id"
                                 name="exam_id"
-                                type="number"
-                                min="1"
                                 required
-                            />
+                            >
+                                <option value="">Pilih ujian...</option>
+                            </select>
                         </label>
                         <label>
                             Sekolah
@@ -603,91 +507,16 @@
                                     <th>Nama</th>
                                     <th>Username</th>
                                     <th>Role</th>
+                                    <th>Kelas</th>
                                     <th>Status</th>
                                     <th>Assigned At</th>
+                                    <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="proktor-exam-assignments-body">
                                 <tr>
-                                    <td colspan="6" class="muted">
+                                    <td colspan="8" class="muted">
                                         Belum ada data peserta ujian.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="admin-card">
-                    <h4>Naskah ke Ujian</h4>
-                    <form id="proktor-exam-question-form" class="form-grid">
-                        <label>
-                            Exam ID
-                            <input
-                                id="proktor-question-exam-id"
-                                name="exam_id"
-                                type="number"
-                                min="1"
-                                required
-                            />
-                        </label>
-                        <label>
-                            Question ID
-                            <input
-                                name="question_id"
-                                type="number"
-                                min="1"
-                                required
-                            />
-                        </label>
-                        <label>
-                            Urutan (seq_no)
-                            <input
-                                name="seq_no"
-                                type="number"
-                                min="1"
-                                placeholder="auto jika kosong"
-                            />
-                        </label>
-                        <label>
-                            Bobot
-                            <input
-                                name="weight"
-                                type="number"
-                                step="0.1"
-                                min="0.1"
-                                value="1"
-                            />
-                        </label>
-                        <button class="btn btn-secondary" type="submit">
-                            Tambah/Update Soal
-                        </button>
-                    </form>
-
-                    <button
-                        id="proktor-exam-questions-load-btn"
-                        class="btn btn-secondary mt"
-                        type="button"
-                    >
-                        Muat Soal Ujian Terpilih
-                    </button>
-
-                    <div class="table-wrap mt">
-                        <table class="bs-table">
-                            <thead>
-                                <tr>
-                                    <th>Seq</th>
-                                    <th>Question ID</th>
-                                    <th>Tipe</th>
-                                    <th>Stem</th>
-                                    <th>Bobot</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="proktor-exam-questions-body">
-                                <tr>
-                                    <td colspan="6" class="muted">
-                                        Pilih exam lalu muat soal ujian.
                                     </td>
                                 </tr>
                             </tbody>
@@ -843,6 +672,100 @@
                 </div>
             </section>
 
+            <section id="proktor-guide-panel" class="panel" hidden>
+                <div class="admin-card">
+                    <h3>Petunjuk Penggunaan</h3>
+                    <p class="muted">
+                        Panduan singkat penggunaan fitur utama pada portal
+                        proktor.
+                    </p>
+                    <ol class="mt">
+                        <li>
+                            <strong>Monitoring Event Ujian</strong>
+                            <p class="mt">
+                                Menampilkan jejak aktivitas (log event) yang
+                                terekam selama peserta mengerjakan ujian.
+                                Berguna untuk audit, troubleshooting, atau
+                                melihat aktivitas mencurigakan.
+                            </p>
+                            <p class="mt">
+                                <strong>Apa yang ditampilkan</strong>
+                            </p>
+                            <ul>
+                                <li>
+                                    <strong>Waktu Server</strong>: waktu event
+                                    tercatat.
+                                </li>
+                                <li>
+                                    <strong>Event</strong>: jenis event (mis.
+                                    question_view, answer_saved,
+                                    attempt_started, attempt_submitted).
+                                </li>
+                                <li>
+                                    <strong>Actor</strong>: ID user yang memicu
+                                    event.
+                                </li>
+                                <li>
+                                    <strong>Payload</strong>: detail tambahan
+                                    (JSON).
+                                </li>
+                            </ul>
+                            <p class="mt"><strong>Cara pakai</strong></p>
+                            <ol>
+                                <li>Isi <strong>Attempt ID</strong>.</li>
+                                <li>
+                                    Isi <strong>Limit Event</strong> (maks 500).
+                                </li>
+                                <li>Klik <strong>Muat Event</strong>.</li>
+                            </ol>
+                            <p class="mt">
+                                <strong>Dari mana Attempt ID didapat</strong>
+                            </p>
+                            <ul>
+                                <li>
+                                    Dari halaman hasil/attempt, atau dari
+                                    log/rekap ujian (admin/proktor biasanya
+                                    melihat daftar attempt).
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Enroll Peserta Ujian</strong>
+                            <p class="mt">
+                                Menambahkan peserta ke ujian berdasarkan kelas
+                                yang dipilih. Enroll ulang kelas aman karena
+                                tidak membuat duplikasi peserta.
+                            </p>
+                            <p class="mt"><strong>Cara pakai</strong></p>
+                            <ol>
+                                <li>Pilih <strong>Ujian</strong>.</li>
+                                <li>
+                                    Pilih <strong>Sekolah</strong> dan
+                                    <strong>Kelas</strong>.
+                                </li>
+                                <li>
+                                    Klik
+                                    <strong>Enroll Peserta per Kelas</strong>.
+                                </li>
+                            </ol>
+                        </li>
+                        <li>
+                            <strong>Token Ujian</strong>
+                            <p class="mt">
+                                Membuat token akses ujian untuk peserta sesuai
+                                ujian yang dipilih.
+                            </p>
+                            <p class="mt"><strong>Cara pakai</strong></p>
+                            <ol>
+                                <li>Pilih <strong>Ujian</strong>.</li>
+                                <li>Atur masa berlaku (menit).</li>
+                                <li>Klik <strong>Buat Token</strong>.</li>
+                            </ol>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+
             <section id="proktor-master-panel" class="panel" hidden>
                 <div class="admin-section-head">
                     <h3>Data Master (Baca Saja)</h3>
@@ -910,11 +833,12 @@
                                     <th>Nama Sekolah</th>
                                     <th>Tingkat</th>
                                     <th>Nama Kelas</th>
+                                    <th>User</th>
                                 </tr>
                             </thead>
                             <tbody id="proktor-classes-body">
                                 <tr>
-                                    <td colspan="4" class="muted">
+                                    <td colspan="5" class="muted">
                                         Belum ada data kelas.
                                     </td>
                                 </tr>
@@ -924,7 +848,7 @@
                 </section>
 
                 <section class="mt">
-                    <h4>Penempatan Kelas Pengguna</h4>
+                    <h4>Pengubahan Kelas Pengguna</h4>
                     <form id="proktor-placement-form" class="form-grid">
                         <label>
                             Pengguna (Guru/Siswa)

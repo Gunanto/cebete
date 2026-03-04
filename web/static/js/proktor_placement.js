@@ -104,6 +104,7 @@
   }
 
   async function loadPlacementOptions() {
+    if (!deps || typeof deps.api !== "function") return;
     const [guru, siswa, schools, classes] = await Promise.all([
       deps.api("/api/v1/admin/users?role=guru&limit=200&offset=0", "GET"),
       deps.api("/api/v1/admin/users?role=siswa&limit=500&offset=0", "GET"),
@@ -144,6 +145,12 @@
 
   function bindHandlers() {
     if (!deps) return;
+
+    if (deps.assignSchoolSelect) {
+      deps.assignSchoolSelect.addEventListener("change", function () {
+        fillAssignClassSelectBySchool(deps.assignSchoolSelect.value);
+      });
+    }
 
     if (deps.placementSchoolSelect) {
       deps.placementSchoolSelect.addEventListener("change", function () {

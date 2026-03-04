@@ -17,6 +17,7 @@
       "exams",
       "results",
       "subjects",
+      "guide",
     ];
   }
 

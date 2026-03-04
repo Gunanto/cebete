@@ -3221,6 +3221,7 @@
       "proktor-results-chart-btn",
     );
     const masterPanel = document.getElementById("proktor-master-panel");
+    const guidePanel = document.getElementById("proktor-guide-panel");
     const quickPanel = document.getElementById("proktor-quick-panel");
     const menuButtons = root.querySelectorAll("[data-proktor-menu]");
     const proktorPageTitle = document.getElementById("proktor-page-title");
@@ -3437,6 +3438,15 @@
       });
     }
 
+    function safeInitModule(label, initFn) {
+      if (typeof initFn !== "function") return;
+      try {
+        initFn();
+      } catch (err) {
+        setMsg("Modul " + label + " gagal inisialisasi: " + err.message);
+      }
+    }
+
     async function loadPendingRegistrations() {
       if (
         ProktorRegistrations &&
@@ -3492,6 +3502,156 @@
       }
     }
 
+    function renderEnrollAssignments(rows, replace) {
+      if (!examAssignmentsBody) return;
+      const items = Array.isArray(rows) ? rows : [];
+      if (!items.length) {
+        if (replace) {
+          examAssignmentsBody.innerHTML =
+            '<tr><td colspan="8" class="muted">Belum ada data peserta ujian.</td></tr>';
+        }
+        return;
+      }
+      if (replace) examAssignmentsBody.innerHTML = "";
+      items.forEach(function (it) {
+        const userID = String(it.user_id || "");
+        if (!userID) return;
+        const existing = examAssignmentsBody.querySelector(
+          'tr[data-user-id="' + CSS.escape(userID) + '"]',
+        );
+        const tr = existing || document.createElement("tr");
+        tr.setAttribute("data-user-id", userID);
+        tr.innerHTML = [
+          "<td>" + escapeHtml(String(it.user_id || "")) + "</td>",
+          "<td>" + escapeHtml(String(it.full_name || "-")) + "</td>",
+          "<td>" + escapeHtml(String(it.username || "-")) + "</td>",
+          "<td>" + escapeHtml(String(it.role || "-")) + "</td>",
+          "<td>" +
+            escapeHtml(
+              String(it.class_name || it.class_label || it.class_id || "-"),
+            ) +
+            "</td>",
+          "<td>" + escapeHtml(String(it.status || "-")) + "</td>",
+          "<td>" + escapeHtml(fmtDate(it.assigned_at)) + "</td>",
+          '<td><button class="icon-only-btn danger" type="button" data-exam-assignment-del="' +
+            escapeHtml(String(it.user_id || "")) +
+            '" title="Keluarkan peserta" aria-label="Keluarkan peserta">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
+            "</button></td>",
+        ].join("");
+        if (!existing) examAssignmentsBody.appendChild(tr);
+      });
+    }
+
+    function bindEnrollFallbackHandlers() {
+      if (
+        examAssignForm &&
+        !examAssignForm.getAttribute("data-proktor-bound")
+      ) {
+        examAssignForm.setAttribute("data-proktor-bound", "1");
+        examAssignForm.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          const examID = Number(
+            (assignExamIDInput && assignExamIDInput.value) || 0,
+          );
+          const schoolID = Number(
+            (assignSchoolSelect && assignSchoolSelect.value) || 0,
+          );
+          const classID = Number(
+            (assignClassSelect && assignClassSelect.value) || 0,
+          );
+          if (examID <= 0) {
+            setMsg("Pilih ujian untuk enroll peserta.");
+            return;
+          }
+          if (schoolID <= 0 || classID <= 0) {
+            setMsg("Pilih sekolah dan kelas untuk enroll peserta.");
+            return;
+          }
+          const done = beginBusy(
+            examAssignForm,
+            msg,
+            "Menyimpan enroll peserta...",
+          );
+          try {
+            const rows = await api(
+              "/api/v1/admin/exams/" + examID + "/assignments/by-class/append",
+              "POST",
+              { school_id: schoolID, class_id: classID },
+            );
+            renderEnrollAssignments(rows, false);
+            setMsg("Enroll peserta berhasil disimpan.");
+          } catch (err) {
+            setMsg("Gagal menyimpan enroll peserta: " + err.message);
+          } finally {
+            done();
+          }
+        });
+      }
+      if (
+        examAssignmentsLoadBtn &&
+        !examAssignmentsLoadBtn.getAttribute("data-proktor-bound")
+      ) {
+        examAssignmentsLoadBtn.setAttribute("data-proktor-bound", "1");
+        examAssignmentsLoadBtn.addEventListener("click", async function () {
+          const examID = Number(
+            (assignExamIDInput && assignExamIDInput.value) || 0,
+          );
+          const done = beginBusy(
+            examAssignmentsLoadBtn,
+            msg,
+            "Memuat peserta ujian...",
+          );
+          try {
+            const rows = await api(
+              "/api/v1/admin/exams/" + examID + "/assignments",
+              "GET",
+            );
+            renderEnrollAssignments(rows, true);
+            setMsg("Peserta ujian berhasil dimuat.");
+          } catch (err) {
+            setMsg("Gagal memuat peserta ujian: " + err.message);
+          } finally {
+            done();
+          }
+        });
+      }
+      if (
+        examAssignmentsBody &&
+        !examAssignmentsBody.getAttribute("data-proktor-bound")
+      ) {
+        examAssignmentsBody.setAttribute("data-proktor-bound", "1");
+        examAssignmentsBody.addEventListener("click", async function (e) {
+          const btn =
+            e.target && e.target.closest("button[data-exam-assignment-del]");
+          if (!btn) return;
+          const examID = Number(
+            (assignExamIDInput && assignExamIDInput.value) || 0,
+          );
+          const userID = Number(
+            btn.getAttribute("data-exam-assignment-del") || 0,
+          );
+          if (examID <= 0 || userID <= 0) return;
+          if (!window.confirm("Keluarkan peserta ini dari ujian?")) return;
+          const done = beginBusy(btn, msg, "Mengeluarkan peserta...");
+          try {
+            await api(
+              "/api/v1/admin/exams/" + examID + "/assignments/" + userID,
+              "DELETE",
+              {},
+            );
+            const row = btn.closest("tr[data-user-id]") || btn.closest("tr");
+            if (row && row.parentNode) row.parentNode.removeChild(row);
+            setMsg("Peserta berhasil dikeluarkan.");
+          } catch (err) {
+            setMsg("Gagal mengeluarkan peserta: " + err.message);
+          } finally {
+            done();
+          }
+        });
+      }
+    }
+
     function activateProktorMenu(menu) {
       const allowed = [
         "dashboard",
@@ -3503,6 +3663,7 @@
         "exams",
         "results",
         "master",
+        "guide",
         "quick",
       ];
       const key = allowed.includes(menu) ? menu : "dashboard";
@@ -3520,6 +3681,7 @@
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
       if (masterPanel) masterPanel.hidden = key !== "master";
+      if (guidePanel) guidePanel.hidden = key !== "guide";
       if (quickPanel) quickPanel.hidden = key !== "quick";
       const proktorTitles = {
         dashboard: {
@@ -3547,8 +3709,8 @@
           desc: "Cetak daftar hadir peserta asesmen per kelas.",
         },
         exams: {
-          title: "Kelola Ujian",
-          desc: "Atur jadwal, mapel, dan konfigurasi ujian.",
+          title: "Enroll Peserta",
+          desc: "Enroll peserta ke ujian per kelas.",
         },
         results: {
           title: "Hasil Ujian",
@@ -3557,6 +3719,10 @@
         master: {
           title: "Data Master",
           desc: "Kelola jenjang, sekolah, dan kelas.",
+        },
+        guide: {
+          title: "Petunjuk Penggunaan",
+          desc: "Panduan singkat penggunaan fitur proktor.",
         },
         quick: {
           title: "Aksi Cepat",
@@ -3597,44 +3763,7 @@
       fillExamSelect(tokenExamSelect);
       fillExamSelect(cardsExamSelect);
       fillExamSelect(attendanceExamSelect);
-    }
-
-    initProktorExamsModule();
-    initProktorCardsModule();
-    initProktorAttendanceModule();
-    initProktorTokenModule();
-    initProktorEventsModule();
-    initProktorRegistrationsModule();
-    initProktorMasterModule();
-    initProktorPlacementModule();
-    initProktorDashboardModule();
-    initProktorQuickModule();
-
-    try {
-      if (String((user && user.role) || "") === "proktor") {
-        if (examQuestionForm) examQuestionForm.hidden = true;
-        if (examQuestionsLoadBtn) examQuestionsLoadBtn.hidden = true;
-      }
-      if (
-        ProktorDashboard &&
-        typeof ProktorDashboard.loadProktorStatsAndPending === "function"
-      ) {
-        await ProktorDashboard.loadProktorStatsAndPending();
-      }
-      await loadMasterReadonly();
-      await loadPlacementOptions();
-      await loadTokenExamOptions();
-      await loadExamSubjectOptions();
-      await loadExamManageTable();
-      const firstMenu =
-        (menuButtons &&
-          menuButtons.length > 0 &&
-          menuButtons[0].getAttribute("data-proktor-menu")) ||
-        "dashboard";
-      activateProktorMenu(firstMenu);
-      setMsg("Dashboard proktor siap.");
-    } catch (err) {
-      setMsg("Gagal memuat dashboard proktor: " + err.message);
+      fillExamSelect(assignExamIDInput);
     }
 
     menuButtons.forEach(function (btn) {
@@ -3649,6 +3778,56 @@
         );
       });
     });
+    activateProktorMenu("dashboard");
+
+    safeInitModule("Enroll Peserta", initProktorExamsModule);
+    safeInitModule("Kartu Ujian", initProktorCardsModule);
+    safeInitModule("Daftar Hadir", initProktorAttendanceModule);
+    safeInitModule("Token Ujian", initProktorTokenModule);
+    safeInitModule("Monitoring Event", initProktorEventsModule);
+    safeInitModule("Verifikasi Pendaftaran", initProktorRegistrationsModule);
+    safeInitModule("Data Master", initProktorMasterModule);
+    safeInitModule("Penempatan Kelas", initProktorPlacementModule);
+    safeInitModule("Dashboard", initProktorDashboardModule);
+    safeInitModule("Aksi Cepat", initProktorQuickModule);
+    bindEnrollFallbackHandlers();
+
+    try {
+      let hadInitError = false;
+      const safeStep = async function (label, fn) {
+        try {
+          await fn();
+        } catch (err) {
+          hadInitError = true;
+          setMsg(label + " gagal dimuat: " + err.message);
+        }
+      };
+      if (String((user && user.role) || "") === "proktor") {
+        if (examQuestionForm) examQuestionForm.hidden = true;
+        if (examQuestionsLoadBtn) examQuestionsLoadBtn.hidden = true;
+      }
+      if (
+        ProktorDashboard &&
+        typeof ProktorDashboard.loadProktorStatsAndPending === "function"
+      ) {
+        await safeStep("Dashboard", function () {
+          return ProktorDashboard.loadProktorStatsAndPending();
+        });
+      }
+      await safeStep("Data master", loadMasterReadonly);
+      await safeStep("Penempatan kelas", loadPlacementOptions);
+      await safeStep("Daftar ujian", loadTokenExamOptions);
+      await safeStep("Daftar ujian", loadExamManageTable);
+      const firstMenu =
+        (menuButtons &&
+          menuButtons.length > 0 &&
+          menuButtons[0].getAttribute("data-proktor-menu")) ||
+        "dashboard";
+      activateProktorMenu(firstMenu);
+      if (!hadInitError) setMsg("Dashboard proktor siap.");
+    } catch (err) {
+      setMsg("Gagal memuat dashboard proktor: " + err.message);
+    }
   }
 
   async function initGuruPage() {
@@ -3713,6 +3892,7 @@
     const subjectsPanel = document.getElementById("guru-subjects-panel");
     const examsPanel = document.getElementById("guru-exams-panel");
     const resultsPanel = document.getElementById("guru-results-panel");
+    const guidePanel = document.getElementById("guru-guide-panel");
     const menuButtons = root.querySelectorAll("[data-guru-menu]");
     const menuJumpButtons = root.querySelectorAll("[data-guru-jump]");
     const guruPageTitle = document.getElementById("guru-page-title");
@@ -4959,6 +5139,10 @@
           title: "Mata Pelajaran",
           desc: buildSubjectsDesc(),
         },
+        guide: {
+          title: "Petunjuk Penggunaan",
+          desc: "Panduan singkat penggunaan menu guru.",
+        },
       };
       return guruTitles[key] || guruTitles.dashboard;
     }
@@ -4979,6 +5163,7 @@
           exams: examsPanel,
           results: resultsPanel,
           subjects: subjectsPanel,
+          guide: guidePanel,
         },
         getMenuInfo: getGuruMenuInfo,
         onMenuActivated: async function (key) {

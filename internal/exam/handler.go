@@ -24,6 +24,7 @@ type Handler struct {
 type examService interface {
 	StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
 	PreviewExamByToken(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
+	PreviewExamByTokenForStaff(ctx context.Context, examToken string) (*ExamTokenPreview, error)
 	ListAdminExams(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
 	CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
@@ -41,6 +42,8 @@ type examService interface {
 	ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	RemoveExamAssignment(ctx context.Context, examID, userID, actorID int64) error
 	ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
 	ListExamQuestionCodeRules(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
 	UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
@@ -121,6 +124,11 @@ type replaceExamAssignmentsRequest struct {
 }
 
 type replaceExamAssignmentsByClassRequest struct {
+	SchoolID int64 `json:"school_id"`
+	ClassID  int64 `json:"class_id"`
+}
+
+type appendExamAssignmentsByClassRequest struct {
 	SchoolID int64 `json:"school_id"`
 	ClassID  int64 `json:"class_id"`
 }
@@ -210,7 +218,9 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
 		return
 	}
-	if strings.TrimSpace(strings.ToLower(user.Role)) != "siswa" {
+	role := strings.TrimSpace(strings.ToLower(user.Role))
+	isStudent := role == "siswa"
+	if !isStudent && role != "admin" && role != "guru" {
 		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		return
 	}
@@ -221,7 +231,13 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.svc.PreviewExamByToken(r.Context(), user.ID, req.ExamToken)
+	var out *ExamTokenPreview
+	var err error
+	if isStudent {
+		out, err = h.svc.PreviewExamByToken(r.Context(), user.ID, req.ExamToken)
+	} else {
+		out, err = h.svc.PreviewExamByTokenForStaff(r.Context(), req.ExamToken)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrExamTokenAlreadyUsed), errors.Is(err, ErrStudentDataMissing):
@@ -772,6 +788,81 @@ func (h *Handler) ReplaceExamAssignmentsByClass(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) AppendExamAssignmentsByClass(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	var req appendExamAssignmentsByClassRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	items, err := h.svc.AppendExamAssignmentsByClass(r.Context(), AppendExamAssignmentsByClassInput{
+		ExamID:     examID,
+		SchoolID:   req.SchoolID,
+		ClassID:    req.ClassID,
+		AssignedBy: user.ID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "school_id dan class_id wajib valid"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrAssignmentFeature):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) RemoveExamAssignment(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	userID, err := strconv.ParseInt(chi.URLParam(r, "user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid user id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.svc.RemoveExamAssignment(r.Context(), examID, userID, user.ID); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrAssignmentFeature):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{
+		"exam_id": examID,
+		"user_id": userID,
+		"removed": true,
+	}})
 }
 
 func (h *Handler) ListExamQuestions(w http.ResponseWriter, r *http.Request) {

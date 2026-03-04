@@ -63,11 +63,12 @@ type Class struct {
 }
 
 type ClassListItem struct {
-	ID         int64  `json:"id"`
-	SchoolID   int64  `json:"school_id"`
-	Name       string `json:"name"`
-	GradeLevel string `json:"grade_level"`
-	IsActive   bool   `json:"is_active"`
+	ID           int64  `json:"id"`
+	SchoolID     int64  `json:"school_id"`
+	Name         string `json:"name"`
+	GradeLevel   string `json:"grade_level"`
+	IsActive     bool   `json:"is_active"`
+	StudentCount int64  `json:"student_count"`
 }
 
 type EducationLevel struct {
@@ -325,14 +326,23 @@ func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, e
 
 func (s *Service) ListClasses(ctx context.Context, schoolID int64, activeOnly bool) ([]ClassListItem, error) {
 	query := `
-		SELECT id, school_id, name, grade_level, is_active
-		FROM classes
-		WHERE ($1 <= 0 OR school_id = $1)
+		SELECT
+			c.id,
+			c.school_id,
+			c.name,
+			c.grade_level,
+			c.is_active,
+			COALESCE(COUNT(DISTINCT u.id), 0) AS student_count
+		FROM classes c
+		LEFT JOIN enrollments e ON e.class_id = c.id AND e.status = 'active'
+		LEFT JOIN users u ON u.id = e.user_id AND u.is_active = TRUE AND u.role = 'siswa'
+		WHERE ($1 <= 0 OR c.school_id = $1)
 	`
 	if activeOnly {
-		query += " AND is_active = TRUE"
+		query += " AND c.is_active = TRUE"
 	}
-	query += " ORDER BY grade_level ASC, name ASC, id ASC"
+	query += " GROUP BY c.id, c.school_id, c.name, c.grade_level, c.is_active"
+	query += " ORDER BY c.grade_level ASC, c.name ASC, c.id ASC"
 
 	rows, err := s.db.QueryContext(ctx, query, schoolID)
 	if err != nil {
@@ -343,7 +353,14 @@ func (s *Service) ListClasses(ctx context.Context, schoolID int64, activeOnly bo
 	out := make([]ClassListItem, 0)
 	for rows.Next() {
 		var it ClassListItem
-		if err := rows.Scan(&it.ID, &it.SchoolID, &it.Name, &it.GradeLevel, &it.IsActive); err != nil {
+		if err := rows.Scan(
+			&it.ID,
+			&it.SchoolID,
+			&it.Name,
+			&it.GradeLevel,
+			&it.IsActive,
+			&it.StudentCount,
+		); err != nil {
 			return nil, fmt.Errorf("scan class: %w", err)
 		}
 		out = append(out, it)

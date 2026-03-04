@@ -88,7 +88,8 @@
   }
 
   async function loadExamSubjectOptions() {
-    if (!deps || !deps.examSubjectSelect) return;
+    if (!deps || typeof deps.api !== "function" || !deps.examSubjectSelect)
+      return;
     const subjects = await deps.api("/api/v1/subjects", "GET");
     deps.examSubjectSelect.innerHTML =
       '<option value="">Pilih mapel...</option>';
@@ -107,8 +108,10 @@
   }
 
   async function loadExamManageTable() {
+    if (!deps || typeof deps.api !== "function") return;
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     setExamManageCache(exams);
+    fillAssignExamOptions(exams);
     if (deps.examsPanel && !deps.examsPanel.hidden) {
       deps.activateMenu("exams");
     }
@@ -149,6 +152,33 @@
           "</span></td>",
       ].join("");
       deps.examsBody.appendChild(tr);
+    });
+  }
+
+  function fillAssignExamOptions(exams) {
+    if (!deps || !deps.assignExamIDInput) return;
+    const items = Array.isArray(exams) ? exams : [];
+    if (
+      items.length === 0 &&
+      deps.assignExamIDInput.options &&
+      deps.assignExamIDInput.options.length > 1
+    ) {
+      return;
+    }
+    const current = String(deps.assignExamIDInput.value || "");
+    deps.assignExamIDInput.innerHTML =
+      '<option value="">Pilih ujian...</option>';
+    items.forEach(function (it) {
+      const o = document.createElement("option");
+      o.value = String((it && it.id) || "");
+      const chunks = [
+        String((it && it.code) || "").trim(),
+        String((it && it.title) || "").trim(),
+        String((it && it.subject_name) || "").trim(),
+      ].filter(Boolean);
+      o.textContent = chunks.join(" | ");
+      if (current && current === o.value) o.selected = true;
+      deps.assignExamIDInput.appendChild(o);
     });
   }
 
@@ -196,30 +226,54 @@
     const id = Number(examID || 0);
     if (id <= 0) {
       deps.examAssignmentsBody.innerHTML =
-        '<tr><td colspan="6" class="muted">Isi Exam ID lalu muat peserta ujian.</td></tr>';
+        '<tr><td colspan="8" class="muted">Pilih ujian lalu muat peserta ujian.</td></tr>';
       return;
     }
     const rows = await deps.api(
       "/api/v1/admin/exams/" + id + "/assignments",
       "GET",
     );
-    if (!Array.isArray(rows) || !rows.length) {
-      deps.examAssignmentsBody.innerHTML =
-        '<tr><td colspan="6" class="muted">Belum ada peserta terdaftar.</td></tr>';
+    renderExamAssignments(rows, true);
+  }
+
+  function renderExamAssignments(rows, replace) {
+    if (!deps || !deps.examAssignmentsBody) return;
+    const items = Array.isArray(rows) ? rows : [];
+    if (!items.length) {
+      if (replace) {
+        deps.examAssignmentsBody.innerHTML =
+          '<tr><td colspan="7" class="muted">Belum ada peserta terdaftar.</td></tr>';
+      }
       return;
     }
-    deps.examAssignmentsBody.innerHTML = "";
-    rows.forEach(function (it) {
-      const tr = document.createElement("tr");
+    if (replace) deps.examAssignmentsBody.innerHTML = "";
+    items.forEach(function (it) {
+      const userID = String(it.user_id || "");
+      if (!userID) return;
+      const existing = deps.examAssignmentsBody.querySelector(
+        'tr[data-user-id="' + CSS.escape(userID) + '"]',
+      );
+      const tr = existing || document.createElement("tr");
+      tr.setAttribute("data-user-id", userID);
       tr.innerHTML = [
         "<td>" + deps.escapeHtml(String(it.user_id || "")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.username || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.role || "-")) + "</td>",
+        "<td>" +
+          deps.escapeHtml(
+            String(it.class_name || it.class_label || it.class_id || "-"),
+          ) +
+          "</td>",
         "<td>" + deps.escapeHtml(String(it.status || "-")) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.assigned_at)) + "</td>",
+        '<td><button class="icon-only-btn danger" type="button" data-exam-assignment-del="' +
+          deps.escapeHtml(String(it.user_id || "")) +
+          '" title="Keluarkan peserta" aria-label="Keluarkan peserta">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
+          "</button></td>",
       ].join("");
-      deps.examAssignmentsBody.appendChild(tr);
+      if (!existing) deps.examAssignmentsBody.appendChild(tr);
     });
   }
 
@@ -456,9 +510,7 @@
               loadExamQuestions(examID),
               loadExamAssignments(examID),
             ]);
-            deps.setMsg(
-              "Exam ID " + examID + " dipilih untuk enroll dan naskah.",
-            );
+            deps.setMsg("Ujian dipilih. Data peserta ujian berhasil dimuat.");
           } catch (err) {
             deps.setMsg("Gagal memuat data ujian: " + err.message);
           }
@@ -488,13 +540,14 @@
     }
 
     if (deps.examAssignForm) {
+      deps.examAssignForm.setAttribute("data-proktor-bound", "1");
       deps.examAssignForm.addEventListener("submit", async function (e) {
         e.preventDefault();
         const examID = Number(
           (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
         );
         if (examID <= 0) {
-          deps.setMsg("Isi Exam ID untuk enroll peserta.");
+          deps.setMsg("Pilih ujian untuk enroll peserta.");
           return;
         }
         const schoolID = Number(
@@ -514,18 +567,13 @@
         );
         try {
           const items = await deps.api(
-            "/api/v1/admin/exams/" + examID + "/assignments/by-class",
-            "PUT",
+            "/api/v1/admin/exams/" + examID + "/assignments/by-class/append",
+            "POST",
             { school_id: schoolID, class_id: classID },
           );
-          deps.setMsg(
-            "Enroll peserta berhasil disimpan. Total peserta aktif: " +
-              String((Array.isArray(items) && items.length) || 0),
-          );
-          await Promise.all([
-            loadExamManageTable(),
-            loadExamAssignments(examID),
-          ]);
+          renderExamAssignments(items, false);
+          deps.setMsg("Enroll peserta berhasil disimpan.");
+          await loadExamManageTable();
         } catch (err) {
           deps.setMsg("Gagal menyimpan enroll peserta: " + err.message);
         } finally {
@@ -535,6 +583,7 @@
     }
 
     if (deps.examAssignmentsLoadBtn) {
+      deps.examAssignmentsLoadBtn.setAttribute("data-proktor-bound", "1");
       deps.examAssignmentsLoadBtn.addEventListener("click", async function () {
         const examID = Number(
           (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
@@ -549,6 +598,37 @@
           deps.setMsg("Peserta ujian berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat peserta ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (deps.examAssignmentsBody) {
+      deps.examAssignmentsBody.addEventListener("click", async function (e) {
+        const btn =
+          e.target && e.target.closest("button[data-exam-assignment-del]");
+        if (!btn) return;
+        const examID = Number(
+          (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
+        );
+        const userID = Number(
+          btn.getAttribute("data-exam-assignment-del") || 0,
+        );
+        if (examID <= 0 || userID <= 0) return;
+        if (!window.confirm("Keluarkan peserta ini dari ujian?")) return;
+        const done = deps.beginBusy(btn, deps.msg, "Mengeluarkan peserta...");
+        try {
+          await deps.api(
+            "/api/v1/admin/exams/" + examID + "/assignments/" + userID,
+            "DELETE",
+            {},
+          );
+          const row = btn.closest("tr[data-user-id]") || btn.closest("tr");
+          if (row && row.parentNode) row.parentNode.removeChild(row);
+          deps.setMsg("Peserta berhasil dikeluarkan.");
+        } catch (err) {
+          deps.setMsg("Gagal mengeluarkan peserta: " + err.message);
         } finally {
           done();
         }

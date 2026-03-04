@@ -71,6 +71,10 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		assetVersion := resolveAssetVersion(
 			"web/static/css/app.css",
 			"web/static/js/app.js",
+			"web/static/js/guru_exams.js",
+			"web/static/js/proktor_master.js",
+			"web/static/js/admin_master.js",
+			"web/static/js/proktor_exams.js",
 		)
 		data := map[string]any{
 			"Title":           pageTitle,
@@ -208,6 +212,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Post("/admin/exams/{id}/token", examHandler.GenerateExamToken)
 				admin.Put("/admin/exams/{id}/assignments", examHandler.ReplaceExamAssignments)
 				admin.Put("/admin/exams/{id}/assignments/by-class", examHandler.ReplaceExamAssignmentsByClass)
+				admin.Post("/admin/exams/{id}/assignments/by-class/append", examHandler.AppendExamAssignmentsByClass)
+				admin.Delete("/admin/exams/{id}/assignments/{user_id}", examHandler.RemoveExamAssignment)
 				admin.Get("/admin/users", authHandler.ListUsers)
 				admin.Post("/admin/users/{id}/photo", examHandler.UploadUserPhoto)
 				admin.Delete("/admin/users/{id}/photo", examHandler.DeleteUserPhoto)

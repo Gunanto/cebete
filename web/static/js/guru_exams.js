@@ -3,6 +3,7 @@
   var examsCache = [];
   var examFormSubmitting = false;
   var pickQuestionsCache = [];
+  var examQuestionsCache = [];
 
   function setDeps(opts) {
     deps = opts || {};
@@ -31,7 +32,12 @@
   }
 
   function fillExamQuestionCodeSelectByExam(examID) {
-    if (!deps || typeof deps.fillQuestionCodeSelect !== "function") return;
+    if (
+      !deps ||
+      typeof deps.fillQuestionCodeSelect !== "function" ||
+      !deps.examQuestionCodeSelect
+    )
+      return;
     const id = Number(examID || 0);
     const exam = findExamByID(id);
     const subjectID = Number((exam && exam.subject_id) || 0);
@@ -97,36 +103,85 @@
 
   function renderPickQuestions(items) {
     if (!deps || !deps.examQuestionPickBody) return;
+    var examMap = {};
+    if (Array.isArray(examQuestionsCache)) {
+      examQuestionsCache.forEach(function (it) {
+        const qid = Number((it && it.question_id) || 0);
+        if (qid > 0) {
+          examMap[qid] = it;
+        }
+      });
+    }
     if (!Array.isArray(items) || items.length === 0) {
       deps.examQuestionPickBody.innerHTML =
-        '<tr><td colspan="5" class="muted">Tidak ada soal untuk kode soal ini.</td></tr>';
+        '<tr><td colspan="6" class="muted">Tidak ada soal untuk kode soal ini.</td></tr>';
       return;
     }
     deps.examQuestionPickBody.innerHTML = "";
     items.forEach(function (it) {
+      const qid = Number((it && it.id) || 0);
+      const examItem = examMap[qid];
+      const inExam = !!examItem;
+      const weightValue = Number(
+        (examItem && examItem.weight) || (it && it.weight) || 1,
+      );
+      const upsertLabel = inExam ? "Perbarui" : "Tambah";
+      const upsertTitle = inExam
+        ? "Perbarui bobot soal di ujian"
+        : "Tambahkan soal ke ujian";
+      const actionButtons = [
+        '<button class="btn btn-secondary btn-inline" type="button" data-pick-action="upsert" data-pick-id="' +
+          deps.escapeHtml(String(it.id || "")) +
+          '" title="' +
+          deps.escapeHtml(upsertTitle) +
+          '" aria-label="' +
+          deps.escapeHtml(upsertLabel) +
+          '">' +
+          deps.escapeHtml(upsertLabel) +
+          "</button>",
+      ];
+      if (inExam) {
+        actionButtons.push(
+          '<button class="btn btn-secondary btn-inline" type="button" data-pick-action="remove" data-pick-id="' +
+            deps.escapeHtml(String(it.id || "")) +
+            '" title="Hapus dari ujian" aria-label="Hapus dari ujian">Hapus</button>',
+        );
+      }
       const tr = document.createElement("tr");
       tr.innerHTML = [
-        '<td><input type="checkbox" data-pick-id="' +
-          deps.escapeHtml(String(it.id || "")) +
-          '"></td>',
         "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
         "<td>" +
           deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
           "</td>",
         "<td>" + deps.escapeHtml(String(it.title || "")) + "</td>",
-        '<td><input type="number" min="0.1" step="0.1" value="1" class="input-inline" data-pick-weight="' +
+        "<td>" + deps.escapeHtml(String(it.question_code || "-")) + "</td>",
+        '<td class="cell-weight"><input type="number" min="0.1" step="0.1" value="' +
+          deps.escapeHtml(String(weightValue > 0 ? weightValue : 1)) +
+          '" class="input-inline" data-pick-weight="' +
           deps.escapeHtml(String(it.id || "")) +
           '"></td>',
+        '<td class="cell-actions">' + actionButtons.join(" ") + "</td>",
       ].join("");
       deps.examQuestionPickBody.appendChild(tr);
     });
   }
 
-  async function loadPickQuestions(examID, questionCodeID) {
+  function getSelectedValues(selectEl) {
+    if (!selectEl) return [];
+    return Array.from(selectEl.selectedOptions || [])
+      .map(function (opt) {
+        return Number(opt.value || 0);
+      })
+      .filter(function (id) {
+        return id > 0;
+      });
+  }
+
+  async function loadPickQuestions(examID, questionCodeIDs) {
     if (!deps) return [];
     const id = Number(examID || 0);
-    const codeID = Number(questionCodeID || 0);
-    if (id <= 0 || codeID <= 0) {
+    const codeIDs = Array.isArray(questionCodeIDs) ? questionCodeIDs : [];
+    if (id <= 0 || !codeIDs.length) {
       renderPickQuestions([]);
       return [];
     }
@@ -142,7 +197,8 @@
     );
     const items = Array.isArray(rows) ? rows : [];
     pickQuestionsCache = items.filter(function (it) {
-      return Number((it && it.question_code_id) || 0) === codeID;
+      const codeID = Number((it && it.question_code_id) || 0);
+      return codeIDs.indexOf(codeID) >= 0;
     });
     renderPickQuestions(pickQuestionsCache);
     return pickQuestionsCache;
@@ -228,11 +284,6 @@
     if (deps && typeof deps.onExamsLoaded === "function") {
       deps.onExamsLoaded(examsCache);
     }
-    if (deps && deps.examsPanel && !deps.examsPanel.hidden) {
-      if (typeof deps.activateGuruMenu === "function") {
-        deps.activateGuruMenu("exams");
-      }
-    }
     if (!deps || !deps.examsBody) return;
     if (!Array.isArray(exams) || !exams.length) {
       deps.examsBody.innerHTML =
@@ -274,41 +325,48 @@
   }
 
   async function loadExamQuestions(examID) {
-    if (!deps || !deps.examQuestionsBody) return;
+    if (!deps) return [];
     if (!examID || examID <= 0) {
-      deps.examQuestionsBody.innerHTML =
-        '<tr><td colspan="5" class="muted">Pilih exam lalu muat soal ujian.</td></tr>';
-      return;
+      examQuestionsCache = [];
+      if (deps.examQuestionsBody) {
+        deps.examQuestionsBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Pilih exam lalu muat soal ujian.</td></tr>';
+      }
+      return [];
     }
     const items = await deps.api(
       "/api/v1/admin/exams/" + Number(examID) + "/questions",
       "GET",
     );
-    if (!Array.isArray(items) || !items.length) {
-      deps.examQuestionsBody.innerHTML =
-        '<tr><td colspan="5" class="muted">Belum ada soal di ujian ini.</td></tr>';
-      return;
+    examQuestionsCache = Array.isArray(items) ? items : [];
+    if (deps.examQuestionsBody) {
+      if (!examQuestionsCache.length) {
+        deps.examQuestionsBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Belum ada soal di ujian ini.</td></tr>';
+        return examQuestionsCache;
+      }
+      deps.examQuestionsBody.innerHTML = "";
+      examQuestionsCache.forEach(function (it) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = [
+          "<td>" + deps.escapeHtml(String(it.seq_no || "")) + "</td>",
+          "<td>" +
+            deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(deps.cleanStemPreview(it.stem_preview)) +
+            "</td>",
+          "<td>" + deps.escapeHtml(String(it.weight || 1)) + "</td>",
+          '<td><button class="icon-only-btn danger" type="button" data-exam-question-del="' +
+            deps.escapeHtml(String(it.question_id || "")) +
+            '" title="Hapus dari ujian" aria-label="Hapus dari ujian">' +
+            '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
+            "</button></td>",
+        ].join("");
+        deps.examQuestionsBody.appendChild(tr);
+      });
     }
-    deps.examQuestionsBody.innerHTML = "";
-    items.forEach(function (it) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = [
-        "<td>" + deps.escapeHtml(String(it.seq_no || "")) + "</td>",
-        "<td>" +
-          deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
-          "</td>",
-        "<td>" +
-          deps.escapeHtml(deps.cleanStemPreview(it.stem_preview)) +
-          "</td>",
-        "<td>" + deps.escapeHtml(String(it.weight || 1)) + "</td>",
-        '<td><button class="icon-only-btn danger" type="button" data-exam-question-del="' +
-          deps.escapeHtml(String(it.question_id || "")) +
-          '" title="Hapus dari ujian" aria-label="Hapus dari ujian">' +
-          '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
-          "</button></td>",
-      ].join("");
-      deps.examQuestionsBody.appendChild(tr);
-    });
+    return examQuestionsCache;
   }
 
   function bindHandlers() {
@@ -511,6 +569,12 @@
         }
         fillExamQuestionCodeSelectByExam(examID);
         fillExamQuestionPickCodeSelectByExam(examID);
+        examQuestionsCache = [];
+        pickQuestionsCache = [];
+        if (deps.examQuestionPickBody) {
+          deps.examQuestionPickBody.innerHTML =
+            '<tr><td colspan="6" class="muted">Pilih ujian dan kode soal, lalu muat daftar soal. Gunakan kolom Aksi untuk menambah atau menghapus soal dari ujian.</td></tr>';
+        }
       });
     }
 
@@ -544,6 +608,12 @@
         }
         fillExamQuestionCodeSelectByExam(examID);
         fillExamQuestionPickCodeSelectByExam(examID);
+        examQuestionsCache = [];
+        pickQuestionsCache = [];
+        if (deps.examQuestionPickBody) {
+          deps.examQuestionPickBody.innerHTML =
+            '<tr><td colspan="6" class="muted">Pilih ujian dan kode soal, lalu muat daftar soal. Gunakan kolom Aksi untuk menambah atau menghapus soal dari ujian.</td></tr>';
+        }
       });
     }
 
@@ -554,17 +624,13 @@
             deps.questionPickExamIDInput.value) ||
             0,
         );
-        const codeID = Number(
-          (deps.examQuestionPickCodeSelect &&
-            deps.examQuestionPickCodeSelect.value) ||
-            0,
-        );
+        const codeIDs = getSelectedValues(deps.examQuestionPickCodeSelect);
         if (examID <= 0) {
           deps.setMsg("Pilih ujian untuk memuat soal.");
           return;
         }
-        if (codeID <= 0) {
-          deps.setMsg("Pilih kode soal untuk memuat daftar soal.");
+        if (!codeIDs.length) {
+          deps.setMsg("Pilih minimal satu kode soal untuk memuat daftar soal.");
           return;
         }
         const done = deps.beginBusy(
@@ -573,7 +639,8 @@
           "Memuat daftar soal...",
         );
         try {
-          await loadPickQuestions(examID, codeID);
+          await loadExamQuestions(examID);
+          await loadPickQuestions(examID, codeIDs);
           deps.setMsg("Daftar soal berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat daftar soal: " + err.message);
@@ -583,75 +650,57 @@
       });
     }
 
-    if (deps.examQuestionPickToggleBtn) {
-      deps.examQuestionPickToggleBtn.addEventListener("click", function () {
-        if (!deps.examQuestionPickBody) return;
-        const checks = deps.examQuestionPickBody.querySelectorAll(
-          'input[type="checkbox"][data-pick-id]',
-        );
-        if (!checks.length) return;
-        const shouldCheck = Array.from(checks).some(function (c) {
-          return !c.checked;
-        });
-        checks.forEach(function (c) {
-          c.checked = shouldCheck;
-        });
-      });
-    }
-
-    if (deps.examQuestionPickAddBtn) {
-      deps.examQuestionPickAddBtn.addEventListener("click", async function () {
+    if (deps.examQuestionPickBody) {
+      deps.examQuestionPickBody.addEventListener("click", async function (e) {
+        const btn = e.target && e.target.closest("button[data-pick-action]");
+        if (!btn) return;
         const examID = Number(
           (deps.questionPickExamIDInput &&
             deps.questionPickExamIDInput.value) ||
             0,
         );
-        if (examID <= 0) {
-          deps.setMsg("Pilih ujian sebelum menambahkan soal.");
-          return;
-        }
-        if (!deps.examQuestionPickBody) return;
-        const checks = Array.from(
-          deps.examQuestionPickBody.querySelectorAll(
-            'input[type="checkbox"][data-pick-id]',
-          ),
-        ).filter(function (c) {
-          return c.checked;
-        });
-        if (!checks.length) {
-          deps.setMsg("Pilih minimal satu soal.");
-          return;
+        const questionID = Number(btn.getAttribute("data-pick-id") || 0);
+        if (examID <= 0 || questionID <= 0) return;
+        const action = String(btn.getAttribute("data-pick-action") || "");
+        if (action === "remove") {
+          if (!window.confirm("Hapus soal ini dari ujian?")) return;
         }
         const done = deps.beginBusy(
-          deps.examQuestionPickAddBtn,
+          btn,
           deps.msg,
-          "Menambahkan soal ke ujian...",
+          action === "remove"
+            ? "Menghapus soal dari ujian..."
+            : "Menyimpan soal ke ujian...",
         );
         try {
-          for (let i = 0; i < checks.length; i += 1) {
-            const id = Number(checks[i].getAttribute("data-pick-id") || 0);
-            if (id <= 0) continue;
+          if (action === "remove") {
+            await deps.api(
+              "/api/v1/admin/exams/" + examID + "/questions/" + questionID,
+              "DELETE",
+              {},
+            );
+            deps.setMsg("Soal berhasil dihapus dari ujian.");
+          } else {
             const weightEl = deps.examQuestionPickBody.querySelector(
-              'input[data-pick-weight="' + String(id) + '"]',
+              'input[data-pick-weight="' + String(questionID) + '"]',
             );
             const weight = Number((weightEl && weightEl.value) || 1);
             await deps.api(
               "/api/v1/admin/exams/" + examID + "/questions",
               "POST",
               {
-                question_id: id,
+                question_id: questionID,
                 seq_no: 0,
                 weight: weight > 0 ? weight : 1,
               },
             );
+            deps.setMsg("Soal berhasil disimpan ke ujian.");
           }
-          await Promise.all([loadExamQuestions(examID), loadExamManageTable()]);
-          deps.setMsg(
-            "Soal terpilih berhasil ditambahkan. Total: " +
-              String(checks.length),
-          );
+          await loadExamQuestions(examID);
+          renderPickQuestions(pickQuestionsCache);
+          await loadExamManageTable();
         } catch (err) {
-          deps.setMsg("Gagal menambahkan soal: " + err.message);
+          deps.setMsg("Gagal memproses soal: " + err.message);
         } finally {
           done();
         }

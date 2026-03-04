@@ -6,6 +6,7 @@
   }
 
   async function loadPendingRegistrations() {
+    if (!deps || typeof deps.api !== "function") return [];
     const out = await deps.api(
       "/api/v1/admin/registrations?status=pending&limit=200&offset=0",
       "GET",
