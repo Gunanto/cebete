@@ -7,6 +7,7 @@
   var examQuestionsPreviewCache = [];
   var examQuestionsPreviewPage = 1;
   var examQuestionsPreviewLimit = 50;
+  var examQuestionsPreviewExamID = 0;
 
   function setDeps(opts) {
     deps = opts || {};
@@ -440,7 +441,7 @@
     if (!deps || !deps.examQuestionsPreviewBody) return;
     if (!Array.isArray(items) || !items.length) {
       deps.examQuestionsPreviewBody.innerHTML =
-        '<tr><td colspan="4" class="muted">Belum ada soal di ujian ini.</td></tr>';
+        '<tr><td colspan="5" class="muted">Belum ada soal di ujian ini.</td></tr>';
       updatePreviewPager(0);
       return;
     }
@@ -462,6 +463,11 @@
           "</td>",
         "<td>" + deps.escapeHtml(String(title || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.question_code || "-")) + "</td>",
+        '<td><button class="icon-only-btn danger" type="button" data-exam-preview-remove="' +
+          deps.escapeHtml(String(it.question_id || "")) +
+          '" title="Keluarkan soal" aria-label="Keluarkan soal">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
+          "</button></td>",
       ].join("");
       deps.examQuestionsPreviewBody.appendChild(tr);
     });
@@ -471,10 +477,12 @@
   async function loadExamQuestionsPreview(examID) {
     if (!deps) return [];
     if (!examID || examID <= 0) {
+      examQuestionsPreviewExamID = 0;
       examQuestionsPreviewCache = [];
       renderExamQuestionsPreview(examQuestionsPreviewCache);
       return [];
     }
+    examQuestionsPreviewExamID = examID;
     const items = await deps.api(
       "/api/v1/admin/exams/" + Number(examID) + "/questions",
       "GET",
@@ -669,9 +677,10 @@
           }
           if (deps.examQuestionsPreviewBody) {
             deps.examQuestionsPreviewBody.innerHTML =
-              '<tr><td colspan="4" class="muted">Memuat daftar soal...</td></tr>';
+              '<tr><td colspan="5" class="muted">Memuat daftar soal...</td></tr>';
           }
           examQuestionsPreviewPage = 1;
+          examQuestionsPreviewExamID = examID;
           if (deps.examQuestionsPreviewLimit) {
             const rawLimit = Number(deps.examQuestionsPreviewLimit.value || 0);
             examQuestionsPreviewLimit = rawLimit > 0 ? rawLimit : 50;
@@ -690,7 +699,7 @@
           } catch (err) {
             if (deps.examQuestionsPreviewBody) {
               deps.examQuestionsPreviewBody.innerHTML =
-                '<tr><td colspan="4" class="muted">Gagal memuat soal ujian: ' +
+                '<tr><td colspan="5" class="muted">Gagal memuat soal ujian: ' +
                 deps.escapeHtml(err.message || "") +
                 "</td></tr>";
             }
@@ -741,6 +750,46 @@
           renderExamQuestionsPreview(examQuestionsPreviewCache);
         }
       });
+    }
+
+    if (deps.examQuestionsPreviewBody) {
+      deps.examQuestionsPreviewBody.addEventListener(
+        "click",
+        async function (e) {
+          const btn =
+            e.target && e.target.closest("button[data-exam-preview-remove]");
+          if (!btn) return;
+          const questionID = Number(
+            btn.getAttribute("data-exam-preview-remove") || 0,
+          );
+          if (examQuestionsPreviewExamID <= 0 || questionID <= 0) return;
+          if (!window.confirm("Keluarkan soal ini dari ujian?")) return;
+          const done = deps.beginBusy(
+            btn,
+            deps.msg,
+            "Menghapus soal dari ujian...",
+          );
+          try {
+            await deps.api(
+              "/api/v1/admin/exams/" +
+                examQuestionsPreviewExamID +
+                "/questions/" +
+                questionID,
+              "DELETE",
+              {},
+            );
+            await Promise.all([
+              loadExamQuestionsPreview(examQuestionsPreviewExamID),
+              loadExamManageTable(),
+            ]);
+            deps.setMsg("Soal berhasil dikeluarkan dari ujian.");
+          } catch (err) {
+            deps.setMsg("Gagal mengeluarkan soal: " + err.message);
+          } finally {
+            done();
+          }
+        },
+      );
     }
 
     if (deps.examQuestionForm) {
