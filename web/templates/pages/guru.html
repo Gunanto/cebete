@@ -1478,6 +1478,67 @@
     </form>
 </dialog>
 
+<dialog
+    id="guru-exam-questions-preview-dialog"
+    class="admin-dialog admin-dialog-wide"
+>
+    <form method="dialog" class="form-grid">
+        <h3 id="guru-exam-questions-preview-title">Soal Ujian</h3>
+        <div class="actions">
+            <label class="inline-label">
+                Jumlah per halaman
+                <select id="guru-exam-questions-preview-limit">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                </select>
+            </label>
+            <div class="pager">
+                <button
+                    id="guru-exam-questions-preview-prev"
+                    class="btn btn-secondary"
+                    type="button"
+                >
+                    Sebelumnya
+                </button>
+                <span id="guru-exam-questions-preview-page" class="muted">
+                    Halaman 1 / 1
+                </span>
+                <button
+                    id="guru-exam-questions-preview-next"
+                    class="btn btn-secondary"
+                    type="button"
+                >
+                    Berikutnya
+                </button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="bs-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Tipe</th>
+                        <th>Rumusan Butir Soal</th>
+                        <th>Kode Soal</th>
+                    </tr>
+                </thead>
+                <tbody id="guru-exam-questions-preview-body">
+                    <tr>
+                        <td colspan="4" class="muted">
+                            Pilih ujian untuk melihat daftar soal.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="actions">
+            <button class="btn btn-secondary" type="submit">Tutup</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog id="guru-subject-dialog" class="admin-dialog">
     <form id="guru-subject-form" class="form-grid">
         <h3 id="guru-subject-dialog-title">Tambah Mapel</h3>

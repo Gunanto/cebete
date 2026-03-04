@@ -1879,11 +1879,11 @@ textarea:focus-visible {
 }
 
 .exam-pick-table .col-type {
-    width: 6%;
+    width: 9%;
 }
 
 .exam-pick-table .col-title {
-    width: 58%;
+    width: 45%;
 }
 
 .exam-pick-table .col-code {
@@ -1891,7 +1891,7 @@ textarea:focus-visible {
 }
 
 .exam-pick-table .col-weight {
-    width: 6%;
+    width: 16%;
 }
 
 .exam-pick-table .col-actions {

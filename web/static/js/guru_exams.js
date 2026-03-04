@@ -4,6 +4,9 @@
   var examFormSubmitting = false;
   var pickQuestionsCache = [];
   var examQuestionsCache = [];
+  var examQuestionsPreviewCache = [];
+  var examQuestionsPreviewPage = 1;
+  var examQuestionsPreviewLimit = 50;
 
   function setDeps(opts) {
     deps = opts || {};
@@ -343,6 +346,11 @@
           '" title="Pilih Ujian" aria-label="Pilih Ujian">' +
           '<svg viewBox="0 0 24 24" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' +
           "</button>" +
+          '<button class="icon-only-btn" type="button" data-exam-action="view-questions" data-id="' +
+          deps.escapeHtml(String(it.id || "")) +
+          '" title="Lihat Soal Ujian" aria-label="Lihat Soal Ujian">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>' +
+          "</button>" +
           '<button class="icon-only-btn danger" type="button" data-exam-action="delete" data-id="' +
           deps.escapeHtml(String(it.id || "")) +
           '" title="Nonaktifkan Ujian" aria-label="Nonaktifkan Ujian">' +
@@ -397,6 +405,83 @@
       });
     }
     return examQuestionsCache;
+  }
+
+  function clampPreviewPage(totalPages) {
+    if (totalPages <= 0) return 1;
+    if (examQuestionsPreviewPage > totalPages) return totalPages;
+    if (examQuestionsPreviewPage < 1) return 1;
+    return examQuestionsPreviewPage;
+  }
+
+  function updatePreviewPager(totalItems) {
+    if (!deps) return;
+    var total = Number(totalItems || 0);
+    var limit = Number(examQuestionsPreviewLimit || 0);
+    var totalPages = limit > 0 ? Math.ceil(total / limit) : 1;
+    examQuestionsPreviewPage = clampPreviewPage(totalPages);
+    if (deps.examQuestionsPreviewPage) {
+      deps.examQuestionsPreviewPage.textContent =
+        "Halaman " +
+        String(totalPages > 0 ? examQuestionsPreviewPage : 1) +
+        " / " +
+        String(totalPages > 0 ? totalPages : 1);
+    }
+    if (deps.examQuestionsPreviewPrev) {
+      deps.examQuestionsPreviewPrev.disabled = examQuestionsPreviewPage <= 1;
+    }
+    if (deps.examQuestionsPreviewNext) {
+      deps.examQuestionsPreviewNext.disabled =
+        totalPages <= 1 || examQuestionsPreviewPage >= totalPages;
+    }
+  }
+
+  function renderExamQuestionsPreview(items) {
+    if (!deps || !deps.examQuestionsPreviewBody) return;
+    if (!Array.isArray(items) || !items.length) {
+      deps.examQuestionsPreviewBody.innerHTML =
+        '<tr><td colspan="4" class="muted">Belum ada soal di ujian ini.</td></tr>';
+      updatePreviewPager(0);
+      return;
+    }
+    var limit = Number(examQuestionsPreviewLimit || 0);
+    var totalItems = items.length;
+    var totalPages = limit > 0 ? Math.ceil(totalItems / limit) : 1;
+    examQuestionsPreviewPage = clampPreviewPage(totalPages);
+    var start = limit > 0 ? (examQuestionsPreviewPage - 1) * limit : 0;
+    var end = limit > 0 ? start + limit : totalItems;
+    var pageItems = limit > 0 ? items.slice(start, end) : items.slice();
+    deps.examQuestionsPreviewBody.innerHTML = "";
+    pageItems.forEach(function (it) {
+      const title = deps.cleanStemPreview(it.stem_preview);
+      const tr = document.createElement("tr");
+      tr.innerHTML = [
+        "<td>" + deps.escapeHtml(String(it.question_id || "")) + "</td>",
+        "<td>" +
+          deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
+          "</td>",
+        "<td>" + deps.escapeHtml(String(title || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.question_code || "-")) + "</td>",
+      ].join("");
+      deps.examQuestionsPreviewBody.appendChild(tr);
+    });
+    updatePreviewPager(totalItems);
+  }
+
+  async function loadExamQuestionsPreview(examID) {
+    if (!deps) return [];
+    if (!examID || examID <= 0) {
+      examQuestionsPreviewCache = [];
+      renderExamQuestionsPreview(examQuestionsPreviewCache);
+      return [];
+    }
+    const items = await deps.api(
+      "/api/v1/admin/exams/" + Number(examID) + "/questions",
+      "GET",
+    );
+    examQuestionsPreviewCache = Array.isArray(items) ? items : [];
+    renderExamQuestionsPreview(examQuestionsPreviewCache);
+    return examQuestionsPreviewCache;
   }
 
   function bindHandlers() {
@@ -569,6 +654,49 @@
           }
           return;
         }
+        if (action === "view-questions") {
+          const exam = findExamByID(examID);
+          if (deps.examQuestionsPreviewTitle) {
+            const label = [
+              String((exam && exam.code) || "").trim(),
+              String((exam && exam.title) || "").trim(),
+            ]
+              .filter(Boolean)
+              .join(" - ");
+            deps.examQuestionsPreviewTitle.textContent = label
+              ? "Soal Ujian: " + label
+              : "Soal Ujian";
+          }
+          if (deps.examQuestionsPreviewBody) {
+            deps.examQuestionsPreviewBody.innerHTML =
+              '<tr><td colspan="4" class="muted">Memuat daftar soal...</td></tr>';
+          }
+          examQuestionsPreviewPage = 1;
+          if (deps.examQuestionsPreviewLimit) {
+            const rawLimit = Number(deps.examQuestionsPreviewLimit.value || 0);
+            examQuestionsPreviewLimit = rawLimit > 0 ? rawLimit : 50;
+          }
+          if (deps.examQuestionsPreviewDialog) {
+            if (
+              typeof deps.examQuestionsPreviewDialog.showModal === "function"
+            ) {
+              deps.examQuestionsPreviewDialog.showModal();
+            } else {
+              deps.examQuestionsPreviewDialog.setAttribute("open", "open");
+            }
+          }
+          try {
+            await loadExamQuestionsPreview(examID);
+          } catch (err) {
+            if (deps.examQuestionsPreviewBody) {
+              deps.examQuestionsPreviewBody.innerHTML =
+                '<tr><td colspan="4" class="muted">Gagal memuat soal ujian: ' +
+                deps.escapeHtml(err.message || "") +
+                "</td></tr>";
+            }
+          }
+          return;
+        }
         if (action === "delete") {
           if (!window.confirm("Nonaktifkan ujian ini?")) return;
           const done = deps.beginBusy(btn, deps.msg, "Menonaktifkan ujian...");
@@ -581,6 +709,36 @@
           } finally {
             done();
           }
+        }
+      });
+    }
+
+    if (deps.examQuestionsPreviewLimit) {
+      deps.examQuestionsPreviewLimit.addEventListener("change", function () {
+        const rawLimit = Number(deps.examQuestionsPreviewLimit.value || 0);
+        examQuestionsPreviewLimit = rawLimit > 0 ? rawLimit : 50;
+        examQuestionsPreviewPage = 1;
+        renderExamQuestionsPreview(examQuestionsPreviewCache);
+      });
+    }
+
+    if (deps.examQuestionsPreviewPrev) {
+      deps.examQuestionsPreviewPrev.addEventListener("click", function () {
+        if (examQuestionsPreviewPage > 1) {
+          examQuestionsPreviewPage -= 1;
+          renderExamQuestionsPreview(examQuestionsPreviewCache);
+        }
+      });
+    }
+
+    if (deps.examQuestionsPreviewNext) {
+      deps.examQuestionsPreviewNext.addEventListener("click", function () {
+        var limit = Number(examQuestionsPreviewLimit || 0);
+        var totalPages =
+          limit > 0 ? Math.ceil(examQuestionsPreviewCache.length / limit) : 1;
+        if (examQuestionsPreviewPage < totalPages) {
+          examQuestionsPreviewPage += 1;
+          renderExamQuestionsPreview(examQuestionsPreviewCache);
         }
       });
     }

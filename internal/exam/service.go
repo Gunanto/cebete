@@ -279,6 +279,8 @@ type ExamQuestionManageItem struct {
 	SeqNo         int     `json:"seq_no"`
 	Weight        float64 `json:"weight"`
 	QuestionType  string  `json:"question_type"`
+	QuestionCode  string  `json:"question_code"`
+	QuestionTitle string  `json:"question_title"`
 	StemPreview   string  `json:"stem_preview"`
 	SubjectID     int64   `json:"subject_id"`
 	SubjectName   string  `json:"subject_name"`
@@ -2053,6 +2055,8 @@ func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQu
 			eq.seq_no,
 			eq.weight,
 			q.question_type,
+			COALESCE(qc.code, '') AS question_code,
+			COALESCE(qc.name, '') AS question_title,
 			LEFT(COALESCE(qv.stem_html, q.stem_html, ''), 200) AS stem_preview,
 			q.subject_id,
 			s.name AS subject_name,
@@ -2060,6 +2064,7 @@ func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQu
 			qv.status
 		FROM exam_questions eq
 		JOIN questions q ON q.id = eq.question_id
+		LEFT JOIN question_codes qc ON qc.id = q.question_code_id
 		JOIN subjects s ON s.id = q.subject_id
 		LEFT JOIN LATERAL (
 			SELECT version_no, stem_html, status
@@ -2087,6 +2092,8 @@ func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQu
 			&it.SeqNo,
 			&it.Weight,
 			&it.QuestionType,
+			&it.QuestionCode,
+			&it.QuestionTitle,
 			&it.StemPreview,
 			&it.SubjectID,
 			&it.SubjectName,

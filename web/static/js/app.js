@@ -4325,6 +4325,27 @@
     const examQuestionPickAddBtn = document.getElementById(
       "guru-exam-question-pick-add-btn",
     );
+    const examQuestionsPreviewDialog = document.getElementById(
+      "guru-exam-questions-preview-dialog",
+    );
+    const examQuestionsPreviewTitle = document.getElementById(
+      "guru-exam-questions-preview-title",
+    );
+    const examQuestionsPreviewBody = document.getElementById(
+      "guru-exam-questions-preview-body",
+    );
+    const examQuestionsPreviewLimit = document.getElementById(
+      "guru-exam-questions-preview-limit",
+    );
+    const examQuestionsPreviewPrev = document.getElementById(
+      "guru-exam-questions-preview-prev",
+    );
+    const examQuestionsPreviewNext = document.getElementById(
+      "guru-exam-questions-preview-next",
+    );
+    const examQuestionsPreviewPage = document.getElementById(
+      "guru-exam-questions-preview-page",
+    );
     const examQuestionPickBody = document.getElementById(
       "guru-exam-question-pick-body",
     );
@@ -4892,6 +4913,13 @@
         examQuestionPickToggleBtn: examQuestionPickToggleBtn,
         examQuestionPickAddBtn: examQuestionPickAddBtn,
         examQuestionPickBody: examQuestionPickBody,
+        examQuestionsPreviewDialog: examQuestionsPreviewDialog,
+        examQuestionsPreviewTitle: examQuestionsPreviewTitle,
+        examQuestionsPreviewBody: examQuestionsPreviewBody,
+        examQuestionsPreviewLimit: examQuestionsPreviewLimit,
+        examQuestionsPreviewPrev: examQuestionsPreviewPrev,
+        examQuestionsPreviewNext: examQuestionsPreviewNext,
+        examQuestionsPreviewPage: examQuestionsPreviewPage,
         onExamsLoaded: function (exams) {
           if (GuruResults && typeof GuruResults.setExams === "function") {
             GuruResults.setExams(exams);
