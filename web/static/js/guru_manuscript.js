@@ -644,6 +644,9 @@
     const explanation = String(item.explanation_html || "").trim();
     const hint = String(item.hint_html || "").trim();
     const options = Array.isArray(item.options) ? item.options : [];
+    const statements = Array.isArray(keyObj && keyObj.statements)
+      ? keyObj.statements
+      : [];
     const stimulusHTML = String(item.stimulus_html || "").trim()
       ? String(item.stimulus_html || "").trim()
       : '<div class="muted">(tanpa stimulus)</div>';
@@ -660,6 +663,33 @@
           })
           .join("")
       : '<div class="muted">Tidak ada opsi tersimpan.</div>';
+    const statementsHTML = statements.length
+      ? "<ol>" +
+        statements
+          .map(function (it) {
+            const id = deps.escapeHtml(String((it && it.id) || "-"));
+            const text = deps.escapeHtml(String((it && it.statement) || ""));
+            const keyLabel = (it && it.correct) === true ? "Benar" : "Salah";
+            return (
+              "<li><div><strong>" +
+              id +
+              "</strong> " +
+              text +
+              '</div><div class="muted">Kunci: ' +
+              deps.escapeHtml(keyLabel) +
+              "</div></li>"
+            );
+          })
+          .join("") +
+        "</ol>"
+      : '<div class="muted">Tidak ada pernyataan tersimpan.</div>';
+    const rightPanelHTML = statements.length
+      ? '<div><strong>Pernyataan:</strong><div class="box mt">' +
+        statementsHTML +
+        "</div></div>"
+      : '<div><strong>Opsi:</strong><div class="box mt">' +
+        optionsHTML +
+        "</div></div>";
     if (deps.manuscriptPreviewTitle) {
       deps.text(
         deps.manuscriptPreviewTitle,
@@ -680,9 +710,7 @@
         "</div></div>" +
         "</div>" +
         '<div class="preview-col">' +
-        '<div><strong>Opsi:</strong><div class="box mt">' +
-        optionsHTML +
-        "</div></div>" +
+        rightPanelHTML +
         '<div class="mt"><strong>Answer Key:</strong><pre class="code-box">' +
         safeJSON +
         "</pre></div>" +
