@@ -9,6 +9,36 @@
     deps = opts || {};
   }
 
+  function pad2(num) {
+    return String(num).padStart(2, "0");
+  }
+
+  function localDateTimeToRFC3339(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toISOString();
+  }
+
+  function rfc3339ToLocalDateTime(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return "";
+    return (
+      String(dt.getFullYear()) +
+      "-" +
+      pad2(dt.getMonth() + 1) +
+      "-" +
+      pad2(dt.getDate()) +
+      "T" +
+      pad2(dt.getHours()) +
+      ":" +
+      pad2(dt.getMinutes())
+    );
+  }
+
   function getExamCount() {
     return Array.isArray(examsCache) ? examsCache.length : 0;
   }
@@ -404,12 +434,36 @@
         }
         const fd = new FormData(deps.examForm);
         const examID = Number(fd.get("exam_id") || 0);
+        const startAtLocal = String(fd.get("start_at_local") || "").trim();
+        const endAtLocal = String(fd.get("end_at_local") || "").trim();
+        const startAt = localDateTimeToRFC3339(startAtLocal);
+        const endAt = localDateTimeToRFC3339(endAtLocal);
+        if (startAtLocal && !startAt) {
+          deps.setMsg("Format mulai tanggal tidak valid.");
+          return;
+        }
+        if (endAtLocal && !endAt) {
+          deps.setMsg("Format selesai tanggal tidak valid.");
+          return;
+        }
+        if (
+          startAt &&
+          endAt &&
+          new Date(endAt).getTime() < new Date(startAt).getTime()
+        ) {
+          deps.setMsg(
+            "Selesai tanggal tidak boleh lebih kecil dari mulai tanggal.",
+          );
+          return;
+        }
         const payload = {
           code: String(fd.get("code") || "").trim(),
           title: String(fd.get("title") || "").trim(),
           subject_id: Number(fd.get("subject_id") || 0),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
+          start_at: startAt,
+          end_at: endAt,
           review_policy: String(fd.get("review_policy") || "after_submit"),
           randomize_questions: fd.get("randomize_questions") !== null,
           randomize_options: fd.get("randomize_options") !== null,
@@ -462,6 +516,9 @@
               deps.examForm.elements.namedItem("duration_minutes");
             const maxAttemptField =
               deps.examForm.elements.namedItem("max_attempts");
+            const startAtField =
+              deps.examForm.elements.namedItem("start_at_local");
+            const endAtField = deps.examForm.elements.namedItem("end_at_local");
             const policyField =
               deps.examForm.elements.namedItem("review_policy");
             if (idField) idField.value = String(examID);
@@ -475,6 +532,12 @@
             }
             if (maxAttemptField) {
               maxAttemptField.value = String(examRow.max_attempts || 1);
+            }
+            if (startAtField) {
+              startAtField.value = rfc3339ToLocalDateTime(examRow.start_at);
+            }
+            if (endAtField) {
+              endAtField.value = rfc3339ToLocalDateTime(examRow.end_at);
             }
             if (policyField) {
               policyField.value = String(

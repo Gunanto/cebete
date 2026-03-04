@@ -201,6 +201,8 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrAttemptForbidden):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamNotStarted), errors.Is(err, ErrExamEnded):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrStudentDataMissing):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrExamTokenAlreadyUsed):
@@ -244,7 +246,7 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrExamTokenRequired), errors.Is(err, ErrExamTokenInvalid), errors.Is(err, ErrExamTokenExpired), errors.Is(err, ErrExamTokenUnavailable), errors.Is(err, ErrExamTokenAlreadyUsed), errors.Is(err, ErrStudentDataMissing):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrExamNotAssigned), errors.Is(err, ErrAttemptForbidden):
+		case errors.Is(err, ErrExamNotAssigned), errors.Is(err, ErrAttemptForbidden), errors.Is(err, ErrExamNotStarted), errors.Is(err, ErrExamEnded):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrAttemptLimitReached):
 			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: err.Error()})

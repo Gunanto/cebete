@@ -41,6 +41,8 @@ var (
 	ErrIncidentPolicyInvalid    = errors.New("kebijakan insiden tidak valid")
 	ErrQuestionCodeRuleNotFound = errors.New("exam question code rule not found")
 	ErrUserNotFound             = errors.New("user not found")
+	ErrExamNotStarted           = errors.New("ujian belum dimulai")
+	ErrExamEnded                = errors.New("waktu ujian sudah berakhir")
 )
 
 type Service struct {
@@ -433,6 +435,30 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 		}
 	}
 
+	duration := s.defaultExamMinutes
+	maxAttempts := 1
+	var examTokenHash sql.NullString
+	var examTokenExpires sql.NullTime
+	var examTokenGeneratedAt sql.NullTime
+	var examStartAt sql.NullTime
+	var examEndAt sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT duration_minutes, max_attempts, exam_token_hash, exam_token_expires_at, exam_token_generated_at, start_at, end_at
+		FROM exams
+		WHERE id = $1 AND is_active = TRUE
+	`, examID).Scan(&duration, &maxAttempts, &examTokenHash, &examTokenExpires, &examTokenGeneratedAt, &examStartAt, &examEndAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("query exam duration: %w", err)
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+	now := time.Now()
+	if err := validateExamScheduleWindow(now, examStartAt, examEndAt); err != nil {
+		return nil, err
+	}
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, exam_id, student_id, status, started_at, expires_at
 		FROM attempts
@@ -447,25 +473,6 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 		return &existing, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("query existing attempt: %w", err)
-	}
-
-	duration := s.defaultExamMinutes
-	maxAttempts := 1
-	var examTokenHash sql.NullString
-	var examTokenExpires sql.NullTime
-	var examTokenGeneratedAt sql.NullTime
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT duration_minutes, max_attempts, exam_token_hash, exam_token_expires_at, exam_token_generated_at
-		FROM exams
-		WHERE id = $1 AND is_active = TRUE
-	`, examID).Scan(&duration, &maxAttempts, &examTokenHash, &examTokenExpires, &examTokenGeneratedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrExamNotFound
-		}
-		return nil, fmt.Errorf("query exam duration: %w", err)
-	}
-	if maxAttempts <= 0 {
-		maxAttempts = 1
 	}
 	var assignmentCount int
 	if err := s.db.QueryRowContext(ctx, `
@@ -503,7 +510,6 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	if !examTokenHash.Valid || strings.TrimSpace(examTokenHash.String) == "" {
 		return nil, ErrExamTokenUnavailable
 	}
-	now := time.Now()
 	if !examTokenExpires.Valid || now.After(examTokenExpires.Time) {
 		return nil, ErrExamTokenExpired
 	}
@@ -541,6 +547,12 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 		return nil, ErrAttemptLimitReached
 	}
 
+	startedAt := now
+	expiresAt := startedAt.Add(time.Duration(duration) * time.Minute)
+	if examEndAt.Valid && examEndAt.Time.Before(expiresAt) {
+		expiresAt = examEndAt.Time
+	}
+
 	row = s.db.QueryRowContext(ctx, `
 		INSERT INTO attempts (
 			exam_id,
@@ -552,11 +564,11 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 			$1,
 			$2,
 			'in_progress',
-			now(),
-			now() + make_interval(mins => $3)
+			$3,
+			$4
 		)
 		RETURNING id, exam_id, student_id, status, started_at, expires_at
-	`, examID, studentID, duration)
+	`, examID, studentID, startedAt, expiresAt)
 
 	var created Attempt
 	if err := row.Scan(&created.ID, &created.ExamID, &created.StudentID, &created.Status, &created.StartedAt, &created.ExpiresAt); err != nil {
@@ -590,6 +602,9 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 	examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, tokenGeneratedAt, startAt, endAt, err :=
 		s.lookupExamByToken(ctx, examToken)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
 		return nil, err
 	}
 
@@ -685,6 +700,9 @@ func (s *Service) PreviewExamByTokenForStaff(ctx context.Context, examToken stri
 	examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, _, startAt, endAt, err :=
 		s.lookupExamByToken(ctx, examToken)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
 		return nil, err
 	}
 
@@ -790,6 +808,16 @@ func (s *Service) lookupExamByToken(ctx context.Context, examToken string) (int6
 	}
 
 	return examID, examCode, examTitle, subjectName, durationMinutes, maxAttempts, tokenExpiresAt, tokenGeneratedAt, startAt, endAt, nil
+}
+
+func validateExamScheduleWindow(now time.Time, startAt, endAt sql.NullTime) error {
+	if startAt.Valid && now.Before(startAt.Time) {
+		return ErrExamNotStarted
+	}
+	if endAt.Valid && !now.Before(endAt.Time) {
+		return ErrExamEnded
+	}
+	return nil
 }
 
 func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, studentID int64) error {

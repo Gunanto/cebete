@@ -54,6 +54,8 @@ type mockExamService struct {
 	getAttemptOwnerFn               func(ctx context.Context, attemptID int64) (int64, error)
 	logAttemptEventFn               func(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
 	listAttemptEventsFn             func(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
+	listExamEventsFn                func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error)
+	listExamClassEventsFn           func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
 	setUserPhotoDataURLFn           func(ctx context.Context, userID int64, dataURL string) (string, error)
 	clearUserPhotoDataURLFn         func(ctx context.Context, userID int64) error
 }
@@ -324,6 +326,20 @@ func (m *mockExamService) ListAttemptEvents(ctx context.Context, attemptID int64
 	return m.listAttemptEventsFn(ctx, attemptID, limit)
 }
 
+func (m *mockExamService) ListExamEvents(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error) {
+	if m.listExamEventsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamEventsFn(ctx, examID, limit)
+}
+
+func (m *mockExamService) ListExamClassEvents(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error) {
+	if m.listExamClassEventsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamClassEventsFn(ctx, examID, classID, limit)
+}
+
 func (m *mockExamService) SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error) {
 	if m.setUserPhotoDataURLFn == nil {
 		return "", errors.New("not implemented")
@@ -481,6 +497,37 @@ func TestStartAttemptReturnsForbiddenOnAttemptForbidden(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)
+	}
+}
+
+func TestStartAttemptReturnsForbiddenOnExamScheduleWindow(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "not started", err: ErrExamNotStarted},
+		{name: "ended", err: ErrExamEnded},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHandler(&mockExamService{
+				startAttemptFn: func(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
+					return nil, tc.err
+				},
+			})
+
+			payload := []byte(`{"exam_id":2}`)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/attempts/start", bytes.NewReader(payload))
+			req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 11, Role: "guru"}))
+			w := httptest.NewRecorder()
+
+			h.Start(w, req)
+
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("expected 403, got %d", w.Code)
+			}
+		})
 	}
 }
 
