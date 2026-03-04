@@ -165,6 +165,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.Put("/attempts/{id}/answers/{questionID}", examHandler.SaveAnswer)
 			secure.Post("/attempts/{id}/submit", examHandler.Submit)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/attempts/{id}/events", examHandler.ListEvents)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/exams/{id}/events", examHandler.ListExamEvents)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/exams/{id}/classes/{class_id}/events", examHandler.ListExamClassEvents)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/question-codes", questionHandler.ListQuestionCodes)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/question-codes", questionHandler.CreateQuestionCode)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/question-codes/{id}", questionHandler.UpdateQuestionCode)

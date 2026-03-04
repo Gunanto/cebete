@@ -2761,6 +2761,8 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     body[data-page="proktor_content"] {
         background: #fff !important;
         padding: 0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     body[data-page="proktor_content"] .topbar,
     body[data-page="proktor_content"] .landing-footer,
@@ -2820,5 +2822,37 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     }
     body[data-page="proktor_content"] .attendance-sheet-page:last-child {
         page-break-after: auto;
+    }
+    body[data-page="proktor_content"] .proktor-cards-page,
+    body[data-page="proktor_content"] .attendance-sheet-page {
+        background: #fff !important;
+        border: 1px solid #d8e1f0 !important;
+        box-shadow: none !important;
+    }
+    body[data-page="proktor_content"] .proktor-card {
+        border: 1px solid #111827 !important;
+        background: #fff !important;
+    }
+    body[data-page="proktor_content"] .proktor-card-head {
+        background: #1a5f7a !important;
+        color: #fff !important;
+    }
+    body[data-page="proktor_content"] .proktor-card-photo {
+        background: #f8fafc !important;
+        border-color: #cbd5e1 !important;
+    }
+    body[data-page="proktor_content"] .proktor-card-foot {
+        background: #f8fafc !important;
+        border-top: 1px solid #e2e8f0 !important;
+        color: #64748b !important;
+    }
+    body[data-page="proktor_content"] .proktor-card-badge {
+        background: #22a06b !important;
+        color: #fff !important;
+    }
+    body[data-page="proktor_content"] .attendance-list-table,
+    body[data-page="proktor_content"] .attendance-list-table th,
+    body[data-page="proktor_content"] .attendance-list-table td {
+        border: 1px solid #111827 !important;
     }
 }

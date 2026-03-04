@@ -240,10 +240,49 @@
             <section id="proktor-events-panel" class="panel" hidden>
                 <h3>Monitoring Event Ujian</h3>
                 <form id="proktor-events-form" class="form-grid">
-                    <label
-                        >Attempt ID
-                        <input type="number" name="attempt_id" min="1" required
-                    /></label>
+                    <label>
+                        Level Monitoring
+                        <select id="proktor-events-scope" name="scope" required>
+                            <option value="user">Peserta</option>
+                            <option value="class">Kelas</option>
+                            <option value="exam">Ujian</option>
+                        </select>
+                    </label>
+                    <label>
+                        Pilih Ujian
+                        <select
+                            id="proktor-events-exam"
+                            name="exam_id"
+                            required
+                        >
+                            <option value="">Pilih ujian...</option>
+                        </select>
+                    </label>
+                    <label>
+                        Kelas
+                        <select
+                            id="proktor-events-class"
+                            name="class_id"
+                            required
+                        >
+                            <option value="">Pilih kelas...</option>
+                        </select>
+                    </label>
+                    <label>
+                        Peserta
+                        <select
+                            id="proktor-events-user"
+                            name="user_id"
+                            required
+                        >
+                            <option value="">Pilih peserta...</option>
+                        </select>
+                    </label>
+                    <input
+                        id="proktor-events-attempt-id"
+                        type="hidden"
+                        name="attempt_id"
+                    />
                     <label
                         >Limit Event
                         <input
@@ -258,10 +297,14 @@
                         Muat Event
                     </button>
                 </form>
+                <p class="muted mt">
+                    Attempt terbaru peserta akan dipakai otomatis.
+                </p>
                 <div class="table-wrap mt">
                     <table class="bs-table">
                         <thead>
                             <tr>
+                                <th>Attempt ID</th>
                                 <th>Waktu Server</th>
                                 <th>Event</th>
                                 <th>Actor</th>
@@ -270,8 +313,8 @@
                         </thead>
                         <tbody id="proktor-events-body">
                             <tr>
-                                <td colspan="4" class="muted">
-                                    Masukkan Attempt ID lalu klik Muat Event.
+                                <td colspan="5" class="muted">
+                                    Pilih level monitoring lalu klik Muat Event.
                                 </td>
                             </tr>
                         </tbody>

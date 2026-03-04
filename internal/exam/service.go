@@ -3443,6 +3443,95 @@ func (s *Service) ListAttemptEvents(ctx context.Context, attemptID int64, limit 
 	return items, nil
 }
 
+func (s *Service) ListExamEvents(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error) {
+	if examID <= 0 {
+		return nil, ErrExamNotFound
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1)
+	`, examID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("load exam: %w", err)
+	}
+	if !exists {
+		return nil, ErrExamNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id, ae.created_at
+		FROM attempt_events ae
+		JOIN attempts a ON a.id = ae.attempt_id
+		WHERE a.exam_id = $1
+		ORDER BY ae.server_ts DESC, ae.id DESC
+		LIMIT $2
+	`, examID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query exam events: %w", err)
+	}
+	defer rows.Close()
+	items := make([]AttemptEvent, 0)
+	for rows.Next() {
+		item, err := scanAttemptEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate exam events: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) ListExamClassEvents(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error) {
+	if examID <= 0 {
+		return nil, ErrExamNotFound
+	}
+	if classID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1)
+	`, examID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("load exam: %w", err)
+	}
+	if !exists {
+		return nil, ErrExamNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id, ae.created_at
+		FROM attempt_events ae
+		JOIN attempts a ON a.id = ae.attempt_id
+		JOIN enrollments en ON en.user_id = a.student_id AND en.status = 'active'
+		WHERE a.exam_id = $1
+		  AND en.class_id = $2
+		ORDER BY ae.server_ts DESC, ae.id DESC
+		LIMIT $3
+	`, examID, classID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query class events: %w", err)
+	}
+	defer rows.Close()
+	items := make([]AttemptEvent, 0)
+	for rows.Next() {
+		item, err := scanAttemptEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate class events: %w", err)
+	}
+	return items, nil
+}
+
 func (s *Service) loadExamReviewPolicy(ctx context.Context, examID int64) (string, *time.Time, error) {
 	var policy sql.NullString
 	var endAt sql.NullTime

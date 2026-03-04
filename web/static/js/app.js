@@ -3097,6 +3097,13 @@
     const regBody = document.getElementById("proktor-registrations-body");
     const eventsForm = document.getElementById("proktor-events-form");
     const eventsBody = document.getElementById("proktor-events-body");
+    const eventsScopeSelect = document.getElementById("proktor-events-scope");
+    const eventsExamSelect = document.getElementById("proktor-events-exam");
+    const eventsClassSelect = document.getElementById("proktor-events-class");
+    const eventsUserSelect = document.getElementById("proktor-events-user");
+    const eventsAttemptInput = document.getElementById(
+      "proktor-events-attempt-id",
+    );
     const tokenPanel = document.getElementById("proktor-token-panel");
     const tokenForm = document.getElementById("proktor-token-form");
     const tokenExamSelect = document.getElementById("proktor-token-exam");
@@ -3242,6 +3249,7 @@
       if (Number.isNaN(d.getTime())) return String(raw);
       return d.toLocaleString("id-ID");
     };
+    let eventsAssignments = [];
 
     function initProktorExamsModule() {
       if (!ProktorExams || typeof ProktorExams.init !== "function") return;
@@ -3481,6 +3489,151 @@
         typeof ProktorPlacement.fillAssignClassSelectBySchool === "function"
       ) {
         return ProktorPlacement.fillAssignClassSelectBySchool(schoolID);
+      }
+    }
+
+    function resetEventsClassSelect(label) {
+      if (!eventsClassSelect) return;
+      eventsClassSelect.innerHTML =
+        '<option value="">' +
+        escapeHtml(label || "Pilih kelas...") +
+        "</option>";
+      eventsClassSelect.value = "";
+    }
+
+    function resetEventsUserSelect(label) {
+      if (!eventsUserSelect) return;
+      eventsUserSelect.innerHTML =
+        '<option value="">' +
+        escapeHtml(label || "Pilih peserta...") +
+        "</option>";
+      eventsUserSelect.value = "";
+    }
+
+    function fillEventsClassOptions(rows) {
+      if (!eventsClassSelect) return;
+      const seen = new Map();
+      (Array.isArray(rows) ? rows : []).forEach(function (it) {
+        const classID = String(it.class_id || "");
+        if (!classID || seen.has(classID)) return;
+        const label = String(
+          it.class_name || it.class_label || it.class_id || "",
+        ).trim();
+        if (!label) return;
+        seen.set(classID, label);
+      });
+      const entries = Array.from(seen.entries()).sort(function (a, b) {
+        return String(a[1]).localeCompare(String(b[1]), "id");
+      });
+      resetEventsClassSelect("Pilih kelas...");
+      entries.forEach(function (entry) {
+        const o = document.createElement("option");
+        o.value = entry[0];
+        o.textContent = entry[1];
+        eventsClassSelect.appendChild(o);
+      });
+    }
+
+    function fillEventsUserOptions(rows, classID) {
+      if (!eventsUserSelect) return;
+      const classKey = String(classID || "");
+      resetEventsUserSelect("Pilih peserta...");
+      (Array.isArray(rows) ? rows : []).forEach(function (it) {
+        if (classKey && String(it.class_id || "") !== classKey) return;
+        const role = String(it.role || "").toLowerCase();
+        if (role && role !== "student") return;
+        const userID = String(it.user_id || "");
+        if (!userID) return;
+        const name = String(it.full_name || "-");
+        const username = String(it.username || "-");
+        const o = document.createElement("option");
+        o.value = userID;
+        o.textContent = name + " (" + username + ")";
+        if (it.latest_attempt_id) {
+          o.setAttribute("data-attempt-id", String(it.latest_attempt_id));
+        }
+        eventsUserSelect.appendChild(o);
+      });
+    }
+
+    function syncEventsAttemptFromUser() {
+      if (!eventsAttemptInput || !eventsUserSelect) return;
+      const selected = eventsUserSelect.options[eventsUserSelect.selectedIndex];
+      const attemptID = Number(
+        selected ? selected.getAttribute("data-attempt-id") || 0 : 0,
+      );
+      eventsAttemptInput.value = attemptID > 0 ? String(attemptID) : "";
+      if (eventsUserSelect.value && attemptID <= 0) {
+        setMsg("Peserta ini belum memiliki attempt.");
+      }
+    }
+
+    function setEventsScope(scope) {
+      if (!eventsScopeSelect) return;
+      const value = String(scope || eventsScopeSelect.value || "user");
+      eventsScopeSelect.value = value;
+      const isExam = value === "exam";
+      const isClass = value === "class";
+      const isUser = value === "user";
+      if (eventsClassSelect) {
+        eventsClassSelect.required = isClass || isUser;
+        const label = eventsClassSelect.closest("label");
+        if (label) label.hidden = isExam;
+      }
+      if (eventsUserSelect) {
+        eventsUserSelect.required = isUser;
+        const label = eventsUserSelect.closest("label");
+        if (label) label.hidden = !isUser;
+      }
+      if (eventsAttemptInput && !isUser) {
+        eventsAttemptInput.value = "";
+      }
+    }
+
+    function initEventsFilters() {
+      if (!eventsExamSelect || !eventsForm) return;
+      if (eventsScopeSelect) {
+        eventsScopeSelect.addEventListener("change", function () {
+          setEventsScope(eventsScopeSelect.value);
+        });
+        setEventsScope(eventsScopeSelect.value);
+      }
+      eventsExamSelect.addEventListener("change", async function () {
+        const examID = Number(eventsExamSelect.value || 0);
+        eventsAssignments = [];
+        resetEventsClassSelect(
+          examID > 0 ? "Memuat kelas..." : "Pilih kelas...",
+        );
+        resetEventsUserSelect("Pilih peserta...");
+        if (examID <= 0) return;
+        const done = beginBusy(eventsForm, msg, "Memuat peserta ujian...");
+        try {
+          const rows = await api(
+            "/api/v1/admin/exams/" + examID + "/assignments",
+            "GET",
+          );
+          eventsAssignments = Array.isArray(rows) ? rows : [];
+          fillEventsClassOptions(eventsAssignments);
+          setMsg("Peserta ujian berhasil dimuat.");
+        } catch (err) {
+          resetEventsClassSelect("Pilih kelas...");
+          resetEventsUserSelect("Pilih peserta...");
+          setMsg("Gagal memuat peserta ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+      if (eventsClassSelect) {
+        eventsClassSelect.addEventListener("change", function () {
+          fillEventsUserOptions(eventsAssignments, eventsClassSelect.value);
+          if (eventsAttemptInput) eventsAttemptInput.value = "";
+          syncEventsAttemptFromUser();
+        });
+      }
+      if (eventsUserSelect) {
+        eventsUserSelect.addEventListener("change", function () {
+          syncEventsAttemptFromUser();
+        });
       }
     }
 
@@ -3764,6 +3917,7 @@
       fillExamSelect(cardsExamSelect);
       fillExamSelect(attendanceExamSelect);
       fillExamSelect(assignExamIDInput);
+      fillExamSelect(eventsExamSelect);
     }
 
     menuButtons.forEach(function (btn) {
@@ -3791,6 +3945,7 @@
     safeInitModule("Dashboard", initProktorDashboardModule);
     safeInitModule("Aksi Cepat", initProktorQuickModule);
     bindEnrollFallbackHandlers();
+    initEventsFilters();
 
     try {
       let hadInitError = false;

@@ -60,6 +60,8 @@ type examService interface {
 	GetAttemptOwner(ctx context.Context, attemptID int64) (int64, error)
 	LogAttemptEvent(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
 	ListAttemptEvents(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
+	ListExamEvents(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error)
+	ListExamClassEvents(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
 	SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error)
 	ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 }
@@ -1430,6 +1432,69 @@ func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrAttemptNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListExamEvents(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+
+	items, err := h.svc.ListExamEvents(r.Context(), examID, limit)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListExamClassEvents(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	classID, err := strconv.ParseInt(chi.URLParam(r, "class_id"), 10, 64)
+	if err != nil || classID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid class id"})
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+
+	items, err := h.svc.ListExamClassEvents(r.Context(), examID, classID, limit)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		}
