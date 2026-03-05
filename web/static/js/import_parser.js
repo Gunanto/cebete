@@ -44,6 +44,12 @@
     const idxOpsi = idx("opsi");
     const idxKunci = idx("kunci jawaban");
     const idxPenjelasan = idx("penjelasan");
+    const idxHint = idx("hint");
+    const idxTujuan = idx("tujuan pembelajaran");
+    const idxMateri = idx("materi");
+    const idxKelas = idx("kelas");
+    const idxSemester = idx("semester");
+    const idxType = idx("tipe") >= 0 ? idx("tipe") : idx("type");
     return rows.slice(1).map(function (line) {
       const parts = splitImportValues(line);
       return {
@@ -56,6 +62,12 @@
         opsi: parts[idxOpsi] || "",
         kunci: parts[idxKunci] || "",
         penjelasan: parts[idxPenjelasan] || "",
+        hint: parts[idxHint] || "",
+        tujuan_pembelajaran: parts[idxTujuan] || "",
+        materi: parts[idxMateri] || "",
+        kelas: parts[idxKelas] || "",
+        semester: parts[idxSemester] || "",
+        type: parts[idxType] || "",
       };
     });
   }
@@ -363,12 +375,17 @@
       stimulus_text: String(item.stimulus || "").trim(),
       stem_html: stemHTML,
       explanation_html: buildExplanationHTML(item.explanation || ""),
+      hint_html: buildExplanationHTML(item.hint || ""),
       answer_key: answerKey,
       options: optionsPayload,
       mapel: String(item.mapel || "").trim(),
       question_code_code: String(item.question_code_code || "").trim(),
       question_code_name: String(item.question_code_name || "").trim(),
       learning_goal_code: String(item.learning_goal_code || "").trim(),
+      learning_goal_text: String(item.learning_goal_text || "").trim(),
+      learning_goal_materi: String(item.learning_goal_materi || "").trim(),
+      learning_goal_kelas: String(item.learning_goal_kelas || "").trim(),
+      learning_goal_semester: String(item.learning_goal_semester || "").trim(),
     };
   }
 
@@ -549,6 +566,13 @@
       question_code_name: String((record && record.nama_kode) || "").trim(),
       learning_goal_code: String((record && record.kode_tp) || "").trim(),
       explanation: String((record && record.penjelasan) || "").trim(),
+      hint: String((record && record.hint) || "").trim(),
+      learning_goal_text: String(
+        (record && record.tujuan_pembelajaran) || "",
+      ).trim(),
+      learning_goal_materi: String((record && record.materi) || "").trim(),
+      learning_goal_kelas: String((record && record.kelas) || "").trim(),
+      learning_goal_semester: String((record && record.semester) || "").trim(),
       stimulus: String((record && record.stimulus) || "").trim(),
       question: String((record && record.soal) || "").trim(),
       key_raw: String((record && record.kunci) || "").trim(),

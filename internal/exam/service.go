@@ -19,6 +19,7 @@ import (
 var (
 	ErrInvalidInput             = errors.New("invalid input")
 	ErrExamNotFound             = errors.New("exam not found")
+	ErrExamForbidden            = errors.New("exam forbidden")
 	ErrSubjectNotFound          = errors.New("subject not found")
 	ErrSubjectForbidden         = errors.New("subject forbidden")
 	ErrAttemptNotFound          = errors.New("attempt not found")
@@ -974,6 +975,17 @@ func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int
 }
 
 func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error) {
+	return s.listAdminExams(ctx, includeInactive, nil)
+}
+
+func (s *Service) ListAdminExamsByOwner(ctx context.Context, ownerID int64, includeInactive bool) ([]ExamAdminRecord, error) {
+	if ownerID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	return s.listAdminExams(ctx, includeInactive, &ownerID)
+}
+
+func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, ownerID *int64) ([]ExamAdminRecord, error) {
 	query := `
 		SELECT
 			e.id,
@@ -1009,9 +1021,17 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 				GROUP BY exam_id
 			) ea ON ea.exam_id = e.id
 	`
-	args := make([]any, 0, 1)
+	args := make([]any, 0, 2)
+	clauses := make([]string, 0, 2)
 	if !includeInactive {
-		query += " WHERE e.is_active = TRUE"
+		clauses = append(clauses, "e.is_active = TRUE")
+	}
+	if ownerID != nil {
+		clauses = append(clauses, fmt.Sprintf("e.created_by = $%d", len(args)+1))
+		args = append(args, *ownerID)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
 	query += " ORDER BY e.created_at DESC, e.id DESC"
 
@@ -1047,11 +1067,11 @@ func (s *Service) ListAdminExams(ctx context.Context, includeInactive bool) ([]E
 					GROUP BY exam_id
 				) eq ON eq.exam_id = e.id
 			`
-			if !includeInactive {
-				query += " WHERE e.is_active = TRUE"
+			if len(clauses) > 0 {
+				query += " WHERE " + strings.Join(clauses, " AND ")
 			}
 			query += " ORDER BY e.created_at DESC, e.id DESC"
-			rows, err = s.db.QueryContext(ctx, query)
+			rows, err = s.db.QueryContext(ctx, query, args...)
 		}
 	}
 	if err != nil {
@@ -1159,6 +1179,27 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		return s.GetExamAdminByID(ctx, outID)
 	}
 	return nil, fmt.Errorf("create exam: gagal generate kode ujian unik")
+}
+
+func (s *Service) IsExamOwnedBy(ctx context.Context, examID, ownerID int64) (bool, error) {
+	if examID <= 0 || ownerID <= 0 {
+		return false, ErrInvalidInput
+	}
+	var createdBy sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT created_by
+		FROM exams
+		WHERE id = $1
+	`, examID).Scan(&createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrExamNotFound
+		}
+		return false, fmt.Errorf("load exam owner: %w", err)
+	}
+	if createdBy.Valid && createdBy.Int64 == ownerID {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error) {

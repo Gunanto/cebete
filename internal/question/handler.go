@@ -2,11 +2,14 @@ package question
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"cbtlms/internal/app/apiresp"
 	"cbtlms/internal/auth"
@@ -42,6 +45,9 @@ type questionService interface {
 	DecideReviewTask(ctx context.Context, in ReviewDecisionInput) (*ReviewTask, error)
 	ListReviewTasks(ctx context.Context, reviewerID int64, status string) ([]ReviewTask, error)
 	GetQuestionReviews(ctx context.Context, questionID int64) ([]QuestionReview, error)
+	GetQuestionExportData(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error)
+	GetUserRole(ctx context.Context, userID int64) (string, error)
+	CloneQuestion(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error)
 }
 
 type apiResponse struct {
@@ -133,6 +139,21 @@ type createReviewTaskRequest struct {
 type reviewDecisionRequest struct {
 	Status string `json:"status"`
 	Note   string `json:"note"`
+}
+
+type exportQuestionItem struct {
+	QuestionID int64 `json:"question_id"`
+	VersionNo  int   `json:"version_no,omitempty"`
+}
+
+type exportQuestionsRequest struct {
+	Items []exportQuestionItem `json:"items"`
+}
+
+type transferQuestionsRequest struct {
+	Items           []exportQuestionItem `json:"items"`
+	TargetUserID    int64                `json:"target_user_id"`
+	TargetSubjectID int64                `json:"target_subject_id"`
 }
 
 func NewHandler(svc *Service) *Handler {
@@ -446,6 +467,344 @@ func (h *Handler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
+}
+
+func (h *Handler) ExportQuestions(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	var req exportQuestionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+	if len(req.Items) == 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "items is required"})
+		return
+	}
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+	rows := make([][]string, 0, len(req.Items)+1)
+	rows = append(rows, []string{
+		"Mapel",
+		"Kode Soal",
+		"Kode TP",
+		"Nama Kode",
+		"Stimulus",
+		"Soal",
+		"Opsi",
+		"Kunci Jawaban",
+		"Penjelasan",
+		"Hint",
+		"Tujuan Pembelajaran",
+		"Materi",
+		"Kelas",
+		"Semester",
+	})
+	for _, it := range req.Items {
+		if it.QuestionID <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
+			return
+		}
+		data, err := h.svc.GetQuestionExportData(r.Context(), it.QuestionID, it.VersionNo, ownerID)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrForbidden):
+				writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+			case errors.Is(err, ErrQuestionNotFound), errors.Is(err, ErrVersionNotFound):
+				writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+			default:
+				writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+			}
+			return
+		}
+		rows = append(rows, buildExportRow(data))
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"naskah_soal_%s.csv\"", time.Now().Format("20060102")))
+	w.WriteHeader(http.StatusOK)
+	writer := csv.NewWriter(w)
+	_ = writer.WriteAll(rows)
+	writer.Flush()
+}
+
+func (h *Handler) TransferQuestions(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	var req transferQuestionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+	if len(req.Items) == 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "items is required"})
+		return
+	}
+	if req.TargetUserID <= 0 || req.TargetSubjectID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "target_user_id dan target_subject_id wajib diisi"})
+		return
+	}
+	role, err := h.svc.GetUserRole(r.Context(), req.TargetUserID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: "target user not found"})
+			return
+		}
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(role), "guru") {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "target user harus berperan guru"})
+		return
+	}
+
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+
+	report := map[string]any{
+		"total_items":   len(req.Items),
+		"success_items": 0,
+		"failed_items":  0,
+		"errors":        []map[string]any{},
+		"question_ids":  []int64{},
+	}
+	for _, it := range req.Items {
+		if it.QuestionID <= 0 {
+			report["failed_items"] = report["failed_items"].(int) + 1
+			continue
+		}
+		data, err := h.svc.GetQuestionExportData(r.Context(), it.QuestionID, it.VersionNo, ownerID)
+		if err != nil {
+			report["failed_items"] = report["failed_items"].(int) + 1
+			report["errors"] = append(report["errors"].([]map[string]any), map[string]any{
+				"question_id": it.QuestionID,
+				"error":       err.Error(),
+			})
+			continue
+		}
+		out, err := h.svc.CloneQuestion(r.Context(), CloneQuestionInput{
+			Source:          data,
+			TargetUserID:    req.TargetUserID,
+			TargetSubjectID: req.TargetSubjectID,
+			TargetRole:      role,
+		})
+		if err != nil {
+			report["failed_items"] = report["failed_items"].(int) + 1
+			report["errors"] = append(report["errors"].([]map[string]any), map[string]any{
+				"question_id": it.QuestionID,
+				"error":       err.Error(),
+			})
+			continue
+		}
+		report["success_items"] = report["success_items"].(int) + 1
+		report["question_ids"] = append(report["question_ids"].([]int64), out.QuestionID)
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: report})
+}
+
+func buildExportRow(data *ExportQuestionData) []string {
+	mapel := strings.TrimSpace(data.SubjectName)
+	kodeSoal := strings.TrimSpace(data.QuestionCode)
+	kodeTP := ""
+	if data.LearningGoalID > 0 {
+		kodeTP = fmt.Sprintf("TP-%d", data.LearningGoalID)
+	}
+	namaKode := strings.TrimSpace(data.QuestionCodeName)
+	stimulus := stripHTML(ptrString(data.StimulusHTML))
+	soal := stripHTML(data.StemHTML)
+	penjelasan := stripHTML(ptrString(data.ExplanationHTML))
+	hint := stripHTML(ptrString(data.HintHTML))
+	opsi := buildExportOptions(data)
+	kunci := buildExportAnswerKey(data)
+	return []string{
+		mapel,
+		kodeSoal,
+		kodeTP,
+		namaKode,
+		stimulus,
+		soal,
+		opsi,
+		kunci,
+		penjelasan,
+		hint,
+		strings.TrimSpace(data.LearningGoalText),
+		strings.TrimSpace(data.LearningGoalMateri),
+		strings.TrimSpace(data.LearningGoalKelas),
+		formatSemester(data.LearningGoalSemester),
+	}
+}
+
+func ptrString(val *string) string {
+	if val == nil {
+		return ""
+	}
+	return *val
+}
+
+func formatSemester(sem int16) string {
+	if sem <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(int64(sem), 10)
+}
+
+func stripHTML(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"</p>", "\n",
+		"</div>", "\n",
+		"</li>", "\n",
+	)
+	text = replacer.Replace(text)
+	var b strings.Builder
+	inTag := false
+	for _, r := range text {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+		}
+	}
+	out := htmlUnescape(b.String())
+	out = strings.ReplaceAll(out, "\u00a0", " ")
+	lines := strings.Split(out, "\n")
+	clean := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		clean = append(clean, line)
+	}
+	return strings.Join(clean, "\n")
+}
+
+func htmlUnescape(raw string) string {
+	return strings.NewReplacer(
+		"&nbsp;", " ",
+		"&amp;", "&",
+		"&lt;", "<",
+		"&gt;", ">",
+		"&#39;", "'",
+		"&quot;", "\"",
+	).Replace(raw)
+}
+
+func buildExportOptions(data *ExportQuestionData) string {
+	qType := strings.ToLower(strings.TrimSpace(data.QuestionType))
+	if qType == "benar_salah_pernyataan" {
+		statements := extractTFStatements(data.AnswerKey)
+		parts := make([]string, 0, len(statements))
+		for i, st := range statements {
+			label := fmt.Sprintf("P%d. %s", i+1, st)
+			parts = append(parts, label)
+		}
+		return strings.Join(parts, ", ")
+	}
+	parts := make([]string, 0, len(data.Options))
+	for i, opt := range data.Options {
+		key := strings.TrimSpace(opt.OptionKey)
+		if key == "" {
+			key = string(rune('A' + i))
+		}
+		text := stripHTML(opt.OptionHTML)
+		if text == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s. %s", strings.ToUpper(key), text))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func buildExportAnswerKey(data *ExportQuestionData) string {
+	qType := strings.ToLower(strings.TrimSpace(data.QuestionType))
+	key := strings.TrimSpace(string(data.AnswerKey))
+	if key == "" || key == "null" {
+		return ""
+	}
+	if qType == "pg_tunggal" {
+		var payload struct {
+			Correct string `json:"correct"`
+		}
+		if json.Unmarshal(data.AnswerKey, &payload) == nil {
+			return strings.ToUpper(strings.TrimSpace(payload.Correct))
+		}
+		return ""
+	}
+	if qType == "multi_jawaban" {
+		var payload struct {
+			Correct []string `json:"correct"`
+		}
+		if json.Unmarshal(data.AnswerKey, &payload) == nil {
+			keys := make([]string, 0, len(payload.Correct))
+			for _, v := range payload.Correct {
+				v = strings.ToUpper(strings.TrimSpace(v))
+				if v != "" {
+					keys = append(keys, v)
+				}
+			}
+			return strings.Join(keys, ",")
+		}
+		return ""
+	}
+	if qType == "benar_salah_pernyataan" {
+		var payload struct {
+			Statements []struct {
+				Correct bool `json:"correct"`
+			} `json:"statements"`
+		}
+		if json.Unmarshal(data.AnswerKey, &payload) == nil {
+			vals := make([]string, 0, len(payload.Statements))
+			for _, st := range payload.Statements {
+				if st.Correct {
+					vals = append(vals, "T")
+				} else {
+					vals = append(vals, "F")
+				}
+			}
+			return strings.Join(vals, ",")
+		}
+	}
+	return ""
+}
+
+func extractTFStatements(raw json.RawMessage) []string {
+	var payload struct {
+		Statements []struct {
+			Statement string `json:"statement"`
+		} `json:"statements"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil
+	}
+	items := make([]string, 0, len(payload.Statements))
+	for _, st := range payload.Statements {
+		items = append(items, stripHTML(st.Statement))
+	}
+	return items
 }
 
 func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) {

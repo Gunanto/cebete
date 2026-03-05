@@ -54,6 +54,39 @@
     return json.data;
   }
 
+  function parseDownloadFilename(res, fallbackName) {
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+    if (match && match[1]) return match[1];
+    return fallbackName || "download.csv";
+  }
+
+  async function downloadCSV(path, payload, fallbackName) {
+    const res = await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: csrfHeaders("POST"),
+      body: JSON.stringify(payload || {}),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(function () {
+        return {};
+      });
+      const msg = extractAPIError(json, res.statusText || "Request failed");
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const name = parseDownloadFilename(res, fallbackName);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name || "download.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function apiMultipart(path, method, formData) {
     const m = String(method || "POST").toUpperCase();
     const headers = {};
@@ -4155,6 +4188,36 @@
     const manuscriptImportCancelBtn = document.getElementById(
       "guru-manuscript-import-cancel-btn",
     );
+    const manuscriptExportBtn = document.getElementById(
+      "guru-manuscript-export-btn",
+    );
+    const manuscriptTransferBtn = document.getElementById(
+      "guru-manuscript-transfer-btn",
+    );
+    const manuscriptTransferDialog = document.getElementById(
+      "guru-manuscript-transfer-dialog",
+    );
+    const manuscriptTransferForm = document.getElementById(
+      "guru-manuscript-transfer-form",
+    );
+    const manuscriptTransferUserInput = document.getElementById(
+      "guru-manuscript-transfer-user",
+    );
+    const manuscriptTransferSubjectInput = document.getElementById(
+      "guru-manuscript-transfer-subject",
+    );
+    const manuscriptTransferSourceInput = document.getElementById(
+      "guru-manuscript-transfer-source",
+    );
+    const manuscriptTransferOutput = document.getElementById(
+      "guru-manuscript-transfer-output",
+    );
+    const manuscriptTransferSummary = document.getElementById(
+      "guru-manuscript-transfer-summary",
+    );
+    const manuscriptTransferCancelBtn = document.getElementById(
+      "guru-manuscript-transfer-cancel-btn",
+    );
     const manuscriptRefreshBtn = document.getElementById(
       "guru-manuscript-refresh-btn",
     );
@@ -4655,11 +4718,56 @@
       return 0;
     }
 
+    function findLearningGoalByDetails(mapel, kelas, semester, tujuan, materi) {
+      if (LearningGoals && typeof LearningGoals.findByDetails === "function") {
+        return LearningGoals.findByDetails(
+          mapel,
+          kelas,
+          semester,
+          tujuan,
+          materi,
+        );
+      }
+      return null;
+    }
+
     async function loadLearningGoals() {
       if (LearningGoals && typeof LearningGoals.load === "function") {
         return LearningGoals.load();
       }
       return [];
+    }
+
+    async function ensureLearningGoalForImport(subjectID, parsed) {
+      const subject = findSubjectByID(subjectID);
+      if (!subject) return 0;
+      const tujuan = String(parsed.learning_goal_text || "").trim();
+      const materi = String(parsed.learning_goal_materi || "").trim();
+      if (!tujuan || !materi) return 0;
+      const kelas =
+        String(parsed.learning_goal_kelas || "").trim() ||
+        String(subject.education_level || "").trim();
+      const semester = Number(parsed.learning_goal_semester || 0) || 0;
+      if (semester <= 0) return 0;
+      const existing = findLearningGoalByDetails(
+        String(subject.name || "").trim(),
+        kelas,
+        String(semester),
+        tujuan,
+        materi,
+      );
+      if (existing && Number(existing.id || 0) > 0) {
+        return Number(existing.id || 0);
+      }
+      const created = await api("/api/v1/learning-goals", "POST", {
+        mata_pelajaran: String(subject.name || "").trim(),
+        kelas: kelas,
+        semester: semester,
+        tujuan_pembelajaran: tujuan,
+        materi: materi,
+      });
+      await loadLearningGoals();
+      return Number((created && created.id) || 0) || 0;
     }
 
     async function loadClassesForLearningGoal() {
@@ -4986,6 +5094,7 @@
         ensureQuestionCodeForImport: ensureQuestionCodeForImport,
         resolveDefaultLearningGoalID: resolveDefaultLearningGoalID,
         resolveLearningGoalIDByCode: resolveLearningGoalIDByCode,
+        ensureLearningGoalForImport: ensureLearningGoalForImport,
         findSubjectByID: findSubjectByID,
         escapeHtml: escapeHtml,
         loadBlueprints: loadBlueprints,
@@ -4995,6 +5104,247 @@
     }
 
     initManuscriptImportModule();
+    initManuscriptTransferExportModule();
+
+    function initManuscriptTransferExportModule() {
+      function updateTransferSummary() {
+        if (!manuscriptTransferSummary) return;
+        const selectedCount =
+          ManuscriptTable &&
+          typeof ManuscriptTable.getSelectedItems === "function"
+            ? ManuscriptTable.getSelectedItems().length
+            : 0;
+        const totalCount =
+          ManuscriptTable && typeof ManuscriptTable.getAllItems === "function"
+            ? ManuscriptTable.getAllItems().length
+            : 0;
+        const sourceMode = String(
+          (manuscriptTransferSourceInput &&
+            manuscriptTransferSourceInput.value) ||
+            "selected",
+        );
+        if (sourceMode === "selected") {
+          manuscriptTransferSummary.textContent =
+            String(selectedCount) +
+            " naskah terpilih siap ditransfer dari total " +
+            String(totalCount) +
+            ".";
+          return;
+        }
+        manuscriptTransferSummary.textContent =
+          String(totalCount) + " naskah pada tabel aktif siap ditransfer.";
+      }
+
+      async function loadTransferGuruOptions() {
+        if (!manuscriptTransferUserInput) return;
+        const role = String((user && user.role) || "").toLowerCase();
+        manuscriptTransferUserInput.innerHTML =
+          '<option value="">Pilih guru...</option>';
+        if (role !== "admin" && role !== "proktor") {
+          const opt = document.createElement("option");
+          opt.value = String((user && user.id) || "");
+          opt.textContent = String((user && user.full_name) || "Guru");
+          manuscriptTransferUserInput.appendChild(opt);
+          manuscriptTransferUserInput.value = opt.value;
+          manuscriptTransferUserInput.disabled = true;
+          return;
+        }
+        manuscriptTransferUserInput.disabled = false;
+        const out = await api(
+          "/api/v1/admin/users?role=guru&limit=500&offset=0",
+          "GET",
+        );
+        const rows = Array.isArray(out && out.items) ? out.items : [];
+        rows.forEach(function (it) {
+          const id = Number((it && it.id) || 0);
+          if (id <= 0) return;
+          const name = String((it && it.full_name) || "").trim();
+          const username = String((it && it.username) || "").trim();
+          const label =
+            String(id) +
+            " | " +
+            (name || username || "Guru") +
+            (username ? " (@" + username + ")" : "");
+          const opt = document.createElement("option");
+          opt.value = String(id);
+          opt.textContent = label;
+          manuscriptTransferUserInput.appendChild(opt);
+        });
+      }
+
+      async function loadTransferSubjectOptions() {
+        if (!manuscriptTransferSubjectInput) return;
+        if (!Array.isArray(subjects) || subjects.length === 0) {
+          await loadSubjects();
+        }
+        const current = String(
+          (manuscriptTransferSubjectInput &&
+            manuscriptTransferSubjectInput.value) ||
+            "",
+        );
+        manuscriptTransferSubjectInput.innerHTML =
+          '<option value="">Pilih mapel...</option>';
+        const list = Array.isArray(subjects) ? subjects : [];
+        list.forEach(function (it) {
+          const id = Number((it && it.id) || 0);
+          if (id <= 0) return;
+          const opt = document.createElement("option");
+          opt.value = String(id);
+          opt.textContent = subjectLabel(it) + " [ID " + String(id) + "]";
+          manuscriptTransferSubjectInput.appendChild(opt);
+        });
+        if (current) manuscriptTransferSubjectInput.value = current;
+      }
+
+      if (manuscriptExportBtn) {
+        manuscriptExportBtn.addEventListener("click", async function () {
+          const items = collectManuscriptItems(true);
+          if (!items.length) {
+            setManuscriptMsg("Tidak ada naskah yang bisa diekspor.");
+            return;
+          }
+          const done = beginBusy(
+            manuscriptExportBtn,
+            msg,
+            "Menyiapkan export naskah...",
+          );
+          try {
+            await downloadCSV(
+              "/api/v1/questions/export",
+              { items: items },
+              "naskah_soal.csv",
+            );
+            setManuscriptMsg("Export naskah berhasil dibuat.");
+          } catch (err) {
+            setManuscriptMsg("Export naskah gagal: " + err.message);
+          } finally {
+            done();
+          }
+        });
+      }
+
+      if (manuscriptTransferBtn) {
+        manuscriptTransferBtn.addEventListener("click", async function () {
+          if (manuscriptTransferForm) manuscriptTransferForm.reset();
+          if (manuscriptTransferOutput)
+            manuscriptTransferOutput.textContent = "";
+          const selectedCount =
+            ManuscriptTable &&
+            typeof ManuscriptTable.getSelectedItems === "function"
+              ? ManuscriptTable.getSelectedItems().length
+              : 0;
+          if (manuscriptTransferSourceInput) {
+            manuscriptTransferSourceInput.value =
+              selectedCount > 0 ? "selected" : "filtered";
+          }
+          updateTransferSummary();
+          try {
+            await loadTransferGuruOptions();
+            await loadTransferSubjectOptions();
+          } catch (err) {
+            setManuscriptMsg("Gagal memuat opsi transfer: " + err.message);
+          }
+          if (
+            manuscriptTransferSubjectInput &&
+            manuscriptSubjectSelect &&
+            manuscriptSubjectSelect.value
+          ) {
+            manuscriptTransferSubjectInput.value =
+              manuscriptSubjectSelect.value;
+          }
+          if (
+            manuscriptTransferDialog &&
+            typeof manuscriptTransferDialog.showModal === "function"
+          ) {
+            manuscriptTransferDialog.showModal();
+          }
+        });
+      }
+
+      if (manuscriptTransferCancelBtn) {
+        manuscriptTransferCancelBtn.addEventListener("click", function () {
+          if (
+            manuscriptTransferDialog &&
+            typeof manuscriptTransferDialog.close === "function"
+          ) {
+            manuscriptTransferDialog.close();
+          }
+        });
+      }
+
+      if (manuscriptTransferForm) {
+        if (manuscriptTransferSourceInput) {
+          manuscriptTransferSourceInput.addEventListener("change", function () {
+            updateTransferSummary();
+          });
+        }
+        manuscriptTransferForm.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          const targetUserID = Number(
+            (manuscriptTransferUserInput &&
+              manuscriptTransferUserInput.value) ||
+              0,
+          );
+          const targetSubjectID = Number(
+            (manuscriptTransferSubjectInput &&
+              manuscriptTransferSubjectInput.value) ||
+              0,
+          );
+          if (targetUserID <= 0 || targetSubjectID <= 0) {
+            setManuscriptMsg("Target guru dan mapel wajib diisi.");
+            return;
+          }
+          const sourceMode = String(
+            (manuscriptTransferSourceInput &&
+              manuscriptTransferSourceInput.value) ||
+              "selected",
+          );
+          const useSelected = sourceMode === "selected";
+          const items = collectManuscriptItems(useSelected);
+          if (!items.length) {
+            if (useSelected) {
+              setManuscriptMsg(
+                "Belum ada naskah terpilih. Pilih baris dulu atau ubah sumber ke semua naskah tabel aktif.",
+              );
+            } else {
+              setManuscriptMsg("Tidak ada naskah pada tabel aktif.");
+            }
+            return;
+          }
+          const done = beginBusy(
+            manuscriptTransferForm,
+            msg,
+            "Mentransfer naskah...",
+          );
+          try {
+            const report = await api("/api/v1/questions/transfer", "POST", {
+              items: items,
+              target_user_id: targetUserID,
+              target_subject_id: targetSubjectID,
+            });
+            if (manuscriptTransferOutput) {
+              manuscriptTransferOutput.textContent = JSON.stringify(
+                report || {},
+                null,
+                2,
+              );
+            }
+            await reloadManuscriptsByCurrentTableScope();
+            setManuscriptMsg("Transfer naskah selesai.");
+            if (
+              manuscriptTransferDialog &&
+              typeof manuscriptTransferDialog.close === "function"
+            ) {
+              manuscriptTransferDialog.close();
+            }
+          } catch (err) {
+            setManuscriptMsg("Transfer naskah gagal: " + err.message);
+          } finally {
+            done();
+          }
+        });
+      }
+    }
 
     async function ensureQuestionCodeForImport(subjectID, codeRaw, nameRaw) {
       const code = String(codeRaw || "").trim();
@@ -5565,6 +5915,21 @@
           (manuscriptPageSizeSelect && manuscriptPageSizeSelect.value) || 15,
         ),
       });
+    }
+
+    function collectManuscriptItems(useSelected) {
+      if (!ManuscriptTable) return [];
+      if (
+        useSelected &&
+        typeof ManuscriptTable.getSelectedItems === "function"
+      ) {
+        const selected = ManuscriptTable.getSelectedItems();
+        if (selected.length) return selected;
+      }
+      if (typeof ManuscriptTable.getAllItems === "function") {
+        return ManuscriptTable.getAllItems();
+      }
+      return [];
     }
 
     function renderManuscripts(items) {

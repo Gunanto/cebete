@@ -15,29 +15,32 @@ import (
 )
 
 type mockQuestionService struct {
-	createQuestionCodeFn func(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
-	listQuestionCodesFn  func(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
-	updateQuestionCodeFn func(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
-	deleteQuestionCodeFn func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
-	createQuestionFn     func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
-	assignQuestionCodeFn func(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
-	assignLearningGoalFn func(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error)
-	listQuestionsFn      func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
-	createVersionFn      func(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
-	updateVersionFn      func(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
-	deleteVersionFn      func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error
-	finalizeFn           func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error)
-	requestReopenFn      func(ctx context.Context, in RequestReopenFinalInput) (*ReopenFinalRequest, error)
-	approveReopenFn      func(ctx context.Context, in ApproveReopenFinalInput) (*ReopenFinalRequest, error)
-	listVersionsFn       func(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error)
-	createParallelFn     func(ctx context.Context, in CreateQuestionParallelInput) (*QuestionParallel, error)
-	listParallelsFn      func(ctx context.Context, examID int64, parallelGroup string) ([]QuestionParallel, error)
-	updateParallelFn     func(ctx context.Context, in UpdateQuestionParallelInput) (*QuestionParallel, error)
-	deleteParallelFn     func(ctx context.Context, examID, parallelID int64) error
-	createReviewTaskFn   func(ctx context.Context, in CreateReviewTaskInput) (*ReviewTask, error)
-	decideReviewTaskFn   func(ctx context.Context, in ReviewDecisionInput) (*ReviewTask, error)
-	listReviewTasksFn    func(ctx context.Context, reviewerID int64, status string) ([]ReviewTask, error)
-	getQuestionReviewsFn func(ctx context.Context, questionID int64) ([]QuestionReview, error)
+	createQuestionCodeFn    func(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
+	listQuestionCodesFn     func(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
+	updateQuestionCodeFn    func(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
+	deleteQuestionCodeFn    func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
+	createQuestionFn        func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error)
+	assignQuestionCodeFn    func(ctx context.Context, in AssignQuestionCodeInput) (*QuestionBlueprint, error)
+	assignLearningGoalFn    func(ctx context.Context, in AssignQuestionLearningGoalInput) (*QuestionBlueprint, error)
+	listQuestionsFn         func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error)
+	createVersionFn         func(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error)
+	updateVersionFn         func(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error)
+	deleteVersionFn         func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error
+	finalizeFn              func(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) (*QuestionVersion, error)
+	requestReopenFn         func(ctx context.Context, in RequestReopenFinalInput) (*ReopenFinalRequest, error)
+	approveReopenFn         func(ctx context.Context, in ApproveReopenFinalInput) (*ReopenFinalRequest, error)
+	listVersionsFn          func(ctx context.Context, questionID int64, ownerID *int64) ([]QuestionVersion, error)
+	createParallelFn        func(ctx context.Context, in CreateQuestionParallelInput) (*QuestionParallel, error)
+	listParallelsFn         func(ctx context.Context, examID int64, parallelGroup string) ([]QuestionParallel, error)
+	updateParallelFn        func(ctx context.Context, in UpdateQuestionParallelInput) (*QuestionParallel, error)
+	deleteParallelFn        func(ctx context.Context, examID, parallelID int64) error
+	createReviewTaskFn      func(ctx context.Context, in CreateReviewTaskInput) (*ReviewTask, error)
+	decideReviewTaskFn      func(ctx context.Context, in ReviewDecisionInput) (*ReviewTask, error)
+	listReviewTasksFn       func(ctx context.Context, reviewerID int64, status string) ([]ReviewTask, error)
+	getQuestionReviewsFn    func(ctx context.Context, questionID int64) ([]QuestionReview, error)
+	getQuestionExportDataFn func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error)
+	getUserRoleFn           func(ctx context.Context, userID int64) (string, error)
+	cloneQuestionFn         func(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error)
 }
 
 func (m *mockQuestionService) CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error) {
@@ -199,6 +202,27 @@ func (m *mockQuestionService) GetQuestionReviews(ctx context.Context, questionID
 		return nil, errors.New("not implemented")
 	}
 	return m.getQuestionReviewsFn(ctx, questionID)
+}
+
+func (m *mockQuestionService) GetQuestionExportData(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+	if m.getQuestionExportDataFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.getQuestionExportDataFn(ctx, questionID, versionNo, ownerID)
+}
+
+func (m *mockQuestionService) GetUserRole(ctx context.Context, userID int64) (string, error) {
+	if m.getUserRoleFn == nil {
+		return "", errors.New("not implemented")
+	}
+	return m.getUserRoleFn(ctx, userID)
+}
+
+func (m *mockQuestionService) CloneQuestion(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error) {
+	if m.cloneQuestionFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.cloneQuestionFn(ctx, in)
 }
 
 func decodeMap(t *testing.T, rr *httptest.ResponseRecorder) map[string]any {

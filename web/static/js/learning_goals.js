@@ -119,6 +119,42 @@
     return Number((hit && hit.id) || 0);
   }
 
+  function findByDetails(mapel, kelas, semester, tujuan, materi) {
+    const goalMapel = String(mapel || "")
+      .trim()
+      .toLowerCase();
+    const goalKelas = String(kelas || "")
+      .trim()
+      .toLowerCase();
+    const goalSemester = String(semester || "").trim();
+    const goalTujuan = String(tujuan || "")
+      .trim()
+      .toLowerCase();
+    const goalMateri = String(materi || "")
+      .trim()
+      .toLowerCase();
+    if (!goalMapel || !goalTujuan || !goalMateri || !goalSemester) return null;
+    const rows = getCache();
+    return (
+      rows.find(function (it) {
+        return (
+          String((it && it.mata_pelajaran) || "")
+            .trim()
+            .toLowerCase() === goalMapel &&
+          String((it && it.kelas) || "")
+            .trim()
+            .toLowerCase() === goalKelas &&
+          String((it && it.semester) || "") === goalSemester &&
+          String((it && it.tujuan_pembelajaran) || "")
+            .trim()
+            .toLowerCase() === goalTujuan &&
+          String((it && it.materi) || "")
+            .trim()
+            .toLowerCase() === goalMateri
+        );
+      }) || null
+    );
+  }
   function fillSelect(selectEl, subjectID) {
     if (!selectEl) return;
     const current = String(selectEl.value || "");
@@ -777,6 +813,7 @@
     getCount: getCount,
     label: label,
     findByID: findByID,
+    findByDetails: findByDetails,
     fillSelect: fillSelect,
     resolveDefaultLearningGoalID: resolveDefaultLearningGoalID,
     resolveLearningGoalIDByCode: resolveLearningGoalIDByCode,

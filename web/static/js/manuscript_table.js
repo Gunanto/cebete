@@ -172,6 +172,37 @@
     return Array.isArray(allItems) ? allItems.length : 0;
   }
 
+  function getSelectedItems() {
+    var rows = Array.isArray(allItems) ? allItems : [];
+    return rows
+      .filter(function (it) {
+        return selectedKeys.has(manuscriptRowKey(it));
+      })
+      .map(function (it) {
+        return {
+          question_id: Number((it && it.question_id) || 0),
+          version_no: Number((it && it.version_no) || 0),
+        };
+      })
+      .filter(function (it) {
+        return it.question_id > 0 && it.version_no > 0;
+      });
+  }
+
+  function getAllItems() {
+    var rows = Array.isArray(allItems) ? allItems : [];
+    return rows
+      .map(function (it) {
+        return {
+          question_id: Number((it && it.question_id) || 0),
+          version_no: Number((it && it.version_no) || 0),
+        };
+      })
+      .filter(function (it) {
+        return it.question_id > 0 && it.version_no > 0;
+      });
+  }
+
   function getQuestionCount() {
     if (!Array.isArray(allItems) || !allItems.length) return 0;
     var ids = new Set();
@@ -526,5 +557,7 @@
     getCount: getCount,
     getQuestionCount: getQuestionCount,
     setPage: setPage,
+    getSelectedItems: getSelectedItems,
+    getAllItems: getAllItems,
   };
 })();

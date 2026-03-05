@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"sort"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ var (
 	ErrReviewForbidden      = errors.New("review forbidden")
 	ErrReopenNotAllowed     = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
 	ErrReopenPending        = errors.New("permintaan reopen final masih menunggu persetujuan")
+	ErrUserNotFound         = errors.New("user not found")
 )
 
 type DuplicateQuestionError struct {
@@ -175,6 +177,46 @@ type QuestionVersion struct {
 	Options         []QuestionOptionInput `json:"options,omitempty"`
 	CreatedBy       *int64                `json:"created_by,omitempty"`
 	CreatedAt       time.Time             `json:"created_at"`
+}
+
+type ExportQuestionData struct {
+	QuestionID           int64
+	VersionNo            int
+	SubjectID            int64
+	SubjectName          string
+	EducationLevel       string
+	LearningGoalID       int64
+	LearningGoalText     string
+	LearningGoalMateri   string
+	LearningGoalKelas    string
+	LearningGoalSemester int16
+	QuestionCode         string
+	QuestionCodeName     string
+	QuestionType         string
+	Title                string
+	Indicator            string
+	Material             string
+	Objective            string
+	CognitiveLevel       string
+	Difficulty           *int
+	StimulusHTML         *string
+	StemHTML             string
+	ExplanationHTML      *string
+	HintHTML             *string
+	AnswerKey            json.RawMessage
+	Options              []QuestionOptionInput
+}
+
+type CloneQuestionInput struct {
+	Source          *ExportQuestionData
+	TargetUserID    int64
+	TargetSubjectID int64
+	TargetRole      string
+}
+
+type CloneQuestionResult struct {
+	QuestionID int64 `json:"question_id"`
+	VersionNo  int   `json:"version_no"`
 }
 
 type CreateQuestionParallelInput struct {
@@ -1360,6 +1402,375 @@ func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64, ow
 		items[i].Options = append([]QuestionOptionInput(nil), options...)
 	}
 	return items, nil
+}
+
+func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+	if questionID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	var out ExportQuestionData
+	var questionCodeID sql.NullInt64
+	var questionCode sql.NullString
+	var questionCodeName sql.NullString
+	var difficulty sql.NullInt64
+	var outMeta json.RawMessage
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT q.subject_id, s.name, s.education_level, q.learning_goal_id, q.question_code_id,
+			qc.code, qc.name, q.question_type, q.difficulty, q.metadata
+		FROM questions q
+		JOIN subjects s ON s.id = q.subject_id
+		LEFT JOIN question_codes qc ON qc.id = q.question_code_id
+		WHERE q.id = $1
+		  AND q.is_active = TRUE
+	`, questionID).Scan(
+		&out.SubjectID,
+		&out.SubjectName,
+		&out.EducationLevel,
+		&out.LearningGoalID,
+		&questionCodeID,
+		&questionCode,
+		&questionCodeName,
+		&out.QuestionType,
+		&difficulty,
+		&outMeta,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotFound
+		}
+		return nil, fmt.Errorf("load question export: %w", err)
+	}
+	out.QuestionID = questionID
+	if difficulty.Valid {
+		d := int(difficulty.Int64)
+		out.Difficulty = &d
+	}
+	if questionCodeID.Valid {
+		out.QuestionCode = strings.TrimSpace(questionCode.String)
+		out.QuestionCodeName = strings.TrimSpace(questionCodeName.String)
+	}
+	var lgText, lgMateri, lgMapel, lgKelas sql.NullString
+	var lgSemester sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester
+		FROM learning_goals
+		WHERE id = $1
+	`, out.LearningGoalID).Scan(&lgText, &lgMateri, &lgMapel, &lgKelas, &lgSemester); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrLearningGoalNotFound
+		}
+		return nil, fmt.Errorf("load learning goal: %w", err)
+	}
+	if lgText.Valid {
+		out.LearningGoalText = lgText.String
+	}
+	if lgMateri.Valid {
+		out.LearningGoalMateri = lgMateri.String
+	}
+	if lgKelas.Valid {
+		out.LearningGoalKelas = lgKelas.String
+	}
+	if lgSemester.Valid {
+		out.LearningGoalSemester = int16(lgSemester.Int64)
+	}
+
+	var ownerFilter int64
+	if ownerID != nil && *ownerID > 0 {
+		ownerFilter = *ownerID
+	}
+	var verQuery strings.Builder
+	verQuery.WriteString(`
+		SELECT version_no, stimulus_html, stem_html, explanation_html, hint_html, answer_key
+		FROM question_versions
+		WHERE question_id = $1
+		  AND ($2 <= 0 OR created_by = $2)
+	`)
+	args := []any{questionID, ownerFilter}
+	if versionNo > 0 {
+		verQuery.WriteString(" AND version_no = $3")
+		args = append(args, versionNo)
+	}
+	verQuery.WriteString(" ORDER BY is_active DESC, version_no DESC LIMIT 1")
+	var stimulus sql.NullString
+	var explanation sql.NullString
+	var hint sql.NullString
+	if err := s.db.QueryRowContext(ctx, verQuery.String(), args...).Scan(
+		&out.VersionNo,
+		&stimulus,
+		&out.StemHTML,
+		&explanation,
+		&hint,
+		&out.AnswerKey,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			if ownerID != nil && *ownerID > 0 {
+				return nil, ErrForbidden
+			}
+			return nil, ErrVersionNotFound
+		}
+		return nil, fmt.Errorf("load question version: %w", err)
+	}
+	if stimulus.Valid {
+		out.StimulusHTML = &stimulus.String
+	}
+	if explanation.Valid {
+		out.ExplanationHTML = &explanation.String
+	}
+	if hint.Valid {
+		out.HintHTML = &hint.String
+	}
+
+	options, err := s.listQuestionOptions(ctx, s.db, questionID)
+	if err != nil {
+		return nil, err
+	}
+	out.Options = append([]QuestionOptionInput(nil), options...)
+
+	var meta QuestionBlueprint
+	meta.Metadata = outMeta
+	populateBlueprintMetadata(&meta, meta.Metadata)
+	out.Title = meta.Title
+	out.Indicator = meta.Indicator
+	out.Material = meta.Material
+	out.Objective = meta.Objective
+	out.CognitiveLevel = meta.CognitiveLevel
+	return &out, nil
+}
+
+func (s *Service) GetUserRole(ctx context.Context, userID int64) (string, error) {
+	if userID <= 0 {
+		return "", ErrInvalidInput
+	}
+	var role string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT role
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, userID).Scan(&role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", fmt.Errorf("load user role: %w", err)
+	}
+	return role, nil
+}
+
+func (s *Service) CloneQuestion(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error) {
+	if in.Source == nil || in.TargetUserID <= 0 || in.TargetSubjectID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	role := strings.ToLower(strings.TrimSpace(in.TargetRole))
+	if role == "" {
+		role = "guru"
+	}
+	var subjName, subjLevel string
+	var subjType string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT name, education_level, subject_type
+		FROM subjects
+		WHERE id = $1 AND is_active = TRUE
+	`, in.TargetSubjectID).Scan(&subjName, &subjLevel, &subjType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSubjectNotFound
+		}
+		return nil, fmt.Errorf("load target subject: %w", err)
+	}
+	_ = subjType
+	lgID, err := s.ensureLearningGoalForTransfer(ctx, in.TargetUserID, role, subjName, subjLevel, in.Source)
+	if err != nil {
+		return nil, err
+	}
+	codeID, codeOwnerID, err := s.ensureQuestionCodeForTransfer(ctx, in.TargetUserID, in.TargetSubjectID, in.Source.QuestionCode, in.Source.QuestionCodeName)
+	if err != nil {
+		return nil, err
+	}
+	enforceOwner := role == "guru" && (codeOwnerID == 0 || codeOwnerID == in.TargetUserID)
+	var codePtr *int64
+	if codeID > 0 {
+		codePtr = &codeID
+	}
+
+	questionTitle := strings.TrimSpace(in.Source.Title)
+	if questionTitle == "" {
+		questionTitle = fallbackTitleFromStem(in.Source.StemHTML)
+	}
+	if questionTitle == "" {
+		questionTitle = "Clone Soal"
+	}
+	created, err := s.CreateQuestion(ctx, CreateQuestionInput{
+		SubjectID:      in.TargetSubjectID,
+		LearningGoalID: lgID,
+		QuestionCodeID: codePtr,
+		EnforceOwner:   enforceOwner,
+		QuestionType:   in.Source.QuestionType,
+		Title:          questionTitle,
+		Indicator:      in.Source.Indicator,
+		Material:       in.Source.Material,
+		Objective:      in.Source.Objective,
+		CognitiveLevel: in.Source.CognitiveLevel,
+		Difficulty:     in.Source.Difficulty,
+		CreatedBy:      in.TargetUserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := s.CreateQuestionVersion(ctx, CreateQuestionVersionInput{
+		QuestionID:      created.ID,
+		StimulusHTML:    in.Source.StimulusHTML,
+		StemHTML:        &in.Source.StemHTML,
+		ExplanationHTML: in.Source.ExplanationHTML,
+		HintHTML:        in.Source.HintHTML,
+		AnswerKey:       in.Source.AnswerKey,
+		Options:         in.Source.Options,
+		CreatedBy:       in.TargetUserID,
+		EnforceOwner:    role == "guru",
+		Dedup:           false,
+	})
+	if err != nil {
+		_, _ = s.db.ExecContext(ctx, `UPDATE questions SET is_active = FALSE WHERE id = $1`, created.ID)
+		return nil, err
+	}
+
+	return &CloneQuestionResult{QuestionID: created.ID, VersionNo: version.VersionNo}, nil
+}
+
+func (s *Service) ensureLearningGoalForTransfer(ctx context.Context, targetUserID int64, targetRole, subjectName, subjectLevel string, src *ExportQuestionData) (int64, error) {
+	goalText := strings.TrimSpace(src.LearningGoalText)
+	goalMateri := strings.TrimSpace(src.LearningGoalMateri)
+	goalKelas := strings.TrimSpace(src.LearningGoalKelas)
+	if goalKelas == "" {
+		goalKelas = subjectLevel
+	}
+	goalSemester := int64(src.LearningGoalSemester)
+	if goalSemester <= 0 {
+		goalSemester = 1
+	}
+	if goalText == "" {
+		goalText = "Transfer Soal"
+	}
+	if goalMateri == "" {
+		goalMateri = "Transfer Soal"
+	}
+	ownerFilter := int64(0)
+	if targetRole == "guru" {
+		ownerFilter = targetUserID
+	}
+	var existingID int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM learning_goals
+		WHERE LOWER(mata_pelajaran) = LOWER($1)
+		  AND LOWER(kelas) = LOWER($2)
+		  AND semester = $3
+		  AND LOWER(tujuan_pembelajaran) = LOWER($4)
+		  AND LOWER(materi) = LOWER($5)
+		  AND ($6 <= 0 OR created_by = $6)
+		LIMIT 1
+	`, subjectName, goalKelas, goalSemester, goalText, goalMateri, ownerFilter).Scan(&existingID); err == nil {
+		return existingID, nil
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("find learning goal: %w", err)
+	}
+
+	var outID int64
+	if err := s.db.QueryRowContext(ctx, `
+		INSERT INTO learning_goals (tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0))
+		RETURNING id
+	`, goalText, goalMateri, subjectName, goalKelas, goalSemester, targetUserID).Scan(&outID); err != nil {
+		return 0, fmt.Errorf("create learning goal: %w", err)
+	}
+	return outID, nil
+}
+
+func (s *Service) ensureQuestionCodeForTransfer(ctx context.Context, targetUserID, targetSubjectID int64, code, name string) (int64, int64, error) {
+	code = normalizeQuestionCode(code)
+	name = strings.TrimSpace(name)
+	if code == "" {
+		return 0, 0, nil
+	}
+	var id int64
+	var createdBy sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT id, created_by
+		FROM question_codes
+		WHERE subject_id = $1
+		  AND code = $2
+		  AND is_active = TRUE
+		LIMIT 1
+	`, targetSubjectID, code).Scan(&id, &createdBy); err == nil {
+		ownerID := int64(0)
+		if createdBy.Valid {
+			ownerID = createdBy.Int64
+		}
+		return id, ownerID, nil
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, fmt.Errorf("load question code: %w", err)
+	}
+	created, err := s.CreateQuestionCode(ctx, CreateQuestionCodeInput{
+		SubjectID: targetSubjectID,
+		Code:      code,
+		Name:      defaultString(name, code),
+		CreatedBy: targetUserID,
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return created.ID, targetUserID, nil
+}
+
+func fallbackTitleFromStem(stemHTML string) string {
+	clean := stripHTMLForTitle(stemHTML)
+	if clean == "" {
+		return ""
+	}
+	if len(clean) > 180 {
+		return clean[:180]
+	}
+	return clean
+}
+
+func stripHTMLForTitle(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"<br>", " ",
+		"<br/>", " ",
+		"<br />", " ",
+		"</p>", " ",
+		"</div>", " ",
+		"</li>", " ",
+	)
+	text = replacer.Replace(text)
+	var b strings.Builder
+	inTag := false
+	for _, r := range text {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+		}
+	}
+	out := html.UnescapeString(b.String())
+	out = strings.ReplaceAll(out, "\u00a0", " ")
+	out = strings.Join(strings.Fields(out), " ")
+	return strings.TrimSpace(out)
+}
+
+func defaultString(val, fallback string) string {
+	if strings.TrimSpace(val) == "" {
+		return fallback
+	}
+	return val
 }
 
 func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVersionInput) (*QuestionVersion, error) {

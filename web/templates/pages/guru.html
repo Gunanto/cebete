@@ -750,6 +750,20 @@
                             Import Soal (CSV Word)
                         </button>
                         <button
+                            id="guru-manuscript-export-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Export Naskah (CSV)
+                        </button>
+                        <button
+                            id="guru-manuscript-transfer-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Transfer Naskah
+                        </button>
+                        <button
                             id="guru-manuscript-refresh-btn"
                             class="btn btn-secondary"
                             type="button"
@@ -1481,6 +1495,53 @@
                 Batal
             </button>
             <button class="btn" type="submit">Import</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="guru-manuscript-transfer-dialog" class="admin-dialog">
+    <form id="guru-manuscript-transfer-form" class="form-grid">
+        <h3>Transfer Naskah</h3>
+        <label>
+            Target Guru
+            <select
+                id="guru-manuscript-transfer-user"
+                name="target_user_id"
+                required
+            >
+                <option value="">Pilih guru...</option>
+            </select>
+        </label>
+        <label>
+            Target Mapel
+            <select
+                id="guru-manuscript-transfer-subject"
+                name="target_subject_id"
+                required
+            >
+                <option value="">Pilih mapel...</option>
+            </select>
+        </label>
+        <label>
+            Sumber Naskah
+            <select id="guru-manuscript-transfer-source" required>
+                <option value="selected">Naskah terpilih</option>
+                <option value="filtered">Semua naskah pada tabel aktif</option>
+            </select>
+        </label>
+        <div id="guru-manuscript-transfer-summary" class="muted">
+            0 naskah siap ditransfer.
+        </div>
+        <pre id="guru-manuscript-transfer-output" class="box code-box"></pre>
+        <div class="actions">
+            <button
+                id="guru-manuscript-transfer-cancel-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Batal
+            </button>
+            <button class="btn" type="submit">Transfer</button>
         </div>
     </form>
 </dialog>

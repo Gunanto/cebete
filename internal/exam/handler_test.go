@@ -19,6 +19,7 @@ type mockExamService struct {
 	startAttemptFn                  func(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
 	previewExamByTokenFn            func(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
 	listAdminExamsFn                func(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
+	listAdminExamsByOwnerFn         func(ctx context.Context, ownerID int64, includeInactive bool) ([]ExamAdminRecord, error)
 	createExamFn                    func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
 	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	deleteExamFn                    func(ctx context.Context, examID int64) error
@@ -46,6 +47,7 @@ type mockExamService struct {
 	upsertExamQuestionFn            func(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error)
 	upsertExamQuestionIncidentFn    func(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error)
 	deleteExamQuestionFn            func(ctx context.Context, examID, questionID int64) error
+	isExamOwnedByFn                 func(ctx context.Context, examID, ownerID int64) (bool, error)
 	getAttemptSummaryFn             func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
 	getAttemptQuestionFn            func(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error)
 	getAttemptResultFn              func(ctx context.Context, attemptID int64) (*AttemptResult, error)
@@ -86,6 +88,13 @@ func (m *mockExamService) ListAdminExams(ctx context.Context, includeInactive bo
 		return nil, errors.New("not implemented")
 	}
 	return m.listAdminExamsFn(ctx, includeInactive)
+}
+
+func (m *mockExamService) ListAdminExamsByOwner(ctx context.Context, ownerID int64, includeInactive bool) ([]ExamAdminRecord, error) {
+	if m.listAdminExamsByOwnerFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listAdminExamsByOwnerFn(ctx, ownerID, includeInactive)
 }
 
 func (m *mockExamService) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error) {
@@ -268,6 +277,13 @@ func (m *mockExamService) DeleteExamQuestion(ctx context.Context, examID, questi
 		return errors.New("not implemented")
 	}
 	return m.deleteExamQuestionFn(ctx, examID, questionID)
+}
+
+func (m *mockExamService) IsExamOwnedBy(ctx context.Context, examID, ownerID int64) (bool, error) {
+	if m.isExamOwnedByFn == nil {
+		return false, errors.New("not implemented")
+	}
+	return m.isExamOwnedByFn(ctx, examID, ownerID)
 }
 
 func (m *mockExamService) GetAttemptSummary(ctx context.Context, attemptID int64) (*AttemptSummary, error) {
