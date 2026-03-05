@@ -352,6 +352,11 @@
           '" title="Lihat Soal Ujian" aria-label="Lihat Soal Ujian">' +
           '<svg viewBox="0 0 24 24" focusable="false"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>' +
           "</button>" +
+          '<button class="icon-only-btn" type="button" data-exam-action="regrade" data-id="' +
+          deps.escapeHtml(String(it.id || "")) +
+          '" title="Generate ulang hasil ujian" aria-label="Generate ulang hasil ujian">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z"/></svg>' +
+          "</button>" +
           '<button class="icon-only-btn danger" type="button" data-exam-action="delete" data-id="' +
           deps.escapeHtml(String(it.id || "")) +
           '" title="Nonaktifkan Ujian" aria-label="Nonaktifkan Ujian">' +
@@ -718,6 +723,41 @@
           } finally {
             done();
           }
+          return;
+        }
+        if (action === "regrade") {
+          if (
+            !window.confirm(
+              "Generate ulang hasil ujian ini? Pastikan kunci jawaban sudah benar.",
+            )
+          ) {
+            return;
+          }
+          const done = deps.beginBusy(
+            btn,
+            deps.msg,
+            "Menghitung ulang hasil...",
+          );
+          try {
+            const out = await deps.api(
+              "/api/v1/admin/exams/" + examID + "/regrade",
+              "POST",
+            );
+            const regraded = Number(out && out.regraded_attempts) || 0;
+            const skipped = Number(out && out.skipped_in_progress) || 0;
+            deps.setMsg(
+              "Regrade selesai. Ulang: " +
+                regraded +
+                " attempt. Lewat (sedang berjalan): " +
+                skipped +
+                ".",
+            );
+          } catch (err) {
+            deps.setMsg("Gagal regrade ujian: " + err.message);
+          } finally {
+            done();
+          }
+          return;
         }
       });
     }

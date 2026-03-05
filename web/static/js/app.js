@@ -3119,6 +3119,7 @@
     const ProktorPlacement = window.ProktorPlacement || {};
     const ProktorDashboard = window.ProktorDashboard || {};
     const ProktorQuick = window.ProktorQuick || {};
+    const ProktorAudit = window.ProktorAudit || {};
 
     const msg = document.getElementById("proktor-message");
     const statPending = document.getElementById("proktor-stat-pending");
@@ -3240,6 +3241,19 @@
     const dashboardPanel = document.getElementById("proktor-dashboard-panel");
     const eventsPanel = document.getElementById("proktor-events-panel");
     const resultsPanel = document.getElementById("proktor-results-panel");
+    const auditPanel = document.getElementById("proktor-audit-panel");
+    const auditForm = document.getElementById("proktor-audit-form");
+    const auditBody = document.getElementById("proktor-audit-body");
+    const auditAction = document.getElementById("proktor-audit-action");
+    const auditEntityType = document.getElementById(
+      "proktor-audit-entity-type",
+    );
+    const auditEntityID = document.getElementById("proktor-audit-entity-id");
+    const auditUserID = document.getElementById("proktor-audit-user-id");
+    const auditLimit = document.getElementById("proktor-audit-limit");
+    const auditRefreshBtn = document.getElementById(
+      "proktor-audit-refresh-btn",
+    );
     const resultsRefreshBtn = document.getElementById(
       "proktor-results-refresh-btn",
     );
@@ -3476,6 +3490,27 @@
       if (!ProktorQuick || typeof ProktorQuick.init !== "function") return;
       ProktorQuick.init({
         quickPanel: quickPanel,
+      });
+    }
+
+    function initProktorAuditModule() {
+      if (!ProktorAudit || typeof ProktorAudit.init !== "function") return;
+      ProktorAudit.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: msg,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        auditPanel: auditPanel,
+        auditForm: auditForm,
+        auditBody: auditBody,
+        auditAction: auditAction,
+        auditEntityType: auditEntityType,
+        auditEntityID: auditEntityID,
+        auditUserID: auditUserID,
+        auditLimit: auditLimit,
+        auditRefreshBtn: auditRefreshBtn,
       });
     }
 
@@ -3848,6 +3883,7 @@
         "attendance",
         "exams",
         "results",
+        "audit",
         "master",
         "guide",
         "quick",
@@ -3866,6 +3902,7 @@
       if (attendancePanel) attendancePanel.hidden = key !== "attendance";
       if (examsPanel) examsPanel.hidden = key !== "exams";
       if (resultsPanel) resultsPanel.hidden = key !== "results";
+      if (auditPanel) auditPanel.hidden = key !== "audit";
       if (masterPanel) masterPanel.hidden = key !== "master";
       if (guidePanel) guidePanel.hidden = key !== "guide";
       if (quickPanel) quickPanel.hidden = key !== "quick";
@@ -3901,6 +3938,10 @@
         results: {
           title: "Hasil Ujian",
           desc: "Lihat rekap dan detail hasil peserta.",
+        },
+        audit: {
+          title: "Audit Log",
+          desc: "Pantau perubahan kunci jawaban dan regrade ujian.",
         },
         master: {
           title: "Data Master",
@@ -3977,6 +4018,7 @@
     safeInitModule("Penempatan Kelas", initProktorPlacementModule);
     safeInitModule("Dashboard", initProktorDashboardModule);
     safeInitModule("Aksi Cepat", initProktorQuickModule);
+    safeInitModule("Audit Log", initProktorAuditModule);
     bindEnrollFallbackHandlers();
     initEventsFilters();
 

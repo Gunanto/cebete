@@ -66,6 +66,7 @@ type examService interface {
 	ListExamClassEvents(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
 	SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error)
 	ClearUserPhotoDataURL(ctx context.Context, userID int64) error
+	RegradeExamAttempts(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
 }
 
 type response struct {
@@ -1268,6 +1269,46 @@ func (h *Handler) DeleteExamQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]string{"status": "deleted"}})
+}
+
+func (h *Handler) RegradeExam(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	out, err := h.svc.RegradeExamAttempts(r.Context(), examID, user.ID, user.Role)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
 }
 
 func (h *Handler) UpsertExamQuestionIncident(w http.ResponseWriter, r *http.Request) {

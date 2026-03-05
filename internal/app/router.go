@@ -12,6 +12,7 @@ import (
 
 	"cbtlms/internal/app/observability"
 	"cbtlms/internal/assistant"
+	"cbtlms/internal/audit"
 	"cbtlms/internal/auth"
 	"cbtlms/internal/exam"
 	"cbtlms/internal/masterdata"
@@ -49,6 +50,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		Mailer:         mailer,
 	})
 	authHandler := auth.NewHandler(authSvc)
+	auditSvc := audit.NewService(db)
+	auditHandler := audit.NewHandler(auditSvc)
 	assistantSvc := assistant.NewService(assistant.ServiceConfig{
 		GeminiAPIKey: cfg.GeminiAPIKey,
 		GeminiModel:  cfg.GeminiModel,
@@ -219,6 +222,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/questions", examHandler.UpsertExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/questions/{questionID}", examHandler.UpsertExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/questions/{questionID}", examHandler.DeleteExamQuestion)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/regrade", examHandler.RegradeExam)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/question-codes", examHandler.ListExamQuestionCodeRules)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/question-codes", examHandler.UpsertExamQuestionCodeRule)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/question-codes/{questionCodeID}", examHandler.DeleteExamQuestionCodeRule)
@@ -241,6 +245,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Put("/admin/users/{id}/class-placement", authHandler.AssignUserClass)
 				admin.Get("/admin/schools", masterHandler.ListSchools)
 				admin.Get("/admin/registrations", authHandler.ListPendingRegistrations)
+				admin.Get("/admin/audit-logs", auditHandler.ListAuditLogs)
 				admin.Post("/admin/registrations/{id}/approve", authHandler.ApproveRegistration)
 				admin.Post("/admin/registrations/{id}/reject", authHandler.RejectRegistration)
 				admin.Post("/admin/schools", masterHandler.CreateSchool)

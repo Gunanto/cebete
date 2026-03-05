@@ -1,6 +1,7 @@
 package question
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -1813,6 +1814,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	}
 
 	next := *item
+	prevAnswerKey := append([]byte(nil), item.AnswerKey...)
 	if in.StimulusHTML != nil {
 		v := strings.TrimSpace(*in.StimulusHTML)
 		if v == "" {
@@ -1933,10 +1935,54 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	if _, err := tx.ExecContext(ctx, `UPDATE questions SET updated_at = now() WHERE id = $1`, in.QuestionID); err != nil {
 		return nil, fmt.Errorf("update question timestamp: %w", err)
 	}
+	if in.ActorID > 0 {
+		prevNorm := normalizeJSONBytes(prevAnswerKey)
+		nextNorm := normalizeJSONBytes(next.AnswerKey)
+		if !bytes.Equal(prevNorm, nextNorm) {
+			entityID := fmt.Sprintf("%d:%d", in.QuestionID, in.VersionNo)
+			if err := s.writeAuditTx(ctx, tx, in.ActorID, "question_answer_key_update", "question_version", entityID, map[string]any{
+				"question_id": in.QuestionID,
+				"version_no":  in.VersionNo,
+				"before":      json.RawMessage(prevNorm),
+				"after":       json.RawMessage(nextNorm),
+			}); err != nil {
+				return nil, fmt.Errorf("write audit log: %w", err)
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return out, nil
+}
+
+func (s *Service) writeAuditTx(ctx context.Context, tx *sql.Tx, userID int64, action, entityType, entityID string, payload map[string]any) error {
+	if tx == nil {
+		return ErrInvalidInput
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO audit_logs (user_id, action, entity_type, entity_id, payload, created_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, now())
+	`, userID, action, entityType, entityID, string(b))
+	return err
+}
+
+func normalizeJSONBytes(raw []byte) []byte {
+	if len(raw) == 0 {
+		return []byte("{}")
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return bytes.TrimSpace(raw)
+	}
+	return buf.Bytes()
 }
 
 func (s *Service) DeleteQuestionVersion(ctx context.Context, questionID int64, versionNo int, actorID int64, enforceOwner bool) error {

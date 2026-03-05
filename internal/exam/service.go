@@ -348,6 +348,12 @@ type ExamQuestionIncidentResult struct {
 	RecomputedAttempts int        `json:"recomputed_attempts"`
 }
 
+type RegradeExamResult struct {
+	ExamID            int64 `json:"exam_id"`
+	RegradedAttempts  int   `json:"regraded_attempts"`
+	SkippedInProgress int   `json:"skipped_in_progress"`
+}
+
 type AttemptResultItem struct {
 	QuestionID   int64            `json:"question_id"`
 	QuestionType string           `json:"question_type"`
@@ -2701,6 +2707,99 @@ func (s *Service) UpsertExamQuestionIncident(ctx context.Context, in UpsertExamQ
 		return nil, fmt.Errorf("commit incident tx: %w", err)
 	}
 	return &out, nil
+}
+
+func (s *Service) RegradeExamAttempts(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error) {
+	if examID <= 0 || actorID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	if role == "guru" {
+		owned, err := s.IsExamOwnedBy(ctx, examID, actorID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, ErrExamForbidden
+		}
+	}
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1)
+	`, examID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check exam exists: %w", err)
+	}
+	if !exists {
+		return nil, ErrExamNotFound
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin regrade tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, status
+		FROM attempts
+		WHERE exam_id = $1
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list attempts for regrade: %w", err)
+	}
+	defer rows.Close()
+
+	out := &RegradeExamResult{ExamID: examID}
+	for rows.Next() {
+		var attemptID int64
+		var status string
+		if err := rows.Scan(&attemptID, &status); err != nil {
+			return nil, fmt.Errorf("scan attempt for regrade: %w", err)
+		}
+		if status == "in_progress" {
+			out.SkippedInProgress++
+			continue
+		}
+		if err := s.recomputeFinalizedAttemptTx(ctx, tx, attemptID); err != nil {
+			return nil, err
+		}
+		out.RegradedAttempts++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate attempts for regrade: %w", err)
+	}
+
+	if err := s.writeAuditTx(ctx, tx, actorID, "exam_regrade", "exam", fmt.Sprintf("%d", examID), map[string]any{
+		"exam_id":             examID,
+		"regraded_attempts":   out.RegradedAttempts,
+		"skipped_in_progress": out.SkippedInProgress,
+	}); err != nil {
+		return nil, fmt.Errorf("write audit log: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit regrade tx: %w", err)
+	}
+	return out, nil
+}
+
+func (s *Service) writeAuditTx(ctx context.Context, tx *sql.Tx, userID int64, action, entityType, entityID string, payload map[string]any) error {
+	if tx == nil {
+		return ErrInvalidInput
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO audit_logs (user_id, action, entity_type, entity_id, payload, created_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, now())
+	`, userID, action, entityType, entityID, string(b))
+	return err
 }
 
 func (s *Service) GetAttemptSummary(ctx context.Context, attemptID int64) (*AttemptSummary, error) {

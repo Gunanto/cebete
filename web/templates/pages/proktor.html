@@ -163,6 +163,19 @@
                             </span>
                             Hasil Ujian
                         </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
+                            data-proktor-menu="audit"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M5 4h14v16H5z" />
+                                    <path d="M8 8h8M8 12h8M8 16h5" />
+                                </svg>
+                            </span>
+                            Audit Log
+                        </button>
                     </div>
                 </section>
 
@@ -788,6 +801,95 @@
                             Reset Attempt Peserta
                         </button>
                     </form>
+                </div>
+            </section>
+
+            <section id="proktor-audit-panel" class="panel" hidden>
+                <div class="admin-card">
+                    <div class="admin-section-head">
+                        <h3>Audit Log</h3>
+                        <button
+                            id="proktor-audit-refresh-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Muat Audit
+                        </button>
+                    </div>
+                    <form id="proktor-audit-form" class="form-grid mt">
+                        <label>
+                            Action
+                            <select id="proktor-audit-action">
+                                <option value="">Semua action</option>
+                                <option value="question_answer_key_update">
+                                    Perubahan kunci jawaban
+                                </option>
+                                <option value="exam_regrade">
+                                    Regrade ujian
+                                </option>
+                            </select>
+                        </label>
+                        <label>
+                            Entity Type
+                            <select id="proktor-audit-entity-type">
+                                <option value="">Semua entity</option>
+                                <option value="exam">Exam</option>
+                                <option value="question_version">
+                                    Question Version
+                                </option>
+                            </select>
+                        </label>
+                        <label>
+                            Entity ID
+                            <input
+                                id="proktor-audit-entity-id"
+                                type="text"
+                                placeholder="Contoh: 12 atau 12:3"
+                            />
+                        </label>
+                        <label>
+                            User ID
+                            <input
+                                id="proktor-audit-user-id"
+                                type="number"
+                                min="1"
+                            />
+                        </label>
+                        <label>
+                            Limit
+                            <select id="proktor-audit-limit">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </label>
+                        <div class="actions">
+                            <button class="btn btn-secondary" type="submit">
+                                Terapkan Filter
+                            </button>
+                        </div>
+                    </form>
+                    <div class="table-wrap mt">
+                        <table class="bs-table">
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Entity</th>
+                                    <th>Ringkasan</th>
+                                </tr>
+                            </thead>
+                            <tbody id="proktor-audit-body">
+                                <tr>
+                                    <td colspan="5" class="muted">
+                                        Belum ada data audit.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 

@@ -9,6 +9,9 @@
   - `GET /api/v1/media/question-images/*` (serve image)
 - Package backend baru `internal/media` untuk integrasi MinIO object storage.
 - Test handler media (`internal/media/handler_test.go`) untuk skenario sukses, file terlalu besar, storage unavailable, dan not found.
+- Endpoint regrade hasil ujian per exam: `POST /api/v1/admin/exams/{id}/regrade`.
+- Audit log untuk perubahan kunci jawaban dan regrade ujian (tabel `audit_logs`).
+- UI Audit Log di portal proktor beserta endpoint list `GET /api/v1/admin/audit-logs`.
 
 ### Changed
 - Integrasi Quill image handler:
@@ -19,6 +22,7 @@
 - Routing API aman:
   - upload media hanya untuk `admin/proktor/guru`,
   - serve media tersedia pada route secure (authenticated users).
+- Menu Kelola Ujian (guru/proktor) menambahkan aksi `Generate ulang hasil ujian`.
 
 ### Fixed
 - Isolasi akses guru pada kelola ujian/naskah agar guru tidak bisa membuka exam/question milik guru lain.

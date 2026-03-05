@@ -60,6 +60,7 @@ type mockExamService struct {
 	listExamClassEventsFn           func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
 	setUserPhotoDataURLFn           func(ctx context.Context, userID int64, dataURL string) (string, error)
 	clearUserPhotoDataURLFn         func(ctx context.Context, userID int64) error
+	regradeExamAttemptsFn           func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
 }
 
 func (m *mockExamService) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
@@ -370,6 +371,13 @@ func (m *mockExamService) ClearUserPhotoDataURL(ctx context.Context, userID int6
 	return m.clearUserPhotoDataURLFn(ctx, userID)
 }
 
+func (m *mockExamService) RegradeExamAttempts(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error) {
+	if m.regradeExamAttemptsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.regradeExamAttemptsFn(ctx, examID, actorID, actorRole)
+}
+
 func withChiParam(r *http.Request, key, value string) *http.Request {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
@@ -471,6 +479,62 @@ func TestStartAttemptUsesSessionStudentIDForNonPrivileged(t *testing.T) {
 	}
 	if gotStudentID != 15 {
 		t.Fatalf("expected student_id forced to 15, got %d", gotStudentID)
+	}
+}
+
+func TestRegradeExamForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		regradeExamAttemptsFn: func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error) {
+			called = true
+			return &RegradeExamResult{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/regrade", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.RegradeExam(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatalf("regrade should not be called when forbidden")
+	}
+}
+
+func TestRegradeExamSuccess(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		regradeExamAttemptsFn: func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error) {
+			if examID != 10 || actorID != 7 || actorRole != "guru" {
+				t.Fatalf("unexpected args: %d %d %s", examID, actorID, actorRole)
+			}
+			return &RegradeExamResult{ExamID: examID, RegradedAttempts: 3, SkippedInProgress: 1}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/10/regrade", nil)
+	req = withChiParam(req, "id", "10")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.RegradeExam(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	if body["ok"] != true {
+		t.Fatalf("expected ok=true, got %+v", body)
 	}
 }
 
