@@ -5450,6 +5450,36 @@
       }
     }
 
+    const QUESTION_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+
+    function fileToDataURL(file) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const base64 = String(reader.result || "");
+          if (!base64) {
+            reject(new Error("gambar tidak valid"));
+            return;
+          }
+          resolve(base64);
+        };
+        reader.onerror = function () {
+          reject(new Error("gagal membaca gambar"));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadQuestionImageFile(file) {
+      if (!file) throw new Error("file gambar tidak ditemukan");
+      if (file.size > QUESTION_IMAGE_MAX_BYTES) {
+        throw new Error("ukuran gambar maksimal 2MB");
+      }
+      const form = new FormData();
+      form.append("file", file);
+      return await apiMultipart("/api/v1/media/question-images", "POST", form);
+    }
+
     function createQuillEditor(hostEl, placeholder, options) {
       if (!hostEl || !window.Quill) return null;
       const originalConsoleLog = console.log;
@@ -5486,21 +5516,40 @@
                   const input = document.createElement("input");
                   input.type = "file";
                   input.accept = "image/*";
-                  input.onchange = function () {
+                  input.onchange = async function () {
                     const file = input.files && input.files[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = function () {
-                      const base64 = String(reader.result || "");
-                      if (!base64) return;
-                      const range = this.quill.getSelection(true);
-                      const index = range
-                        ? range.index
-                        : this.quill.getLength();
-                      this.quill.insertEmbed(index, "image", base64, "user");
+                    const range = this.quill.getSelection(true);
+                    const index = range ? range.index : this.quill.getLength();
+                    try {
+                      const uploaded = await uploadQuestionImageFile(file);
+                      const imageURL = String(
+                        (uploaded && uploaded.url) || "",
+                      ).trim();
+                      if (!imageURL) {
+                        throw new Error("URL gambar tidak tersedia");
+                      }
+                      this.quill.insertEmbed(index, "image", imageURL, "user");
                       this.quill.setSelection(index + 1, 0, "silent");
-                    }.bind(this);
-                    reader.readAsDataURL(file);
+                    } catch (err) {
+                      const msg = String(
+                        (err && err.message) || "gagal upload gambar",
+                      ).trim();
+                      if (/maksimal 2mb/i.test(msg)) {
+                        window.alert(msg);
+                        return;
+                      }
+                      try {
+                        const base64 = await fileToDataURL(file);
+                        this.quill.insertEmbed(index, "image", base64, "user");
+                        this.quill.setSelection(index + 1, 0, "silent");
+                        window.alert(
+                          "Upload ke server gagal, gambar disimpan sebagai base64 sementara.",
+                        );
+                      } catch (_) {
+                        window.alert("Gagal memproses gambar.");
+                      }
+                    }
                   }.bind(this);
                   input.click();
                 },

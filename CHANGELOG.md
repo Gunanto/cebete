@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-03-05 - in progress
+
+### Added
+- Export/transfer naskah soal antar guru via admin/proktor, termasuk dropdown pilih guru dan subject untuk target transfer.
+- Endpoint media baru untuk gambar soal:
+  - `POST /api/v1/media/question-images` (upload)
+  - `GET /api/v1/media/question-images/*` (serve image)
+- Package backend baru `internal/media` untuk integrasi MinIO object storage.
+- Test handler media (`internal/media/handler_test.go`) untuk skenario sukses, file terlalu besar, storage unavailable, dan not found.
+
+### Changed
+- Integrasi Quill image handler:
+  - prioritas upload ke endpoint media (URL image disimpan di HTML),
+  - fallback ke base64 hanya ketika upload gagal non-size,
+  - batas ukuran gambar 2MB di sisi frontend.
+- Konfigurasi aplikasi bertambah untuk MinIO: endpoint/key/secret/use_ssl/bucket/region.
+- Routing API aman:
+  - upload media hanya untuk `admin/proktor/guru`,
+  - serve media tersedia pada route secure (authenticated users).
+
+### Fixed
+- Isolasi akses guru pada kelola ujian/naskah agar guru tidak bisa membuka exam/question milik guru lain.
+- Coverage test handler untuk kasus akses lintas-guru (forbidden) agar regresi lebih cepat terdeteksi.
+
 ## 2026-02-19 - commit `31d53d4`
 
 ### Added
@@ -35,4 +59,3 @@
 - Berbagai konflik layout editor (Quill) yang menimpa tombol aksi form.
 - Beberapa ketidaksesuaian menu default halaman role saat pertama dibuka.
 - Perbaikan akses dan alur CRUD pada halaman manajemen role.
-

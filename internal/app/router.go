@@ -3,6 +3,7 @@ package app
 import (
 	"database/sql"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"cbtlms/internal/auth"
 	"cbtlms/internal/exam"
 	"cbtlms/internal/masterdata"
+	"cbtlms/internal/media"
 	"cbtlms/internal/question"
 
 	"github.com/go-chi/chi/v5"
@@ -59,6 +61,19 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	masterHandler := masterdata.NewHandler(masterSvc)
 	questionSvc := question.NewService(db)
 	questionHandler := question.NewHandler(questionSvc)
+	mediaSvc, err := media.NewService(media.ServiceConfig{
+		Endpoint:  cfg.MinIOEndpoint,
+		AccessKey: cfg.MinIOAccessKey,
+		SecretKey: cfg.MinIOSecretKey,
+		UseSSL:    cfg.MinIOUseSSL,
+		Bucket:    cfg.MinIOBucket,
+		Region:    cfg.MinIORegion,
+	})
+	if err != nil {
+		log.Printf("media warning: failed initializing minio storage: %v", err)
+		mediaSvc = media.NewDisabledService()
+	}
+	mediaHandler := media.NewHandler(mediaSvc)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -177,6 +192,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/questions", questionHandler.ListQuestions)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/questions/export", questionHandler.ExportQuestions)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/questions/transfer", questionHandler.TransferQuestions)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/media/question-images", mediaHandler.UploadQuestionImage)
+			secure.Get("/media/question-images/*", mediaHandler.ServeQuestionImage)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/questions/{id}/versions", questionHandler.CreateQuestionVersion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/questions/{id}/versions/{version}", questionHandler.UpdateQuestionVersion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/questions/{id}/versions/{version}", questionHandler.DeleteQuestionVersion)
