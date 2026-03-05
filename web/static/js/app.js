@@ -5192,32 +5192,51 @@
           return;
         }
         manuscriptTransferUserInput.disabled = false;
-        const out = await api(
-          "/api/v1/admin/users?role=guru&limit=500&offset=0",
-          "GET",
-        );
-        const rows = Array.isArray(out && out.items) ? out.items : [];
-        rows.forEach(function (it) {
-          const id = Number((it && it.id) || 0);
-          if (id <= 0) return;
-          const name = String((it && it.full_name) || "").trim();
-          const username = String((it && it.username) || "").trim();
-          const label =
-            String(id) +
-            " | " +
-            (name || username || "Guru") +
-            (username ? " (@" + username + ")" : "");
-          const opt = document.createElement("option");
-          opt.value = String(id);
-          opt.textContent = label;
-          manuscriptTransferUserInput.appendChild(opt);
-        });
+        try {
+          const out = await api(
+            "/api/v1/admin/users?role=guru&limit=500&offset=0",
+            "GET",
+          );
+          const rows = Array.isArray(out && out.items) ? out.items : [];
+          rows.forEach(function (it) {
+            const id = Number((it && it.id) || 0);
+            if (id <= 0) return;
+            const name = String((it && it.full_name) || "").trim();
+            const username = String((it && it.username) || "").trim();
+            const label =
+              String(id) +
+              " | " +
+              (name || username || "Guru") +
+              (username ? " (@" + username + ")" : "");
+            const opt = document.createElement("option");
+            opt.value = String(id);
+            opt.textContent = label;
+            manuscriptTransferUserInput.appendChild(opt);
+          });
+        } catch (err) {
+          const fallbackID = String((user && user.id) || "");
+          const fallbackName = String((user && user.full_name) || "");
+          if (fallbackID) {
+            const opt = document.createElement("option");
+            opt.value = fallbackID;
+            opt.textContent = fallbackName || "Guru";
+            manuscriptTransferUserInput.appendChild(opt);
+            manuscriptTransferUserInput.value = fallbackID;
+            setManuscriptMsg(
+              "Gagal memuat daftar guru. Menggunakan akun sendiri.",
+            );
+            return;
+          }
+          throw err;
+        }
       }
 
       async function loadTransferSubjectOptions() {
         if (!manuscriptTransferSubjectInput) return;
-        if (!Array.isArray(subjects) || subjects.length === 0) {
+        let list = getSubjectsCache();
+        if (!Array.isArray(list) || list.length === 0) {
           await loadSubjects();
+          list = getSubjectsCache();
         }
         const current = String(
           (manuscriptTransferSubjectInput &&
@@ -5226,7 +5245,6 @@
         );
         manuscriptTransferSubjectInput.innerHTML =
           '<option value="">Pilih mapel...</option>';
-        const list = Array.isArray(subjects) ? subjects : [];
         list.forEach(function (it) {
           const id = Number((it && it.id) || 0);
           if (id <= 0) return;
