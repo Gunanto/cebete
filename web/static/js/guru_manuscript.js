@@ -615,6 +615,40 @@
     if (typeof deps.syncManuscriptSubjectState === "function") {
       deps.syncManuscriptSubjectState();
     }
+    
+    // Fallback: if syncManuscriptSubjectState didn't populate fields (e.g., transferred questions not in blueprint cache),
+    // populate them directly from item data
+    const subjectID = Number(item.subject_id || 0);
+    if (subjectID > 0 && deps.manuscriptSubjectSelect) {
+      if (!deps.manuscriptSubjectSelect.value || deps.manuscriptSubjectSelect.value === "") {
+        deps.manuscriptSubjectSelect.value = String(subjectID);
+        deps.manuscriptSubjectSelect.disabled = true;
+        
+        // Fill learning goal select for this subject
+        if (typeof deps.fillLearningGoalSelect === "function") {
+          deps.fillLearningGoalSelect(deps.manuscriptLearningGoalSelect, subjectID);
+        }
+        
+        // Set learning goal value
+        const learningGoalID = Number(item.learning_goal_id || 0);
+        if (learningGoalID > 0 && deps.manuscriptLearningGoalSelect) {
+          deps.manuscriptLearningGoalSelect.value = String(learningGoalID);
+        }
+        
+        // Fill question code select for this subject
+        if (typeof deps.fillQuestionCodeSelect === "function") {
+          deps.fillQuestionCodeSelect(deps.manuscriptQuestionCodeSelect, subjectID, true);
+        }
+        
+        // Set question code value
+        const questionCodeID = Number(item.question_code_id || 0);
+        if (deps.manuscriptQuestionCodeSelect) {
+          deps.manuscriptQuestionCodeSelect.value = questionCodeID > 0 ? String(questionCodeID) : "";
+          deps.manuscriptQuestionCodeSelect.disabled = false;
+        }
+      }
+    }
+    
     applyTypeUI(true);
     setQuillHTMLValue(manuscriptStimulusQuill, item.stimulus_html);
     setQuillHTMLValue(manuscriptStemQuill, item.stem_html);
