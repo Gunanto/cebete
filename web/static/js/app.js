@@ -5182,16 +5182,8 @@
         const role = String((user && user.role) || "").toLowerCase();
         manuscriptTransferUserInput.innerHTML =
           '<option value="">Pilih guru...</option>';
-        if (role !== "admin" && role !== "proktor") {
-          const opt = document.createElement("option");
-          opt.value = String((user && user.id) || "");
-          opt.textContent = String((user && user.full_name) || "Guru");
-          manuscriptTransferUserInput.appendChild(opt);
-          manuscriptTransferUserInput.value = opt.value;
-          manuscriptTransferUserInput.disabled = true;
-          return;
-        }
         manuscriptTransferUserInput.disabled = false;
+        
         try {
           const out = await api(
             "/api/v1/admin/users?role=guru&limit=500&offset=0",

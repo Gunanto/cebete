@@ -229,6 +229,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/question-codes/sync", examHandler.SyncExamQuestionsByCode)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/question-incidents", examHandler.UpsertExamQuestionIncident)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/classes", masterHandler.ListClasses)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/users", authHandler.ListUsers)
 
 			secure.Group(func(admin chi.Router) {
 				admin.Use(authHandler.RequireRoles("admin", "proktor"))
@@ -239,7 +240,6 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Put("/admin/exams/{id}/assignments/by-class", examHandler.ReplaceExamAssignmentsByClass)
 				admin.Post("/admin/exams/{id}/assignments/by-class/append", examHandler.AppendExamAssignmentsByClass)
 				admin.Delete("/admin/exams/{id}/assignments/{user_id}", examHandler.RemoveExamAssignment)
-				admin.Get("/admin/users", authHandler.ListUsers)
 				admin.Post("/admin/users/{id}/photo", examHandler.UploadUserPhoto)
 				admin.Delete("/admin/users/{id}/photo", examHandler.DeleteUserPhoto)
 				admin.Put("/admin/users/{id}/class-placement", authHandler.AssignUserClass)
