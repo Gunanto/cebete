@@ -5264,21 +5264,26 @@
       
       // Add event listener to reload subjects when target guru changes
       if (manuscriptTransferUserInput) {
-        manuscriptTransferUserInput.addEventListener("change", async function () {
-          const targetUserID = Number(manuscriptTransferUserInput.value || 0);
-          if (targetUserID > 0) {
-            try {
-              await loadTransferSubjectOptions(targetUserID);
-            } catch (err) {
-              setManuscriptMsg("Gagal memuat mapel guru penerima: " + err.message);
+        try {
+          manuscriptTransferUserInput.addEventListener("change", async function () {
+            const targetUserID = Number(manuscriptTransferUserInput.value || 0);
+            if (targetUserID > 0) {
+              try {
+                await loadTransferSubjectOptions(targetUserID);
+              } catch (err) {
+                console.error("Failed to load transfer subject options:", err);
+                setManuscriptMsg("Gagal memuat mapel guru penerima: " + err.message);
+              }
+            } else {
+              // Reset subject dropdown if no guru selected
+              if (manuscriptTransferSubjectInput) {
+                manuscriptTransferSubjectInput.innerHTML = '<option value="">Pilih guru dulu...</option>';
+              }
             }
-          } else {
-            // Reset subject dropdown if no guru selected
-            if (manuscriptTransferSubjectInput) {
-              manuscriptTransferSubjectInput.innerHTML = '<option value="">Pilih guru dulu...</option>';
-            }
-          }
-        });
+          });
+        } catch (err) {
+          console.error("Failed to attach event listener to manuscriptTransferUserInput:", err);
+        }
       }
 
       if (manuscriptExportBtn) {
