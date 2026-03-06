@@ -621,13 +621,14 @@ func (s *Service) ListQuestionCodes(ctx context.Context, subjectID int64, q stri
 		ownerFilter = *ownerID
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, subject_id, code, name, is_active, created_by, created_at, updated_at
-		FROM question_codes
-		WHERE is_active = TRUE
-		  AND ($1 <= 0 OR subject_id = $1)
-		  AND ($2 = '' OR LOWER(code) LIKE '%' || $2 || '%' OR LOWER(name) LIKE '%' || $2 || '%')
-		  AND ($3 <= 0 OR created_by = $3)
-		ORDER BY subject_id ASC, code ASC, id ASC
+		SELECT DISTINCT qc.id, qc.subject_id, qc.code, qc.name, qc.is_active, qc.created_by, qc.created_at, qc.updated_at
+		FROM question_codes qc
+		LEFT JOIN questions q ON q.question_code_id = qc.id AND q.is_active = TRUE
+		WHERE qc.is_active = TRUE
+		  AND ($1 <= 0 OR qc.subject_id = $1)
+		  AND ($2 = '' OR LOWER(qc.code) LIKE '%' || $2 || '%' OR LOWER(qc.name) LIKE '%' || $2 || '%')
+		  AND ($3 <= 0 OR qc.created_by = $3 OR q.created_by = $3)
+		ORDER BY qc.subject_id ASC, qc.code ASC, qc.id ASC
 	`, subjectID, q, ownerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("list question codes: %w", err)
