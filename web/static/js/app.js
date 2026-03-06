@@ -5296,14 +5296,8 @@
           } catch (err) {
             setManuscriptMsg("Gagal memuat opsi transfer: " + err.message);
           }
-          if (
-            manuscriptTransferSubjectInput &&
-            manuscriptSubjectSelect &&
-            manuscriptSubjectSelect.value
-          ) {
-            manuscriptTransferSubjectInput.value =
-              manuscriptSubjectSelect.value;
-          }
+          // Don't auto-fill subject - let recipient choose their own subject_id
+          // The subject_id from sender might be different from recipient's subject_id
           if (
             manuscriptTransferDialog &&
             typeof manuscriptTransferDialog.showModal === "function"

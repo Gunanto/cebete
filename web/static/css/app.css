@@ -1122,6 +1122,21 @@ textarea:focus-visible {
     overflow: auto;
 }
 
+.info-box {
+    background: #e0f2fe;
+    border: 1px solid #7dd3fc;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #0c4a6e;
+}
+
+.info-box strong {
+    color: #075985;
+}
+
 .attempt-info-dialog {
     width: min(680px, 87vw);
 }

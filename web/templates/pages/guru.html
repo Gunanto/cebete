@@ -1502,6 +1502,10 @@
 <dialog id="guru-manuscript-transfer-dialog" class="admin-dialog">
     <form id="guru-manuscript-transfer-form" class="form-grid">
         <h3>Transfer Naskah</h3>
+        <div class="info-box">
+            <strong>Penting:</strong> Pilih mapel sesuai dengan mapel guru penerima. 
+            Jika mapel berbeda, soal tidak bisa dimasukkan ke ujian.
+        </div>
         <label>
             Target Guru
             <select
@@ -1519,7 +1523,7 @@
                 name="target_subject_id"
                 required
             >
-                <option value="">Pilih mapel...</option>
+                <option value="">Pilih mapel guru penerima...</option>
             </select>
         </label>
         <label>
