@@ -287,7 +287,21 @@ func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	}
 	level := strings.TrimSpace(r.URL.Query().Get("level"))
 	subjectType := strings.TrimSpace(r.URL.Query().Get("type"))
-	items, err := h.svc.ListSubjects(r.Context(), level, subjectType, user.ID, user.Role)
+	
+	// Allow specifying owner_id for transfer purposes
+	// If owner_id is specified and user is guru, use that owner_id instead of current user
+	actorID := user.ID
+	actorRole := user.Role
+	ownerIDParam := strings.TrimSpace(r.URL.Query().Get("owner_id"))
+	if ownerIDParam != "" && strings.EqualFold(user.Role, "guru") {
+		// For transfer: allow guru to see subjects of other guru
+		parsed, err := strconv.ParseInt(ownerIDParam, 10, 64)
+		if err == nil && parsed > 0 {
+			actorID = parsed
+		}
+	}
+	
+	items, err := h.svc.ListSubjects(r.Context(), level, subjectType, actorID, actorRole)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})

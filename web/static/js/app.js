@@ -5223,20 +5223,34 @@
         }
       }
 
-      async function loadTransferSubjectOptions() {
+      async function loadTransferSubjectOptions(ownerID) {
         if (!manuscriptTransferSubjectInput) return;
-        let list = getSubjectsCache();
-        if (!Array.isArray(list) || list.length === 0) {
-          await loadSubjects();
+        let list = [];
+        
+        // If ownerID is specified, load subjects for that owner
+        if (ownerID && Number(ownerID) > 0) {
+          try {
+            list = await api("/api/v1/subjects?owner_id=" + ownerID, "GET");
+          } catch (err) {
+            console.error("Failed to load subjects for owner:", err);
+            list = [];
+          }
+        } else {
+          // Otherwise use cached subjects (current user's subjects)
           list = getSubjectsCache();
+          if (!Array.isArray(list) || list.length === 0) {
+            await loadSubjects();
+            list = getSubjectsCache();
+          }
         }
+        
         const current = String(
           (manuscriptTransferSubjectInput &&
             manuscriptTransferSubjectInput.value) ||
             "",
         );
         manuscriptTransferSubjectInput.innerHTML =
-          '<option value="">Pilih mapel...</option>';
+          '<option value="">Pilih mapel guru penerima...</option>';
         list.forEach(function (it) {
           const id = Number((it && it.id) || 0);
           if (id <= 0) return;
@@ -5246,6 +5260,25 @@
           manuscriptTransferSubjectInput.appendChild(opt);
         });
         if (current) manuscriptTransferSubjectInput.value = current;
+      }
+      
+      // Add event listener to reload subjects when target guru changes
+      if (manuscriptTransferUserInput) {
+        manuscriptTransferUserInput.addEventListener("change", async function () {
+          const targetUserID = Number(manuscriptTransferUserInput.value || 0);
+          if (targetUserID > 0) {
+            try {
+              await loadTransferSubjectOptions(targetUserID);
+            } catch (err) {
+              setManuscriptMsg("Gagal memuat mapel guru penerima: " + err.message);
+            }
+          } else {
+            // Reset subject dropdown if no guru selected
+            if (manuscriptTransferSubjectInput) {
+              manuscriptTransferSubjectInput.innerHTML = '<option value="">Pilih guru dulu...</option>';
+            }
+          }
+        });
       }
 
       if (manuscriptExportBtn) {
