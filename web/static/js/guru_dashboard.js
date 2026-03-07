@@ -15,6 +15,7 @@
       "blueprints",
       "manuscripts",
       "exams",
+      "enroll",
       "results",
       "subjects",
       "guide",

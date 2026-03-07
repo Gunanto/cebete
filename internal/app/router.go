@@ -90,6 +90,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			"web/static/css/app.css",
 			"web/static/js/app.js",
 			"web/static/js/guru_exams.js",
+			"web/static/js/guru_enroll.js",
 			"web/static/js/proktor_master.js",
 			"web/static/js/admin_master.js",
 			"web/static/js/proktor_exams.js",
@@ -216,6 +217,10 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}", examHandler.DeleteExam)
 			secure.With(authHandler.RequireRoles("admin", "proktor")).Post("/admin/exams/{id}/attempts/reset", examHandler.ResetExamAttempt)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/assignments", examHandler.ListExamAssignments)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/assignments", examHandler.ReplaceExamAssignments)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/assignments/by-class", examHandler.ReplaceExamAssignmentsByClass)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/assignments/by-class/append", examHandler.AppendExamAssignmentsByClass)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/assignments/{user_id}", examHandler.RemoveExamAssignment)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results", examHandler.ListExamParticipantResults)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results/export", examHandler.ExportExamParticipantResultsExcel)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/questions", examHandler.ListExamQuestions)
@@ -229,6 +234,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/question-codes/sync", examHandler.SyncExamQuestionsByCode)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/question-incidents", examHandler.UpsertExamQuestionIncident)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/classes", masterHandler.ListClasses)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/schools", masterHandler.ListSchools)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/users", authHandler.ListUsers)
 
 			secure.Group(func(admin chi.Router) {
@@ -236,14 +242,9 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Get("/admin/dashboard/stats", authHandler.DashboardStats)
 				admin.Get("/admin/exams", examHandler.ListExamsForToken)
 				admin.Post("/admin/exams/{id}/token", examHandler.GenerateExamToken)
-				admin.Put("/admin/exams/{id}/assignments", examHandler.ReplaceExamAssignments)
-				admin.Put("/admin/exams/{id}/assignments/by-class", examHandler.ReplaceExamAssignmentsByClass)
-				admin.Post("/admin/exams/{id}/assignments/by-class/append", examHandler.AppendExamAssignmentsByClass)
-				admin.Delete("/admin/exams/{id}/assignments/{user_id}", examHandler.RemoveExamAssignment)
 				admin.Post("/admin/users/{id}/photo", examHandler.UploadUserPhoto)
 				admin.Delete("/admin/users/{id}/photo", examHandler.DeleteUserPhoto)
 				admin.Put("/admin/users/{id}/class-placement", authHandler.AssignUserClass)
-				admin.Get("/admin/schools", masterHandler.ListSchools)
 				admin.Get("/admin/registrations", authHandler.ListPendingRegistrations)
 				admin.Get("/admin/audit-logs", auditHandler.ListAuditLogs)
 				admin.Post("/admin/registrations/{id}/approve", authHandler.ApproveRegistration)

@@ -4121,6 +4121,7 @@
     const manuscriptsPanel = document.getElementById("guru-manuscripts-panel");
     const subjectsPanel = document.getElementById("guru-subjects-panel");
     const examsPanel = document.getElementById("guru-exams-panel");
+    const enrollPanel = document.getElementById("guru-enroll-panel");
     const resultsPanel = document.getElementById("guru-results-panel");
     const guidePanel = document.getElementById("guru-guide-panel");
     const menuButtons = root.querySelectorAll("[data-guru-menu]");
@@ -4376,6 +4377,17 @@
       "guru-question-code-subject-select",
     );
     const examsRefreshBtn = document.getElementById("guru-exams-refresh-btn");
+    const enrollRefreshBtn = document.getElementById("guru-enroll-refresh-btn");
+    const examAssignForm = document.getElementById("guru-exam-assign-form");
+    const assignExamIDInput = document.getElementById("guru-assign-exam-id");
+    const assignSchoolSelect = document.getElementById("guru-assign-school");
+    const assignClassSelect = document.getElementById("guru-assign-class");
+    const examAssignmentsLoadBtn = document.getElementById(
+      "guru-exam-assignments-load-btn",
+    );
+    const examAssignmentsBody = document.getElementById(
+      "guru-exam-assignments-body",
+    );
     const examForm = document.getElementById("guru-exam-form");
     const examRandomizeQuestionsInput =
       examForm && examForm.elements
@@ -4562,6 +4574,7 @@
     const GuruBlueprints = window.GuruBlueprints || {};
     const GuruResults = window.GuruResults || {};
     const GuruExams = window.GuruExams || {};
+    const GuruEnroll = window.GuruEnroll || {};
     const AuthoringReviews = window.AuthoringReviews || {};
     const ManuscriptImport = window.ManuscriptImport || {};
     const ManuscriptTable = window.ManuscriptTable || {};
@@ -5024,6 +5037,22 @@
       }
     }
 
+    async function loadGuruEnrollExamManageTable() {
+      if (GuruEnroll && typeof GuruEnroll.loadExamManageTable === "function") {
+        return GuruEnroll.loadExamManageTable();
+      }
+      return [];
+    }
+
+    async function loadGuruEnrollSchoolsAndClasses() {
+      if (
+        GuruEnroll &&
+        typeof GuruEnroll.loadSchoolsAndClasses === "function"
+      ) {
+        return GuruEnroll.loadSchoolsAndClasses();
+      }
+    }
+
     function initGuruExamsModule() {
       if (!GuruExams || typeof GuruExams.init !== "function") return;
       GuruExams.init({
@@ -5092,7 +5121,27 @@
       });
     }
 
+    function initGuruEnrollModule() {
+      if (!GuruEnroll || typeof GuruEnroll.init !== "function") return;
+      GuruEnroll.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: msg,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        refreshBtn: enrollRefreshBtn,
+        examAssignForm: examAssignForm,
+        assignExamIDInput: assignExamIDInput,
+        assignSchoolSelect: assignSchoolSelect,
+        assignClassSelect: assignClassSelect,
+        examAssignmentsLoadBtn: examAssignmentsLoadBtn,
+        examAssignmentsBody: examAssignmentsBody,
+      });
+    }
+
     initGuruExamsModule();
+    initGuruEnrollModule();
 
     function initQuestionCodesModule() {
       if (!QuestionCodes || typeof QuestionCodes.init !== "function") return;
@@ -5183,7 +5232,7 @@
         manuscriptTransferUserInput.innerHTML =
           '<option value="">Pilih guru...</option>';
         manuscriptTransferUserInput.disabled = false;
-        
+
         try {
           const out = await api(
             "/api/v1/admin/users?role=guru&limit=500&offset=0",
@@ -5226,7 +5275,7 @@
       async function loadTransferSubjectOptions(ownerID) {
         if (!manuscriptTransferSubjectInput) return;
         let list = [];
-        
+
         // If ownerID is specified, load subjects for that owner
         if (ownerID && Number(ownerID) > 0) {
           try {
@@ -5243,7 +5292,7 @@
             list = getSubjectsCache();
           }
         }
-        
+
         const current = String(
           (manuscriptTransferSubjectInput &&
             manuscriptTransferSubjectInput.value) ||
@@ -5261,28 +5310,42 @@
         });
         if (current) manuscriptTransferSubjectInput.value = current;
       }
-      
+
       // Add event listener to reload subjects when target guru changes
       if (manuscriptTransferUserInput) {
         try {
-          manuscriptTransferUserInput.addEventListener("change", async function () {
-            const targetUserID = Number(manuscriptTransferUserInput.value || 0);
-            if (targetUserID > 0) {
-              try {
-                await loadTransferSubjectOptions(targetUserID);
-              } catch (err) {
-                console.error("Failed to load transfer subject options:", err);
-                setManuscriptMsg("Gagal memuat mapel guru penerima: " + err.message);
+          manuscriptTransferUserInput.addEventListener(
+            "change",
+            async function () {
+              const targetUserID = Number(
+                manuscriptTransferUserInput.value || 0,
+              );
+              if (targetUserID > 0) {
+                try {
+                  await loadTransferSubjectOptions(targetUserID);
+                } catch (err) {
+                  console.error(
+                    "Failed to load transfer subject options:",
+                    err,
+                  );
+                  setManuscriptMsg(
+                    "Gagal memuat mapel guru penerima: " + err.message,
+                  );
+                }
+              } else {
+                // Reset subject dropdown if no guru selected
+                if (manuscriptTransferSubjectInput) {
+                  manuscriptTransferSubjectInput.innerHTML =
+                    '<option value="">Pilih guru dulu...</option>';
+                }
               }
-            } else {
-              // Reset subject dropdown if no guru selected
-              if (manuscriptTransferSubjectInput) {
-                manuscriptTransferSubjectInput.innerHTML = '<option value="">Pilih guru dulu...</option>';
-              }
-            }
-          });
+            },
+          );
         } catch (err) {
-          console.error("Failed to attach event listener to manuscriptTransferUserInput:", err);
+          console.error(
+            "Failed to attach event listener to manuscriptTransferUserInput:",
+            err,
+          );
         }
       }
 
@@ -5797,6 +5860,10 @@
           title: "Pengelolaan Pelaksanaan Ujian",
           desc: buildExamsDesc(),
         },
+        enroll: {
+          title: "Enroll Peserta",
+          desc: "Enroll peserta ke ujian Anda per kelas.",
+        },
         results: {
           title: "Hasil Ujian",
           desc: buildResultsDesc(),
@@ -5827,20 +5894,33 @@
           blueprints: blueprintsPanel,
           manuscripts: manuscriptsPanel,
           exams: examsPanel,
+          enroll: enrollPanel,
           results: resultsPanel,
           subjects: subjectsPanel,
           guide: guidePanel,
         },
         getMenuInfo: getGuruMenuInfo,
         onMenuActivated: async function (key) {
-          if (key !== "exams") return;
-          try {
-            await Promise.all([
-              loadGuruExamManageTable(),
-              loadGuruExamSubjectOptions(),
-            ]);
-          } catch (_) {
-            // error already surfaced by the module
+          if (key === "exams") {
+            try {
+              await Promise.all([
+                loadGuruExamManageTable(),
+                loadGuruExamSubjectOptions(),
+              ]);
+            } catch (_) {
+              // error already surfaced by the module
+            }
+            return;
+          }
+          if (key === "enroll") {
+            try {
+              await Promise.all([
+                loadGuruEnrollExamManageTable(),
+                loadGuruEnrollSchoolsAndClasses(),
+              ]);
+            } catch (_) {
+              // error already surfaced by the module
+            }
           }
         },
       });

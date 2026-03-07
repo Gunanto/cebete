@@ -287,7 +287,7 @@ func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	}
 	level := strings.TrimSpace(r.URL.Query().Get("level"))
 	subjectType := strings.TrimSpace(r.URL.Query().Get("type"))
-	
+
 	// Allow specifying owner_id for transfer purposes
 	// If owner_id is specified and user is guru, use that owner_id instead of current user
 	actorID := user.ID
@@ -300,7 +300,7 @@ func (h *Handler) ListSubjects(w http.ResponseWriter, r *http.Request) {
 			actorID = parsed
 		}
 	}
-	
+
 	items, err := h.svc.ListSubjects(r.Context(), level, subjectType, actorID, actorRole)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
@@ -861,6 +861,17 @@ func (h *Handler) ReplaceExamAssignments(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
 		return
 	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
 	items, err := h.svc.ReplaceExamAssignments(r.Context(), ReplaceExamAssignmentsInput{
 		ExamID:     examID,
 		UserIDs:    req.UserIDs,
@@ -896,6 +907,17 @@ func (h *Handler) ReplaceExamAssignmentsByClass(w http.ResponseWriter, r *http.R
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
 		return
 	}
 
@@ -937,6 +959,17 @@ func (h *Handler) AppendExamAssignmentsByClass(w http.ResponseWriter, r *http.Re
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
 		return
 	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
 
 	items, err := h.svc.AppendExamAssignmentsByClass(r.Context(), AppendExamAssignmentsByClassInput{
 		ExamID:     examID,
@@ -974,6 +1007,17 @@ func (h *Handler) RemoveExamAssignment(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
 		return
 	}
 	if err := h.svc.RemoveExamAssignment(r.Context(), examID, userID, user.ID); err != nil {

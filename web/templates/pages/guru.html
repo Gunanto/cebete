@@ -69,6 +69,19 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="enroll"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M5 5h14v14H5z" />
+                                    <path d="M8 9h8M8 13h6M8 17h4" />
+                                </svg>
+                            </span>
+                            Enroll Peserta
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
                             data-guru-menu="learning-goals"
                         >
                             <span class="admin-menu-icon" aria-hidden="true">
@@ -1257,6 +1270,83 @@
                 </div>
             </section>
 
+            <section id="guru-enroll-panel" class="panel" hidden>
+                <div class="admin-card">
+                    <div class="admin-section-head">
+                        <h3>Enroll Peserta Ujian</h3>
+                        <button
+                            id="guru-enroll-refresh-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            Muat Daftar Ujian
+                        </button>
+                    </div>
+                    <p class="muted mt">
+                        Menu ini khusus untuk menambahkan peserta ke ujian yang
+                        Anda buat, per kelas.
+                    </p>
+                    <form id="guru-exam-assign-form" class="form-grid mt">
+                        <label>
+                            Pilih Ujian
+                            <select
+                                id="guru-assign-exam-id"
+                                name="exam_id"
+                                required
+                            >
+                                <option value="">Pilih ujian...</option>
+                            </select>
+                        </label>
+                        <label>
+                            Sekolah
+                            <select id="guru-assign-school" required>
+                                <option value="">Pilih sekolah...</option>
+                            </select>
+                        </label>
+                        <label>
+                            Kelas
+                            <select id="guru-assign-class" required>
+                                <option value="">Pilih kelas...</option>
+                            </select>
+                        </label>
+                        <button class="btn btn-secondary" type="submit">
+                            Enroll Peserta per Kelas
+                        </button>
+                    </form>
+                    <button
+                        id="guru-exam-assignments-load-btn"
+                        class="btn btn-secondary mt"
+                        type="button"
+                    >
+                        Muat Peserta Ujian
+                    </button>
+
+                    <div class="table-wrap mt">
+                        <table class="bs-table">
+                            <thead>
+                                <tr>
+                                    <th>User ID</th>
+                                    <th>Nama</th>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>Kelas</th>
+                                    <th>Status</th>
+                                    <th>Assigned At</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guru-exam-assignments-body">
+                                <tr>
+                                    <td colspan="8" class="muted">
+                                        Belum ada data peserta ujian.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             <section id="guru-results-panel" class="panel" hidden>
                 <div class="admin-section-head">
                     <h3>Pengelolaan Hasil Ujian</h3>
@@ -1503,8 +1593,8 @@
     <form id="guru-manuscript-transfer-form" class="form-grid">
         <h3>Transfer Naskah</h3>
         <div class="info-box">
-            <strong>Penting:</strong> Pilih mapel sesuai dengan mapel guru penerima. 
-            Jika mapel berbeda, soal tidak bisa dimasukkan ke ujian.
+            <strong>Penting:</strong> Pilih mapel sesuai dengan mapel guru
+            penerima. Jika mapel berbeda, soal tidak bisa dimasukkan ke ujian.
         </div>
         <label>
             Target Guru
