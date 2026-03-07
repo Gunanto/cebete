@@ -321,7 +321,7 @@
     if (!deps || !deps.examsBody) return;
     if (!Array.isArray(exams) || !exams.length) {
       deps.examsBody.innerHTML =
-        '<tr><td colspan="8" class="muted">Belum ada data ujian.</td></tr>';
+        '<tr><td colspan="10" class="muted">Belum ada data ujian.</td></tr>';
       return;
     }
     deps.examsBody.innerHTML = "";
@@ -335,6 +335,8 @@
           deps.escapeHtml(String(it.title || "")) +
           "</small></td>",
         "<td>" + deps.escapeHtml(String(it.subject_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.start_at)) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.end_at)) + "</td>",
         "<td>" +
           deps.escapeHtml(String(it.duration_minutes || 0)) +
           " menit</td>",
