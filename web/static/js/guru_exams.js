@@ -308,6 +308,47 @@
     }
   }
 
+  function reviewPolicyLabel(policy) {
+    const key = String(policy || "")
+      .trim()
+      .toLowerCase();
+    if (key === "score_only") return "Tampilkan Nilai Akhir";
+    if (key === "immediate") return "Tampilkan langsung";
+    if (key === "after_submit") return "Tampilkan setelah submit";
+    if (key === "after_exam_end") return "Tampilkan setelah ujian berakhir";
+    if (key === "disabled") return "Tidak ditampilkan";
+    return key || "-";
+  }
+
+  function normalizeReviewPolicyForForm(policy) {
+    const key = String(policy || "")
+      .trim()
+      .toLowerCase();
+    if (key === "after_end" || key === "after_exam_closed") {
+      return "after_exam_end";
+    }
+    if (
+      key === "score_only" ||
+      key === "immediate" ||
+      key === "after_submit" ||
+      key === "after_exam_end" ||
+      key === "disabled"
+    ) {
+      return key;
+    }
+    return "after_submit";
+  }
+
+  function setReviewPolicyField(field, reviewPolicy) {
+    if (!field) return;
+    const normalized = normalizeReviewPolicyForForm(reviewPolicy);
+    const options = Array.from(field.options || []);
+    const hasOption = options.some(function (opt) {
+      return String(opt.value || "").trim() === normalized;
+    });
+    field.value = hasOption ? normalized : "after_submit";
+  }
+
   async function loadExamManageTable() {
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     examsCache = Array.isArray(exams) ? exams : [];
@@ -321,7 +362,7 @@
     if (!deps || !deps.examsBody) return;
     if (!Array.isArray(exams) || !exams.length) {
       deps.examsBody.innerHTML =
-        '<tr><td colspan="10" class="muted">Belum ada data ujian.</td></tr>';
+        '<tr><td colspan="11" class="muted">Belum ada data ujian.</td></tr>';
       return;
     }
     deps.examsBody.innerHTML = "";
@@ -337,6 +378,7 @@
         "<td>" + deps.escapeHtml(String(it.subject_name || "-")) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.start_at)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.end_at)) + "</td>",
+        "<td>" + deps.escapeHtml(reviewPolicyLabel(it.review_policy)) + "</td>",
         "<td>" +
           deps.escapeHtml(String(it.duration_minutes || 0)) +
           " menit</td>",
@@ -640,9 +682,7 @@
               endAtField.value = rfc3339ToLocalDateTime(examRow.end_at);
             }
             if (policyField) {
-              policyField.value = String(
-                examRow.review_policy || "after_submit",
-              );
+              setReviewPolicyField(policyField, examRow.review_policy);
             }
             resetRandomizeInputsToExam(examRow);
           }
