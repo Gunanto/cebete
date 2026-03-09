@@ -492,6 +492,10 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "title dan subject_id wajib diisi"})
 			return
 		}
+		if errors.Is(err, ErrReviewPolicySchema) {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Review policy 'Tampilkan Nilai Akhir' belum didukung oleh schema DB yang dipakai aplikasi. Jalankan migrasi terbaru pada DB target."})
+			return
+		}
 		if errors.Is(err, ErrExamCodeExists) {
 			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: "Kode ujian sudah digunakan. Pakai kode lain."})
 			return
@@ -556,6 +560,8 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "data exam tidak valid"})
+		case errors.Is(err, ErrReviewPolicySchema):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Review policy 'Tampilkan Nilai Akhir' belum didukung oleh schema DB yang dipakai aplikasi. Jalankan migrasi terbaru pada DB target."})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		case errors.Is(err, ErrExamCodeExists):
