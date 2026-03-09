@@ -7,6 +7,87 @@
     <div id="result-summary" class="box muted" role="status" aria-live="polite">
         Memuat ringkasan...
     </div>
+    <section id="result-scoreonly-card" class="result-scoreonly" hidden>
+        <header class="result-scoreonly-head">
+            <div>
+                <h3>Hasil Ujian</h3>
+                <p>Sistem Manajemen Ujian Digital G-CBT</p>
+            </div>
+            <div class="result-scoreonly-head-icon" aria-hidden="true">OK</div>
+        </header>
+        <div class="result-scoreonly-body">
+            <div class="table-wrap">
+                <table class="bs-table">
+                    <tbody>
+                        <tr>
+                            <th>Nama Peserta</th>
+                            <td id="result-scoreonly-student-name">-</td>
+                        </tr>
+                        <tr>
+                            <th>Nomor Peserta</th>
+                            <td id="result-scoreonly-participant-no">-</td>
+                        </tr>
+                        <tr>
+                            <th>Kelas</th>
+                            <td id="result-scoreonly-class-name">-</td>
+                        </tr>
+                        <tr>
+                            <th>Nama Sekolah</th>
+                            <td id="result-scoreonly-school-name">-</td>
+                        </tr>
+                        <tr>
+                            <th>Nama Ujian</th>
+                            <td id="result-scoreonly-exam-title">-</td>
+                        </tr>
+                        <tr>
+                            <th>Kode Soal</th>
+                            <td id="result-scoreonly-exam-code">-</td>
+                        </tr>
+                        <tr>
+                            <th>Mata Pelajaran</th>
+                            <td id="result-scoreonly-subject-name">-</td>
+                        </tr>
+                        <tr>
+                            <th>Pelaksanaan (Mulai)</th>
+                            <td id="result-scoreonly-started-at">-</td>
+                        </tr>
+                        <tr>
+                            <th>Diakhiri oleh Peserta</th>
+                            <td id="result-scoreonly-ended-at">-</td>
+                        </tr>
+                        <tr>
+                            <th>Lama Pengerjaan</th>
+                            <td id="result-scoreonly-duration">-</td>
+                        </tr>
+                        <tr>
+                            <th>Nama Guru</th>
+                            <td id="result-scoreonly-teacher-name">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="result-scoreonly-score">
+                <span>Nilai Akhir</span>
+                <strong id="result-scoreonly-score-value">0.00</strong>
+                <div
+                    class="result-scoreonly-score-bar"
+                    aria-hidden="true"
+                ></div>
+            </div>
+        </div>
+        <footer class="result-scoreonly-actions">
+            <button
+                id="result-scoreonly-print-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Cetak Hasil
+            </button>
+            <button id="result-scoreonly-end-btn" class="btn" type="button">
+                Akhiri Ujian
+            </button>
+        </footer>
+    </section>
     <div class="box">
         <table class="result-table" id="result-table">
             <thead>

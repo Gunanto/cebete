@@ -220,3 +220,29 @@ Bagian ini menjelaskan pengaturan jumlah attempt per ujian dan reset attempt pes
 #### Expected Result
 - Reset berhasil dengan feedback `Attempt ID` yang dihapus.
 - Peserta dapat start lagi sesuai batas attempt yang berlaku.
+
+## Lihat Setelah Mengerjakan (`review_policy`)
+
+Bagian ini menjelaskan perilaku field `Lihat Setelah Mengerjakan` pada menu `Kelola Ujian` (`/guru`) dan apa yang terlihat di sisi siswa pada halaman hasil (`/hasil/{attempt_id}`).
+
+### Opsi yang tersedia
+- `Tampilkan Nilai Akhir` (`score_only`)
+  - Setelah attempt final (`submitted`/`expired`), siswa hanya melihat ringkasan nilai akhir.
+  - Detail jawaban per soal tidak ditampilkan.
+  - Tampilan hasil menggunakan kartu/popup hasil ujian (identitas peserta + metadata ujian + nilai akhir).
+- `Tampilkan langsung` (`immediate`)
+  - Setelah attempt final, siswa bisa langsung membuka halaman hasil.
+  - Siswa melihat ringkasan dan detail per soal (jawaban siswa, kunci, reason, skor per soal).
+- `Tampilkan setelah submit` (`after_submit`)
+  - Setelah attempt final, siswa bisa melihat hasil.
+  - Perilaku saat ini setara dengan `Tampilkan langsung` (tetap menunggu attempt final, bukan realtime saat masih mengerjakan).
+- `Tampilkan setelah ujian berakhir` (`after_exam_end`)
+  - Walaupun siswa sudah submit, hasil baru bisa dilihat setelah waktu `end_at` ujian terlewati.
+  - Sebelum `end_at`, akses hasil ditolak oleh policy.
+- `Tidak ditampilkan` (`disabled`)
+  - Hasil/review ditutup untuk siswa.
+  - Akses ke endpoint hasil ditolak oleh policy.
+
+### Catatan penting
+- Semua policy di atas tetap mensyaratkan attempt sudah final. Jika status masih `in_progress`, hasil tidak dapat diakses.
+- Jika policy tidak mengizinkan, halaman hasil akan menampilkan error policy (`result not available by review policy`).

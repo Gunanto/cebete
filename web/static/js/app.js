@@ -2472,6 +2472,48 @@
     const resultPageTitle = document.getElementById("result-page-title");
     const summaryBox = document.getElementById("result-summary");
     const tbody = document.querySelector("#result-table tbody");
+    const scoreOnlyCard = document.getElementById("result-scoreonly-card");
+    const resultTable = document.getElementById("result-table");
+    const resultTableBox = resultTable ? resultTable.closest(".box") : null;
+    const printBtn = document.getElementById("result-scoreonly-print-btn");
+    const endBtn = document.getElementById("result-scoreonly-end-btn");
+
+    function formatDateTimeID(value) {
+      if (!value) return "-";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleString("id-ID");
+    }
+
+    function setCell(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const raw = String(value || "").trim();
+      el.textContent = raw ? raw : "-";
+    }
+
+    function formatMinutesDuration(startAt, endAt) {
+      if (!startAt || !endAt) return "-";
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return "-";
+      }
+      const mins = Math.max(
+        0,
+        Math.round((end.getTime() - start.getTime()) / 60000),
+      );
+      return String(mins) + " menit";
+    }
+
+    async function logoutAndExit() {
+      try {
+        await api("/api/v1/auth/logout", "POST");
+      } catch (_) {
+        // Ignore logout API error and still redirect.
+      }
+      window.location.href = "/login";
+    }
 
     try {
       const out = await api("/api/v1/attempts/" + attemptID + "/result", "GET");
@@ -2505,18 +2547,53 @@
 
       tbody.innerHTML = "";
       if (out.score_only) {
+        if (resultTableBox) resultTableBox.hidden = true;
+        if (scoreOnlyCard) scoreOnlyCard.hidden = false;
+        if (printBtn) {
+          printBtn.addEventListener("click", function () {
+            window.print();
+          });
+        }
+        if (endBtn) {
+          endBtn.addEventListener("click", function () {
+            logoutAndExit();
+          });
+        }
+        let profile = null;
+        try {
+          profile = await api("/api/v1/auth/me/student-profile", "GET");
+        } catch (_) {
+          profile = null;
+        }
+        const finishedAt = s.submitted_at || s.expires_at || "";
+        setCell("result-scoreonly-student-name", profile && profile.full_name);
+        setCell(
+          "result-scoreonly-participant-no",
+          profile && profile.participant_no,
+        );
+        setCell("result-scoreonly-class-name", profile && profile.class_name);
+        setCell("result-scoreonly-school-name", profile && profile.school_name);
+        setCell("result-scoreonly-exam-title", examTitle);
+        setCell("result-scoreonly-exam-code", s.exam_code);
+        setCell("result-scoreonly-subject-name", s.subject_name);
+        setCell("result-scoreonly-started-at", formatDateTimeID(s.started_at));
+        setCell("result-scoreonly-ended-at", formatDateTimeID(finishedAt));
+        setCell(
+          "result-scoreonly-duration",
+          formatMinutesDuration(s.started_at, finishedAt),
+        );
+        setCell("result-scoreonly-teacher-name", s.teacher_name);
+        setCell("result-scoreonly-score-value", scoreLabel);
         html(
           summaryBox,
           "<strong>Nilai Akhir:</strong> Nilai Anda adalah " +
             escapeHtml(String(scoreLabel)) +
             ".",
         );
-        const tr = document.createElement("tr");
-        tr.innerHTML =
-          '<td colspan="7" class="muted">Detail jawaban tidak ditampilkan untuk ujian ini.</td>';
-        tbody.appendChild(tr);
         return;
       }
+      if (resultTableBox) resultTableBox.hidden = false;
+      if (scoreOnlyCard) scoreOnlyCard.hidden = true;
       out.items.forEach(function (it, idx) {
         const tr = document.createElement("tr");
         const breakdown =

@@ -11,17 +11,18 @@ func TestCanViewResultByPolicy(t *testing.T) {
 	future := now.Add(time.Minute)
 
 	tests := []struct {
-		name         string
-		policy       string
-		status       string
-		examEndAt    *time.Time
-		expectAllow  bool
+		name        string
+		policy      string
+		status      string
+		examEndAt   *time.Time
+		expectAllow bool
 	}{
 		{name: "after_submit submitted", policy: "after_submit", status: "submitted", expectAllow: true},
 		{name: "after_submit in_progress", policy: "after_submit", status: "in_progress", expectAllow: false},
 		{name: "after_exam_end before_end", policy: "after_exam_end", status: "submitted", examEndAt: &future, expectAllow: false},
 		{name: "after_exam_end after_end", policy: "after_exam_end", status: "submitted", examEndAt: &past, expectAllow: true},
 		{name: "after_exam_end no_end", policy: "after_exam_end", status: "submitted", examEndAt: nil, expectAllow: false},
+		{name: "score_only finalized", policy: "score_only", status: "submitted", expectAllow: true},
 		{name: "immediate finalized", policy: "immediate", status: "expired", expectAllow: true},
 		{name: "disabled finalized", policy: "disabled", status: "submitted", expectAllow: false},
 		{name: "unknown policy fallback", policy: "other", status: "submitted", expectAllow: true},

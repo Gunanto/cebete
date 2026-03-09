@@ -63,11 +63,16 @@ type Attempt struct {
 type AttemptSummary struct {
 	ID              int64      `json:"id"`
 	ExamID          int64      `json:"exam_id"`
+	ExamCode        string     `json:"exam_code,omitempty"`
 	Title           string     `json:"title"`
+	SubjectName     string     `json:"subject_name,omitempty"`
+	TeacherName     string     `json:"teacher_name,omitempty"`
 	StudentID       int64      `json:"student_id"`
 	Status          string     `json:"status"`
 	StartedAt       time.Time  `json:"started_at"`
 	ExpiresAt       time.Time  `json:"expires_at"`
+	ExamStartAt     *time.Time `json:"exam_start_at,omitempty"`
+	ExamEndAt       *time.Time `json:"exam_end_at,omitempty"`
 	SubmittedAt     *time.Time `json:"submitted_at,omitempty"`
 	RemainingSecs   int64      `json:"remaining_secs"`
 	TotalQuestions  int        `json:"total_questions"`
@@ -4113,7 +4118,7 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 }
 
 func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *attemptRow) (*AttemptSummary, error) {
-	examTitle, err := s.loadExamTitle(ctx, q, row.ExamID)
+	examCode, examTitle, subjectName, teacherName, examStartAt, examEndAt, err := s.loadAttemptSummaryMeta(ctx, q, row.ExamID)
 	if err != nil {
 		return nil, err
 	}
@@ -4126,11 +4131,16 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	summary := &AttemptSummary{
 		ID:             row.ID,
 		ExamID:         row.ExamID,
+		ExamCode:       examCode,
 		Title:          examTitle,
+		SubjectName:    subjectName,
+		TeacherName:    teacherName,
 		StudentID:      row.StudentID,
 		Status:         row.Status,
 		StartedAt:      row.StartedAt,
 		ExpiresAt:      row.ExpiresAt,
+		ExamStartAt:    examStartAt,
+		ExamEndAt:      examEndAt,
 		TotalQuestions: totalQuestions,
 		Answered:       answered,
 		Doubt:          doubt,
@@ -4164,16 +4174,47 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	return summary, nil
 }
 
-func (s *Service) loadExamTitle(ctx context.Context, q queryable, examID int64) (string, error) {
-	var title string
+func (s *Service) loadAttemptSummaryMeta(ctx context.Context, q queryable, examID int64) (examCode, title, subjectName, teacherName string, examStartAt, examEndAt *time.Time, err error) {
+	var (
+		codeRaw    sql.NullString
+		titleRaw   sql.NullString
+		subjectRaw sql.NullString
+		teacherRaw sql.NullString
+		startAtRaw sql.NullTime
+		endAtRaw   sql.NullTime
+	)
 	if err := q.QueryRowContext(ctx, `
-		SELECT title
-		FROM exams
-		WHERE id = $1
-	`, examID).Scan(&title); err != nil {
-		return "", fmt.Errorf("load exam title: %w", err)
+		SELECT
+			e.code,
+			e.title,
+			COALESCE(s.name, '') AS subject_name,
+			COALESCE(u.full_name, '') AS teacher_name,
+			e.start_at,
+			e.end_at
+		FROM exams e
+		LEFT JOIN subjects s ON s.id = e.subject_id
+		LEFT JOIN users u ON u.id = e.created_by
+		WHERE e.id = $1
+	`, examID).Scan(&codeRaw, &titleRaw, &subjectRaw, &teacherRaw, &startAtRaw, &endAtRaw); err != nil {
+		return "", "", "", "", nil, nil, fmt.Errorf("load attempt summary meta: %w", err)
 	}
-	return strings.TrimSpace(title), nil
+	if startAtRaw.Valid {
+		v := startAtRaw.Time
+		examStartAt = &v
+	}
+	if endAtRaw.Valid {
+		v := endAtRaw.Time
+		examEndAt = &v
+	}
+	return strings.TrimSpace(codeRaw.String), strings.TrimSpace(titleRaw.String), strings.TrimSpace(subjectRaw.String), strings.TrimSpace(teacherRaw.String), examStartAt, examEndAt, nil
+}
+
+func (s *Service) loadExamTitle(ctx context.Context, q queryable, examID int64) (string, error) {
+	_, title, _, _, _, _, err := s.loadAttemptSummaryMeta(ctx, q, examID)
+	if err != nil {
+		return "", err
+	}
+	return title, nil
 }
 
 func (s *Service) countProgress(ctx context.Context, q queryable, attemptID, examID int64) (totalQuestions, answered, doubt int, err error) {

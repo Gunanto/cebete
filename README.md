@@ -423,6 +423,7 @@ Feedback scoring disimpan di `attempt_scores.feedback`:
 ## 7) Review policy exam
 
 Nilai `exams.review_policy` yang didukung:
+- `score_only`: hasil hanya menampilkan nilai akhir (tanpa detail jawaban per soal).
 - `after_submit` (default): hasil bisa dilihat setelah attempt final (`submitted`/`expired`).
 - `after_exam_end`: hasil baru bisa dilihat setelah `exams.end_at` terlewati.
 - `immediate`: hasil bisa dilihat segera setelah attempt final.
