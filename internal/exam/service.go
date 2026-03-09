@@ -44,6 +44,7 @@ var (
 	ErrUserNotFound             = errors.New("user not found")
 	ErrExamNotStarted           = errors.New("ujian belum dimulai")
 	ErrExamEnded                = errors.New("waktu ujian sudah berakhir")
+	ErrReviewPolicySchema       = errors.New("review policy score_only belum didukung schema database; jalankan migrasi terbaru")
 )
 
 type Service struct {
@@ -1166,6 +1167,9 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if in.Code != "" {
 		outID, err := insertOnce(in.Code)
 		if err != nil {
+			if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
+				return nil, ErrReviewPolicySchema
+			}
 			if strings.Contains(strings.ToLower(err.Error()), "exams_code_key") {
 				return nil, ErrExamCodeExists
 			}
@@ -1182,6 +1186,9 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		autoCode := "EXAM-" + time.Now().Format("20060102") + "-" + token
 		outID, err := insertOnce(autoCode)
 		if err != nil {
+			if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
+				return nil, ErrReviewPolicySchema
+			}
 			if strings.Contains(strings.ToLower(err.Error()), "exams_code_key") {
 				continue
 			}
@@ -1243,6 +1250,9 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 		WHERE id = $1
 		RETURNING id
 	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.IsActive).Scan(&outID); err != nil {
+		if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
+			return nil, ErrReviewPolicySchema
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
@@ -3054,6 +3064,15 @@ func normalizeExamQuestionCodeStrategy(input string) string {
 	default:
 		return ""
 	}
+}
+
+func isReviewPolicyConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "chk_exams_review_policy") ||
+		(strings.Contains(msg, "review_policy") && strings.Contains(msg, "check"))
 }
 
 func nullIntPtr(v *int) any {
