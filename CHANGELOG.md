@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-03-10 - in progress
+
+### Added
+- Jalur pendaftaran NON-REGULER via OTP email (tab baru di login) dengan form wajib: nama, email, sekolah, NPSN, kabupaten, provinsi, kelas.
+- Penandaan akun non-reguler (`users.is_non_regular`) dan auto-create sekolah/kelas/enrollment saat pendaftaran disetujui proktor.
+- Self-enroll ujian untuk peserta non-reguler:
+  - daftar ujian publish via popup di `/ujian`,
+  - endpoint `GET /api/v1/exams/published`,
+  - endpoint `POST /api/v1/exams/{id}/self-enroll`.
+- Aksi hapus attempt pada menu `Hasil Ujian` guru (endpoint delete attempt).
+
+### Changed
+- Nilai hasil ujian dinormalisasi menggunakan total bobot soal (maksimum 100), baik di UI maupun export Excel.
+- Hasil ujian hanya menampilkan attempt `siswa` (attempt guru dari menu Coba Ujian tidak ikut laporan/analisis).
+- Tombol `Analisis Butir Soal` di menu Hasil Ujian menggunakan ikon.
+- Tabel verifikasi pendaftaran proktor menampilkan detail form non-reguler (popup detail).
+
+### Fixed
+- Regrade ujian tidak lagi gagal karena konflik cursor transaksi pada query attempt.
+- Label tipe soal pada Analisis Butir Soal untuk `pg_tunggal`, `multi_jawaban`, `benar_salah_pernyataan`.
+
 ## 2026-03-05 - in progress
 
 ### Added
