@@ -1809,6 +1809,10 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		return nil, ErrExamNotFound
 	}
 
+	if err := s.ensureExamQuestionSeqNoContiguous(ctx, examID); err != nil {
+		return nil, fmt.Errorf("ensure exam question seq no: %w", err)
+	}
+
 	type examQuestionColumn struct {
 		SeqNo        int
 		QuestionID   int64
@@ -2023,6 +2027,63 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		TotalWeight: totalWeight,
 		Rows:        resultRows,
 	}, nil
+}
+
+func (s *Service) ensureExamQuestionSeqNoContiguous(ctx context.Context, examID int64) error {
+	if examID <= 0 {
+		return ErrInvalidInput
+	}
+	var minSeq int64
+	var maxSeq int64
+	var total int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MIN(seq_no), 0), COALESCE(MAX(seq_no), 0), COUNT(*)
+		FROM exam_questions
+		WHERE exam_id = $1
+	`, examID).Scan(&minSeq, &maxSeq, &total); err != nil {
+		return fmt.Errorf("check exam question seq no: %w", err)
+	}
+	if total == 0 {
+		return nil
+	}
+	if minSeq == 1 && maxSeq == total {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin renumber exam questions tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		WITH ordered AS (
+			SELECT question_id, ROW_NUMBER() OVER (ORDER BY seq_no ASC, question_id ASC) AS new_seq
+			FROM exam_questions
+			WHERE exam_id = $1
+		)
+		UPDATE exam_questions eq
+		SET seq_no = -ordered.new_seq
+		FROM ordered
+		WHERE eq.exam_id = $1
+		  AND eq.question_id = ordered.question_id
+	`, examID); err != nil {
+		return fmt.Errorf("renumber exam questions temp: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE exam_questions
+		SET seq_no = -seq_no
+		WHERE exam_id = $1
+		  AND seq_no < 0
+	`, examID); err != nil {
+		return fmt.Errorf("renumber exam questions finalize: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit renumber exam questions: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error) {
