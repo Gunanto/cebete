@@ -896,6 +896,31 @@ textarea:focus-visible {
     color: var(--muted);
 }
 
+.event-legend {
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #fbfcfe;
+}
+
+.event-legend summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.event-legend-body {
+    margin-top: 10px;
+}
+
+.event-legend-list {
+    margin: 8px 0 0 18px;
+    padding: 0;
+}
+
+.event-legend-list li {
+    margin: 6px 0;
+}
+
 .attempt-tools {
     display: flex;
     align-items: center;

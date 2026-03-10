@@ -396,6 +396,39 @@
                 <p class="muted mt">
                     Attempt terbaru peserta akan dipakai otomatis.
                 </p>
+                <details class="event-legend mt">
+                    <summary>Penjelasan Event</summary>
+                    <div class="event-legend-body">
+                        <p class="muted">
+                            Kolom <strong>Event</strong> menampilkan jenis
+                            kejadian, sedangkan <strong>Payload</strong> berisi
+                            detail tambahan.
+                        </p>
+                        <ul class="event-legend-list">
+                            <li>
+                                <code>tab_blur</code>: tab/jendela tidak fokus
+                                atau tersembunyi.
+                                <span class="muted"
+                                    >(reason: <code>window_blur</code> atau
+                                    <code>visibility_hidden</code>)</span
+                                >
+                            </li>
+                            <li>
+                                <code>reconnect</code>: tab/jendela kembali
+                                fokus atau terlihat.
+                                <span class="muted"
+                                    >(reason: <code>window_focus</code> atau
+                                    <code>visibility_visible</code>)</span
+                                >
+                            </li>
+                            <li>
+                                <code>visibility_state</code>:
+                                <code>hidden</code> berarti tidak terlihat,
+                                <code>visible</code> berarti terlihat.
+                            </li>
+                        </ul>
+                    </div>
+                </details>
                 <div class="table-wrap mt">
                     <table class="bs-table">
                         <thead>
