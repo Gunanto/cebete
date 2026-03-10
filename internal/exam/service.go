@@ -406,6 +406,7 @@ type AttemptEvent struct {
 	ClientTS    *time.Time      `json:"client_ts,omitempty"`
 	ServerTS    time.Time       `json:"server_ts"`
 	ActorUserID *int64          `json:"actor_user_id,omitempty"`
+	ActorName   *string         `json:"actor_name,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
@@ -3774,7 +3775,7 @@ func (s *Service) LogAttemptEvent(ctx context.Context, input AttemptEventInput) 
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO attempt_events (attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, created_at)
 		VALUES ($1, $2, $3::jsonb, $4, now(), NULLIF($5, 0), now())
-		RETURNING id, attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, created_at
+		RETURNING id, attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, NULL::text, created_at
 	`, input.AttemptID, eventType, []byte(input.Payload), input.ClientTS, input.ActorUserID)
 
 	return scanAttemptEvent(row)
@@ -3793,10 +3794,12 @@ func (s *Service) ListAttemptEvents(ctx context.Context, attemptID int64, limit 
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, created_at
-		FROM attempt_events
-		WHERE attempt_id = $1
-		ORDER BY server_ts DESC, id DESC
+		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id,
+		       u.full_name, ae.created_at
+		FROM attempt_events ae
+		LEFT JOIN users u ON u.id = ae.actor_user_id
+		WHERE ae.attempt_id = $1
+		ORDER BY ae.server_ts DESC, ae.id DESC
 		LIMIT $2
 	`, attemptID, limit)
 	if err != nil {
@@ -3835,9 +3838,11 @@ func (s *Service) ListExamEvents(ctx context.Context, examID int64, limit int) (
 		return nil, ErrExamNotFound
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id, ae.created_at
+		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id,
+		       u.full_name, ae.created_at
 		FROM attempt_events ae
 		JOIN attempts a ON a.id = ae.attempt_id
+		LEFT JOIN users u ON u.id = ae.actor_user_id
 		WHERE a.exam_id = $1
 		ORDER BY ae.server_ts DESC, ae.id DESC
 		LIMIT $2
@@ -3880,10 +3885,12 @@ func (s *Service) ListExamClassEvents(ctx context.Context, examID int64, classID
 		return nil, ErrExamNotFound
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id, ae.created_at
+		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id,
+		       u.full_name, ae.created_at
 		FROM attempt_events ae
 		JOIN attempts a ON a.id = ae.attempt_id
 		JOIN enrollments en ON en.user_id = a.student_id AND en.status = 'active'
+		LEFT JOIN users u ON u.id = ae.actor_user_id
 		WHERE a.exam_id = $1
 		  AND en.class_id = $2
 		ORDER BY ae.server_ts DESC, ae.id DESC
@@ -4529,6 +4536,7 @@ func scanAttemptEvent(scanner interface{ Scan(dest ...any) error }) (*AttemptEve
 	var out AttemptEvent
 	var clientTS sql.NullTime
 	var actorUserID sql.NullInt64
+	var actorName sql.NullString
 	if err := scanner.Scan(
 		&out.ID,
 		&out.AttemptID,
@@ -4537,6 +4545,7 @@ func scanAttemptEvent(scanner interface{ Scan(dest ...any) error }) (*AttemptEve
 		&clientTS,
 		&out.ServerTS,
 		&actorUserID,
+		&actorName,
 		&out.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -4549,6 +4558,9 @@ func scanAttemptEvent(scanner interface{ Scan(dest ...any) error }) (*AttemptEve
 	}
 	if actorUserID.Valid {
 		out.ActorUserID = &actorUserID.Int64
+	}
+	if actorName.Valid {
+		out.ActorName = &actorName.String
 	}
 	return &out, nil
 }

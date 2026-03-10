@@ -76,11 +76,20 @@
           } else {
             payloadText = String(it.payload || "{}");
           }
+          var actorText = "-";
+          if (it.actor_name) {
+            actorText = String(it.actor_name);
+            if (it.actor_user_id) {
+              actorText += " (" + String(it.actor_user_id) + ")";
+            }
+          } else if (it.actor_user_id) {
+            actorText = String(it.actor_user_id);
+          }
           tr.innerHTML = [
             "<td>" + deps.escapeHtml(String(it.attempt_id || "-")) + "</td>",
             "<td>" + deps.escapeHtml(deps.fmtDate(it.server_ts)) + "</td>",
             "<td>" + deps.escapeHtml(String(it.event_type || "")) + "</td>",
-            "<td>" + deps.escapeHtml(String(it.actor_user_id || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(actorText) + "</td>",
             "<td><code>" + deps.escapeHtml(payloadText) + "</code></td>",
           ].join("");
           deps.eventsBody.appendChild(tr);
