@@ -4567,6 +4567,34 @@
     const resultsStatsBtn = document.getElementById("guru-results-stats-btn");
     const resultsChartBtn = document.getElementById("guru-results-chart-btn");
     const resultsExportBtn = document.getElementById("guru-results-export-btn");
+    const itemAnalysisBtn = document.getElementById(
+      "guru-results-item-analysis-btn",
+    );
+    const itemAnalysisDialog = document.getElementById(
+      "guru-item-analysis-dialog",
+    );
+    const itemAnalysisBody = document.getElementById("guru-item-analysis-body");
+    const itemAnalysisSummary = document.getElementById(
+      "guru-item-analysis-summary",
+    );
+    const itemAnalysisIdentity = document.getElementById(
+      "guru-item-analysis-identity",
+    );
+    const itemAnalysisFilter = document.getElementById(
+      "guru-item-analysis-filter",
+    );
+    const itemAnalysisDetail = document.getElementById(
+      "guru-item-analysis-detail",
+    );
+    const itemAnalysisSubtitle = document.getElementById(
+      "guru-item-analysis-subtitle",
+    );
+    const itemAnalysisExportBtn = document.getElementById(
+      "guru-item-analysis-export-btn",
+    );
+    const itemAnalysisPrintBtn = document.getElementById(
+      "guru-item-analysis-print-btn",
+    );
 
     const tabQuillByWrap = new WeakMap();
 
@@ -6098,6 +6126,17 @@
         resultsStatsBtn: resultsStatsBtn,
         resultsChartBtn: resultsChartBtn,
         resultsExportBtn: resultsExportBtn,
+        itemAnalysisBtn: itemAnalysisBtn,
+        itemAnalysisDialog: itemAnalysisDialog,
+        itemAnalysisBody: itemAnalysisBody,
+        itemAnalysisSummary: itemAnalysisSummary,
+        itemAnalysisIdentity: itemAnalysisIdentity,
+        itemAnalysisFilter: itemAnalysisFilter,
+        itemAnalysisDetail: itemAnalysisDetail,
+        itemAnalysisSubtitle: itemAnalysisSubtitle,
+        itemAnalysisExportBtn: itemAnalysisExportBtn,
+        itemAnalysisPrintBtn: itemAnalysisPrintBtn,
+        meOrNull: meOrNull,
         refreshExams: loadGuruExamManageTable,
       });
     }

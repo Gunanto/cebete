@@ -1434,6 +1434,13 @@
                     >
                         Muat Grafik
                     </button>
+                    <button
+                        id="guru-results-item-analysis-btn"
+                        class="btn btn-secondary btn-inline"
+                        type="button"
+                    >
+                        Analisis Butir Soal
+                    </button>
                 </div>
                 <div id="guru-results-extra" class="box mt muted">
                     Laporan/statistik/grafik akan diringkas dari tabel hasil
@@ -1509,6 +1516,79 @@
         </div>
     </section>
 </section>
+
+<dialog id="guru-item-analysis-dialog" class="admin-dialog admin-dialog-wide">
+    <form method="dialog" class="form-grid">
+        <div class="analysis-header">
+            <div>
+                <h3>Analisis Butir Soal</h3>
+                <p id="guru-item-analysis-subtitle" class="muted">
+                    Ringkasan butir berdasarkan hasil isian peserta.
+                </p>
+            </div>
+            <label class="analysis-filter">
+                Filter Tipe
+                <select id="guru-item-analysis-filter">
+                    <option value="">Semua Tipe</option>
+                </select>
+            </label>
+        </div>
+
+        <div id="guru-item-analysis-summary" class="analysis-stats"></div>
+
+        <div id="guru-item-analysis-identity" class="analysis-identity"></div>
+
+        <div class="analysis-toolbar">
+            <button
+                id="guru-item-analysis-export-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Export
+            </button>
+            <button
+                id="guru-item-analysis-print-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Print
+            </button>
+        </div>
+
+        <div class="analysis-table-wrap">
+            <table class="bs-table analysis-table">
+                <thead>
+                    <tr>
+                        <th>No</th>
+                        <th>Tipe</th>
+                        <th>Rumusan Butir Soal</th>
+                        <th>Kesukaran</th>
+                        <th>Daya Pembeda</th>
+                        <th>Validitas</th>
+                        <th>Benar</th>
+                        <th>Salah</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="guru-item-analysis-body">
+                    <tr>
+                        <td colspan="9" class="muted">
+                            Muat hasil ujian peserta untuk melihat analisis.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="guru-item-analysis-detail" class="box muted">
+            Klik salah satu baris untuk melihat detail butir.
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" type="submit">Tutup</button>
+        </div>
+    </form>
+</dialog>
 
 <dialog id="guru-learning-goal-view-dialog" class="admin-dialog">
     <form method="dialog" class="form-grid">
