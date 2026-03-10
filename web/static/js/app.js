@@ -701,7 +701,7 @@
             phone: normalizeCredential(fd.get("phone")),
             institution_name: schoolName,
             code: normalizeCredential(fd.get("code")),
-            form_payload: JSON.stringify(payloadForm),
+            form_payload: payloadForm,
           };
           const data = await api(
             "/api/v1/auth/signup/otp/verify",

@@ -231,8 +231,16 @@ func (h *Handler) VerifySignupOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	formPayload := strings.TrimSpace(string(req.FormPayload))
-	if formPayload == "" {
+	if formPayload == "" || formPayload == "null" {
 		formPayload = "{}"
+	} else if strings.HasPrefix(formPayload, "\"") {
+		if unq, err := strconv.Unquote(formPayload); err == nil {
+			if strings.TrimSpace(unq) == "" {
+				formPayload = "{}"
+			} else {
+				formPayload = unq
+			}
+		}
 	}
 
 	registrationID, err := h.svc.VerifySignupOTP(r.Context(), SignupVerifyInput{
