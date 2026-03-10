@@ -73,7 +73,8 @@
       key === "multiplechoice" ||
       key === "pilihanganda" ||
       key === "pg" ||
-      key === "mc"
+      key === "mc" ||
+      key === "pgtunggal"
     ) {
       return "MC";
     }
@@ -82,11 +83,17 @@
       key === "multiresponse" ||
       key === "multijawaban" ||
       key === "multijawab" ||
-      key === "mr"
+      key === "mr" ||
+      key === "multijawaban"
     ) {
       return "MR";
     }
-    if (key === "truefalse" || key === "benarsalah" || key === "tf") {
+    if (
+      key === "truefalse" ||
+      key === "benarsalah" ||
+      key === "tf" ||
+      key === "benarsalahpernyataan"
+    ) {
       return "TF";
     }
     return "-";
