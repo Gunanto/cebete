@@ -2768,26 +2768,36 @@ func (s *Service) RegradeExamAttempts(ctx context.Context, examID, actorID int64
 	if err != nil {
 		return nil, fmt.Errorf("list attempts for regrade: %w", err)
 	}
-	defer rows.Close()
 
-	out := &RegradeExamResult{ExamID: examID}
+	type attemptLite struct {
+		ID     int64
+		Status string
+	}
+	attempts := make([]attemptLite, 0)
 	for rows.Next() {
-		var attemptID int64
-		var status string
-		if err := rows.Scan(&attemptID, &status); err != nil {
+		var it attemptLite
+		if err := rows.Scan(&it.ID, &it.Status); err != nil {
+			_ = rows.Close()
 			return nil, fmt.Errorf("scan attempt for regrade: %w", err)
 		}
-		if status == "in_progress" {
+		attempts = append(attempts, it)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("iterate attempts for regrade: %w", err)
+	}
+	_ = rows.Close()
+
+	out := &RegradeExamResult{ExamID: examID}
+	for _, it := range attempts {
+		if it.Status == "in_progress" {
 			out.SkippedInProgress++
 			continue
 		}
-		if err := s.recomputeFinalizedAttemptTx(ctx, tx, attemptID); err != nil {
+		if err := s.recomputeFinalizedAttemptTx(ctx, tx, it.ID); err != nil {
 			return nil, err
 		}
 		out.RegradedAttempts++
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate attempts for regrade: %w", err)
 	}
 
 	if err := s.writeAuditTx(ctx, tx, actorID, "exam_regrade", "exam", fmt.Sprintf("%d", examID), map[string]any{
