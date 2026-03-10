@@ -142,6 +142,43 @@ func (h *Handler) ListLearningGoals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
 }
 
+func (h *Handler) ExportLearningGoalsExcel(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	mapel := strings.TrimSpace(r.URL.Query().Get("mata_pelajaran"))
+	kelas := strings.TrimSpace(r.URL.Query().Get("kelas"))
+	semester := int16(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("semester")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "semester must be positive"})
+			return
+		}
+		semester = int16(n)
+	}
+
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+
+	buf, filename, err := h.svc.ExportLearningGoalsExcel(r.Context(), mapel, kelas, semester, ownerID)
+	if err != nil {
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf)
+}
+
 func (h *Handler) CreateLearningGoal(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {

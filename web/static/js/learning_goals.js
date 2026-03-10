@@ -470,6 +470,35 @@
     window.URL.revokeObjectURL(url);
   }
 
+  async function downloadExcel() {
+    const res = await fetch("/api/v1/learning-goals/export", {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const errJSON = await res.json().catch(function () {
+        return {};
+      });
+      const msg = deps.extractAPIError
+        ? deps.extractAPIError(errJSON, res.statusText || "Request failed")
+        : res.statusText || "Request failed";
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const filename = parseDownloadFilenameLite(
+      res.headers.get("Content-Disposition"),
+      "tujuan_pembelajaran.xlsx",
+    );
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   function formatImportErrorsMultiline(errors) {
     const rows = Array.isArray(errors) ? errors : [];
     if (!rows.length) return "Tidak ada detail error.";
@@ -644,6 +673,26 @@
           typeof deps.learningGoalImportDialog.showModal === "function"
         ) {
           deps.learningGoalImportDialog.showModal();
+        }
+      });
+    }
+
+    if (deps.learningGoalExportBtn) {
+      deps.learningGoalExportBtn.addEventListener("click", async function () {
+        const done = deps.beginBusy(
+          deps.learningGoalExportBtn,
+          deps.msg,
+          "Menyiapkan file Excel tujuan pembelajaran...",
+        );
+        try {
+          await downloadExcel();
+          deps.setMsg("Excel tujuan pembelajaran berhasil diunduh.");
+        } catch (err) {
+          deps.setMsg(
+            "Gagal mengunduh Excel tujuan pembelajaran: " + err.message,
+          );
+        } finally {
+          done();
         }
       });
     }

@@ -4245,6 +4245,9 @@
     const learningGoalImportBtn = document.getElementById(
       "guru-learning-goals-import-btn",
     );
+    const learningGoalExportBtn = document.getElementById(
+      "guru-learning-goals-export-btn",
+    );
     const learningGoalImportDialog = document.getElementById(
       "guru-learning-goals-import-dialog",
     );
@@ -5045,6 +5048,7 @@
         learningGoalPageInfo: learningGoalPageInfo,
         learningGoalTemplateBtn: learningGoalTemplateBtn,
         learningGoalImportBtn: learningGoalImportBtn,
+        learningGoalExportBtn: learningGoalExportBtn,
         learningGoalImportDialog: learningGoalImportDialog,
         learningGoalImportForm: learningGoalImportForm,
         learningGoalImportFile: learningGoalImportFile,

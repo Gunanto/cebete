@@ -164,6 +164,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.Post("/auth/logout", authHandler.Logout)
 			secure.Get("/subjects", examHandler.ListSubjects)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/learning-goals", masterHandler.ListLearningGoals)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/learning-goals/export", masterHandler.ExportLearningGoalsExcel)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/learning-goals", masterHandler.CreateLearningGoal)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/learning-goals/import-template", masterHandler.ExportLearningGoalsImportTemplateCSV)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/learning-goals/import", masterHandler.ImportLearningGoalsCSV)
