@@ -38,6 +38,7 @@ type examService interface {
 	DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
+	ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
@@ -68,6 +69,7 @@ type examService interface {
 	SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL string) (string, error)
 	ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 	RegradeExamAttempts(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
+	SelfEnrollExam(ctx context.Context, examID, studentID int64) error
 }
 
 type response struct {
@@ -434,6 +436,59 @@ func (h *Handler) ListExamsForToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListPublishedExams(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(user.Role)) != "siswa" {
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		return
+	}
+	items, err := h.svc.ListPublishedExams(r.Context())
+	if err != nil {
+		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) SelfEnrollExam(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(user.Role)) != "siswa" {
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		return
+	}
+	if err := h.svc.SelfEnrollExam(r.Context(), examID, user.ID); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrExamNotStarted), errors.Is(err, ErrExamEnded):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrAssignmentFeature):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "fitur enroll belum aktif"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{"enrolled": true}})
 }
 
 func (h *Handler) ListAdminExams(w http.ResponseWriter, r *http.Request) {

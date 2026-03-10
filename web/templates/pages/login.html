@@ -9,6 +9,30 @@
     </header>
 
     <section class="login-modern-card">
+        <div
+            class="login-modern-tabs login-main-tabs"
+            role="tablist"
+            aria-label="Akses akun"
+        >
+            <button
+                id="login-tab-signin"
+                type="button"
+                class="login-modern-tab is-active"
+                role="tab"
+                aria-pressed="true"
+            >
+                Masuk
+            </button>
+            <button
+                id="login-tab-signup"
+                type="button"
+                class="login-modern-tab"
+                role="tab"
+                aria-pressed="false"
+            >
+                Daftar Non-Reguler
+            </button>
+        </div>
         <div class="login-modern-tabs" role="tablist" aria-label="Metode login">
             <button
                 id="login-auth-tab-password"
@@ -246,6 +270,119 @@
                         Ganti Email
                     </button>
                 </div>
+            </form>
+        </section>
+        <section id="login-signup-panel" class="login-modern-panel" hidden>
+            <form id="signup-form" class="login-modern-form">
+                <input type="hidden" name="role_requested" value="siswa" />
+                <label for="signup-full-name">Nama Lengkap</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-full-name"
+                        type="text"
+                        name="full_name"
+                        placeholder="Nama sesuai identitas"
+                        required
+                    />
+                </div>
+
+                <label for="signup-email">Email</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-email"
+                        type="email"
+                        name="email"
+                        placeholder="nama@email.com"
+                        required
+                    />
+                </div>
+
+                <label for="signup-phone">No. HP (opsional)</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-phone"
+                        type="tel"
+                        name="phone"
+                        placeholder="08xxxxxxxxxx"
+                    />
+                </div>
+
+                <label for="signup-school-name">Nama Sekolah</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-school-name"
+                        type="text"
+                        name="institution_name"
+                        placeholder="Nama sekolah"
+                        required
+                    />
+                </div>
+
+                <label for="signup-npsn">NPSN</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-npsn"
+                        type="text"
+                        name="npsn"
+                        placeholder="Nomor pokok sekolah nasional"
+                        required
+                    />
+                </div>
+
+                <label for="signup-kabupaten">Kabupaten</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-kabupaten"
+                        type="text"
+                        name="kabupaten"
+                        placeholder="Kabupaten/Kota"
+                        required
+                    />
+                </div>
+
+                <label for="signup-provinsi">Provinsi</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-provinsi"
+                        type="text"
+                        name="provinsi"
+                        placeholder="Provinsi"
+                        required
+                    />
+                </div>
+
+                <label for="signup-class-name">Kelas</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-class-name"
+                        type="text"
+                        name="class_name"
+                        placeholder="Contoh: X IPA 1"
+                        required
+                    />
+                </div>
+
+                <label for="signup-otp-code">Kode OTP</label>
+                <div class="login-input-wrap">
+                    <input
+                        id="signup-otp-code"
+                        type="text"
+                        name="code"
+                        placeholder="Masukkan kode OTP"
+                        required
+                    />
+                </div>
+
+                <button
+                    id="signup-request-otp-btn"
+                    type="button"
+                    class="login-secondary-btn"
+                >
+                    Kirim OTP Verifikasi
+                </button>
+                <button class="login-primary-btn" type="submit">
+                    Kirim Pendaftaran
+                </button>
             </form>
         </section>
     </section>

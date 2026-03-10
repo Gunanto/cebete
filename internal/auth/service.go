@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -30,6 +31,7 @@ var (
 	ErrRateLimited          = errors.New("too many requests")
 	ErrBootstrapDenied      = errors.New("bootstrap denied")
 	ErrUserNotFound         = errors.New("user not found")
+	ErrInvalidInput         = errors.New("invalid input")
 )
 
 type Service struct {
@@ -67,6 +69,7 @@ type User struct {
 	Role          string     `json:"role"`
 	AccountStatus string     `json:"account_status"`
 	ApprovedAt    *time.Time `json:"approved_at,omitempty"`
+	IsNonRegular  bool       `json:"is_non_regular"`
 }
 
 type RegistrationInput struct {
@@ -96,11 +99,23 @@ type RegistrationRecord struct {
 	FullName      string     `json:"full_name"`
 	Phone         *string    `json:"phone,omitempty"`
 	Institution   *string    `json:"institution_name,omitempty"`
+	FormPayload   *string    `json:"form_payload,omitempty"`
 	Status        string     `json:"status"`
 	ReviewNote    *string    `json:"review_note,omitempty"`
 	ReviewedBy    *int64     `json:"reviewed_by,omitempty"`
 	ReviewedAt    *time.Time `json:"reviewed_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type RegistrationFormPayload struct {
+	NonRegular  bool   `json:"non_regular"`
+	Status      string `json:"status"`
+	SchoolName  string `json:"school_name"`
+	NPSN        string `json:"npsn"`
+	Kabupaten   string `json:"kabupaten"`
+	Provinsi    string `json:"provinsi"`
+	ClassName   string `json:"class_name"`
+	SubjectName string `json:"subject_name"`
 }
 
 type AdminUserRecord struct {
@@ -236,7 +251,7 @@ func (s *Service) AuthenticatePassword(ctx context.Context, identifier, password
 	}
 
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, username, email, full_name, role, account_status, approved_at, password_hash
+		SELECT id, username, email, full_name, role, account_status, approved_at, is_non_regular, password_hash
 		FROM users
 		WHERE username = $1 OR email = $1
 		LIMIT 1
@@ -246,7 +261,7 @@ func (s *Service) AuthenticatePassword(ctx context.Context, identifier, password
 	var email sql.NullString
 	var approvedAt sql.NullTime
 	var passwordHash string
-	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &passwordHash); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular, &passwordHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = s.registerFailure(ctx, "password_login", guardKey, s.loginMaxFailures, s.loginLockDuration)
 			return nil, ErrInvalidCredentials
@@ -541,6 +556,27 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 	}
 	if in.FullName == "" {
 		return 0, errors.New("full_name is required")
+	}
+
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
+		return 0, errors.New("form_payload tidak valid")
+	}
+	if payload.NonRegular {
+		if in.RoleRequested != "siswa" {
+			return 0, errors.New("role_requested untuk non-reguler wajib siswa")
+		}
+		status := strings.TrimSpace(strings.ToLower(payload.Status))
+		if status != "" && status != "siswa" {
+			return 0, errors.New("status non-reguler wajib siswa")
+		}
+		if strings.TrimSpace(payload.SchoolName) == "" ||
+			strings.TrimSpace(payload.NPSN) == "" ||
+			strings.TrimSpace(payload.Kabupaten) == "" ||
+			strings.TrimSpace(payload.Provinsi) == "" ||
+			strings.TrimSpace(payload.ClassName) == "" {
+			return 0, errors.New("data non-reguler belum lengkap")
+		}
 	}
 
 	guardKey := normalizeGuardKey(in.Email)
@@ -852,7 +888,7 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, role_requested, email, full_name, phone, institution_name, status, review_note, reviewed_by, reviewed_at, created_at
+		SELECT id, role_requested, email, full_name, phone, institution_name, form_payload, status, review_note, reviewed_by, reviewed_at, created_at
 		FROM registration_requests
 		WHERE ($1 = '' OR status = $1)
 		ORDER BY created_at DESC, id DESC
@@ -869,10 +905,11 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		var r RegistrationRecord
 		var phone sql.NullString
 		var institution sql.NullString
+		var formPayload sql.NullString
 		var reviewNote sql.NullString
 		var reviewedBy sql.NullInt64
 		var reviewedAt sql.NullTime
-		if err := rows.Scan(&r.ID, &r.RoleRequested, &r.Email, &r.FullName, &phone, &institution, &r.Status, &reviewNote, &reviewedBy, &reviewedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.RoleRequested, &r.Email, &r.FullName, &phone, &institution, &formPayload, &r.Status, &reviewNote, &reviewedBy, &reviewedAt, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan registration: %w", err)
 		}
 		if phone.Valid {
@@ -880,6 +917,9 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		}
 		if institution.Valid {
 			r.Institution = &institution.String
+		}
+		if formPayload.Valid {
+			r.FormPayload = &formPayload.String
 		}
 		if reviewNote.Valid {
 			r.ReviewNote = &reviewNote.String
@@ -910,15 +950,15 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, role_requested, email, password_hash, full_name, status
+		SELECT id, role_requested, email, password_hash, full_name, form_payload, status
 		FROM registration_requests
 		WHERE id = $1
 		FOR UPDATE
 	`, registrationID)
 
 	var id int64
-	var role, email, passwordHash, fullName, status string
-	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &status); err != nil {
+	var role, email, passwordHash, fullName, formPayloadRaw, status string
+	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &formPayloadRaw, &status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrRegistrationNotFound
 		}
@@ -927,6 +967,14 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	if status != "pending" {
 		return 0, ErrRegistrationState
 	}
+	if strings.TrimSpace(formPayloadRaw) == "" {
+		formPayloadRaw = "{}"
+	}
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(formPayloadRaw), &payload); err != nil {
+		return 0, fmt.Errorf("parse form payload: %w", err)
+	}
+	isNonRegular := payload.NonRegular
 
 	var userID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 LIMIT 1`, email).Scan(&userID)
@@ -943,13 +991,15 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		err = tx.QueryRowContext(ctx, `
 			INSERT INTO users (
 				username, password_hash, full_name, role, is_active,
-				email, email_verified_at, account_status, approved_by, approved_at, created_at, updated_at
+				email, email_verified_at, account_status, approved_by, approved_at,
+				is_non_regular, created_at, updated_at
 			) VALUES (
 				$1, $2, $3, $4, TRUE,
-				$5, now(), 'active', $6, now(), now(), now()
+				$5, now(), 'active', $6, now(),
+				$7, now(), now()
 			)
 			RETURNING id
-		`, username, passwordHash, fullName, role, email, reviewerID).Scan(&userID)
+		`, username, passwordHash, fullName, role, email, reviewerID, isNonRegular).Scan(&userID)
 		if err != nil {
 			return 0, fmt.Errorf("insert approved user: %w", err)
 		}
@@ -964,11 +1014,26 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 				account_status = 'active',
 				approved_by = $4,
 				approved_at = now(),
+				is_non_regular = $5,
 				updated_at = now()
-			WHERE id = $5
-		`, fullName, passwordHash, role, reviewerID, userID)
+			WHERE id = $6
+		`, fullName, passwordHash, role, reviewerID, isNonRegular, userID)
 		if err != nil {
 			return 0, fmt.Errorf("update approved user: %w", err)
+		}
+	}
+
+	if isNonRegular && role == "siswa" {
+		schoolID, err := upsertSchoolTx(ctx, tx, payload.SchoolName, payload.NPSN, payload.Kabupaten, payload.Provinsi)
+		if err != nil {
+			return 0, err
+		}
+		classID, err := upsertClassTx(ctx, tx, schoolID, payload.ClassName)
+		if err != nil {
+			return 0, err
+		}
+		if err := upsertEnrollmentTx(ctx, tx, userID, schoolID, classID); err != nil {
+			return 0, err
 		}
 	}
 
@@ -990,6 +1055,110 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		return 0, fmt.Errorf("commit approve: %w", err)
 	}
 	return userID, nil
+}
+
+func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, provinsi string) (int64, error) {
+	name = strings.TrimSpace(name)
+	code = strings.TrimSpace(code)
+	kabupaten = strings.TrimSpace(kabupaten)
+	provinsi = strings.TrimSpace(provinsi)
+	if name == "" {
+		return 0, errors.New("school_name is required")
+	}
+
+	var id int64
+	var err error
+	if code != "" {
+		err = tx.QueryRowContext(ctx, `
+			SELECT id
+			FROM schools
+			WHERE code = $1
+			LIMIT 1
+		`, code).Scan(&id)
+	} else {
+		err = tx.QueryRowContext(ctx, `
+			SELECT id
+			FROM schools
+			WHERE LOWER(name) = LOWER($1)
+			LIMIT 1
+		`, name).Scan(&id)
+	}
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("lookup school: %w", err)
+	}
+
+	address := ""
+	if kabupaten != "" && provinsi != "" {
+		address = kabupaten + ", " + provinsi
+	} else if kabupaten != "" {
+		address = kabupaten
+	} else if provinsi != "" {
+		address = provinsi
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, NULLIF($2,''), NULLIF($3,''), TRUE, now(), now())
+		RETURNING id
+	`, name, code, address).Scan(&id); err != nil {
+		return 0, fmt.Errorf("insert school: %w", err)
+	}
+	return id, nil
+}
+
+func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className string) (int64, error) {
+	className = strings.TrimSpace(className)
+	if schoolID <= 0 {
+		return 0, ErrInvalidInput
+	}
+	if className == "" {
+		return 0, errors.New("class_name is required")
+	}
+	gradeLevel := className
+
+	var id int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM classes
+		WHERE school_id = $1 AND grade_level = $2 AND name = $3
+		LIMIT 1
+	`, schoolID, gradeLevel, className).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("lookup class: %w", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, TRUE, now(), now())
+		RETURNING id
+	`, schoolID, className, gradeLevel).Scan(&id); err != nil {
+		return 0, fmt.Errorf("insert class: %w", err)
+	}
+	return id, nil
+}
+
+func upsertEnrollmentTx(ctx context.Context, tx *sql.Tx, userID, schoolID, classID int64) error {
+	if userID <= 0 || schoolID <= 0 || classID <= 0 {
+		return ErrInvalidInput
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
+		VALUES ($1, $2, $3, 'active', now(), now())
+		ON CONFLICT (user_id, class_id)
+		DO UPDATE SET
+			status = 'active',
+			enrolled_at = now()
+	`, userID, schoolID, classID)
+	if err != nil {
+		return fmt.Errorf("upsert enrollment: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) RejectRegistration(ctx context.Context, registrationID, reviewerID int64, note string) error {
@@ -1044,7 +1213,7 @@ func (s *Service) GetSessionUser(ctx context.Context, token string) (*User, erro
 		return nil, ErrUnauthorized
 	}
 	row := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.email, u.full_name, u.role, u.account_status, u.approved_at
+		SELECT u.id, u.username, u.email, u.full_name, u.role, u.account_status, u.approved_at, u.is_non_regular
 		FROM auth_sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.session_token_hash = $1
@@ -1056,7 +1225,7 @@ func (s *Service) GetSessionUser(ctx context.Context, token string) (*User, erro
 	var u User
 	var email sql.NullString
 	var approvedAt sql.NullTime
-	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUnauthorized
 		}
@@ -1143,7 +1312,7 @@ func (s *Service) GetStudentExamProfile(ctx context.Context, userID int64) (*Stu
 
 func (s *Service) getActiveUserTx(ctx context.Context, tx *sql.Tx, userID int64) (*User, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, username, email, full_name, role, account_status, approved_at
+		SELECT id, username, email, full_name, role, account_status, approved_at, is_non_regular
 		FROM users
 		WHERE id = $1
 		LIMIT 1
@@ -1152,7 +1321,7 @@ func (s *Service) getActiveUserTx(ctx context.Context, tx *sql.Tx, userID int64)
 	var u User
 	var email sql.NullString
 	var approvedAt sql.NullTime
-	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &email, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUnauthorized
 		}

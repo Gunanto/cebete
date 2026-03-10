@@ -848,6 +848,7 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 	var schoolName string
 	var schoolCode string
 	var className string
+	var isNonRegular bool
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT
 			u.role,
@@ -856,7 +857,8 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 			COALESCE(NULLIF(btrim(u.nisn), ''), ''),
 			COALESCE(NULLIF(btrim(enr.school_name), ''), ''),
 			COALESCE(NULLIF(btrim(enr.school_code), ''), ''),
-			COALESCE(NULLIF(btrim(enr.class_name), ''), '')
+			COALESCE(NULLIF(btrim(enr.class_name), ''), ''),
+			COALESCE(u.is_non_regular, FALSE)
 		FROM users u
 		LEFT JOIN LATERAL (
 			SELECT
@@ -872,7 +874,7 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 		) enr ON TRUE
 		WHERE u.id = $1
 		  AND u.is_active = TRUE
-	`, studentID).Scan(&role, &fullName, &participantNo, &nisn, &schoolName, &schoolCode, &className); err != nil {
+	`, studentID).Scan(&role, &fullName, &participantNo, &nisn, &schoolName, &schoolCode, &className, &isNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrAttemptForbidden
 		}
@@ -885,7 +887,10 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 		return ErrAttemptForbidden
 	}
 
-	if participantNo == "" || fullName == "" || className == "" || nisn == "" || schoolName == "" || schoolCode == "" {
+	if fullName == "" || className == "" || schoolName == "" || schoolCode == "" {
+		return ErrStudentDataMissing
+	}
+	if !isNonRegular && (participantNo == "" || nisn == "") {
 		return ErrStudentDataMissing
 	}
 	return nil
@@ -937,6 +942,114 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 		return nil, fmt.Errorf("iterate exams for token: %w", err)
 	}
 	return items, nil
+}
+
+func (s *Service) ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error) {
+	now := time.Now()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			e.id,
+			e.code,
+			e.title,
+			e.subject_id,
+			s.name AS subject_name,
+			s.education_level,
+			s.subject_type,
+			e.end_at
+		FROM exams e
+		JOIN subjects s ON s.id = e.subject_id
+		WHERE e.is_active = TRUE
+		  AND (e.start_at IS NULL OR e.start_at <= $1)
+		  AND (e.end_at IS NULL OR e.end_at > $1)
+		ORDER BY e.created_at DESC, e.id DESC
+	`, now)
+	if err != nil {
+		return nil, fmt.Errorf("query published exams: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]ExamTokenExam, 0)
+	for rows.Next() {
+		var it ExamTokenExam
+		var endAt sql.NullTime
+		if err := rows.Scan(
+			&it.ID,
+			&it.Code,
+			&it.Title,
+			&it.SubjectID,
+			&it.SubjectName,
+			&it.EducationLevel,
+			&it.SubjectType,
+			&endAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan published exams: %w", err)
+		}
+		if endAt.Valid {
+			it.EndAt = &endAt.Time
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate published exams: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) error {
+	if examID <= 0 || studentID <= 0 {
+		return ErrInvalidInput
+	}
+
+	var role string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT role
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, studentID).Scan(&role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrAttemptForbidden
+		}
+		return fmt.Errorf("load user role: %w", err)
+	}
+	if strings.TrimSpace(strings.ToLower(role)) != "siswa" {
+		return ErrAttemptForbidden
+	}
+
+	var startAt sql.NullTime
+	var endAt sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT start_at, end_at
+		FROM exams
+		WHERE id = $1 AND is_active = TRUE
+	`, examID).Scan(&startAt, &endAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrExamNotFound
+		}
+		return fmt.Errorf("load exam schedule: %w", err)
+	}
+	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
+		return err
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO exam_assignments (
+			exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at
+		) VALUES ($1, $2, 'active', NULL, now(), now(), now())
+		ON CONFLICT (exam_id, user_id)
+		DO UPDATE SET
+			status = 'active',
+			assigned_by = NULL,
+			assigned_at = now(),
+			updated_at = now()
+	`, examID, studentID); err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return ErrAssignmentFeature
+		}
+		return fmt.Errorf("upsert exam assignment: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {

@@ -21,6 +21,21 @@
     }
     deps.regBody.innerHTML = "";
     items.forEach(function (it) {
+      const payload = (() => {
+        try {
+          return JSON.parse(String(it.form_payload || "{}"));
+        } catch (_) {
+          return {};
+        }
+      })();
+      const detailLines = [
+        "Sekolah: " + String(payload.school_name || "-"),
+        "NPSN: " + String(payload.npsn || "-"),
+        "Kabupaten: " + String(payload.kabupaten || "-"),
+        "Provinsi: " + String(payload.provinsi || "-"),
+        "Kelas: " + String(payload.class_name || "-"),
+      ];
+      const detailPayload = encodeURIComponent(detailLines.join("\n"));
       const tr = document.createElement("tr");
       tr.innerHTML = [
         "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
@@ -29,6 +44,11 @@
         "<td>" + deps.escapeHtml(String(it.role_requested || "")) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.created_at)) + "</td>",
         '<td><span class="action-icons">' +
+          '<button class="icon-only-btn" type="button" data-action="detail" data-detail="' +
+          detailPayload +
+          '" title="Lihat Detail" aria-label="Lihat Detail">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M12 7v5m0 4h.01M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/></svg>' +
+          "</button>" +
           '<button class="icon-only-btn" type="button" data-action="approve" data-id="' +
           deps.escapeHtml(String(it.id || "")) +
           '" title="Setujui" aria-label="Setujui">' +
@@ -69,10 +89,20 @@
 
     if (deps.regBody) {
       deps.regBody.addEventListener("click", async function (e) {
-        const btn =
-          e.target && e.target.closest("button[data-action][data-id]");
+        const btn = e.target && e.target.closest("button[data-action]");
         if (!btn) return;
         const action = String(btn.getAttribute("data-action") || "");
+        if (action === "detail") {
+          const raw = String(btn.getAttribute("data-detail") || "").trim();
+          let detail = raw;
+          try {
+            detail = decodeURIComponent(raw);
+          } catch (_) {
+            // ignore
+          }
+          window.alert(detail || "Tidak ada detail pendaftaran.");
+          return;
+        }
         const id = Number(btn.getAttribute("data-id") || 0);
         if (!id) return;
 

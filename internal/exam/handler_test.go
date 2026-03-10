@@ -31,6 +31,7 @@ type mockExamService struct {
 	deleteSubjectFn                 func(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	listExamsFn                     func(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	listExamsForTokenFn             func(ctx context.Context) ([]ExamTokenExam, error)
+	listPublishedExamsFn            func(ctx context.Context) ([]ExamTokenExam, error)
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	listExamParticipantResultsFn    func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
@@ -62,6 +63,7 @@ type mockExamService struct {
 	setUserPhotoDataURLFn           func(ctx context.Context, userID int64, dataURL string) (string, error)
 	clearUserPhotoDataURLFn         func(ctx context.Context, userID int64) error
 	regradeExamAttemptsFn           func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
+	selfEnrollExamFn                func(ctx context.Context, examID, studentID int64) error
 }
 
 func (m *mockExamService) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
@@ -174,6 +176,13 @@ func (m *mockExamService) ListExamsForToken(ctx context.Context) ([]ExamTokenExa
 		return nil, errors.New("not implemented")
 	}
 	return m.listExamsForTokenFn(ctx)
+}
+
+func (m *mockExamService) ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error) {
+	if m.listPublishedExamsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listPublishedExamsFn(ctx)
 }
 
 func (m *mockExamService) GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {
@@ -384,6 +393,13 @@ func (m *mockExamService) RegradeExamAttempts(ctx context.Context, examID, actor
 		return nil, errors.New("not implemented")
 	}
 	return m.regradeExamAttemptsFn(ctx, examID, actorID, actorRole)
+}
+
+func (m *mockExamService) SelfEnrollExam(ctx context.Context, examID, studentID int64) error {
+	if m.selfEnrollExamFn == nil {
+		return errors.New("not implemented")
+	}
+	return m.selfEnrollExamFn(ctx, examID, studentID)
 }
 
 func withChiParam(r *http.Request, key, value string) *http.Request {

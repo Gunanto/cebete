@@ -174,6 +174,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("guru")).Put("/subjects/{id}", examHandler.UpdateSubject)
 			secure.With(authHandler.RequireRoles("guru")).Delete("/subjects/{id}", examHandler.DeleteSubject)
 			secure.Get("/exams", examHandler.ListExams)
+			secure.With(authHandler.RequireRoles("siswa")).Get("/exams/published", examHandler.ListPublishedExams)
+			secure.With(authHandler.RequireRoles("siswa")).Post("/exams/{id}/self-enroll", examHandler.SelfEnrollExam)
 			secure.Get("/levels", masterHandler.ListEducationLevels)
 
 			secure.Post("/attempts/start", examHandler.Start)

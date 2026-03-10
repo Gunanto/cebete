@@ -684,15 +684,24 @@
         );
         const fd = new FormData(signupForm);
         try {
+          const schoolName = normalizeCredential(fd.get("institution_name"));
+          const payloadForm = {
+            non_regular: true,
+            status: "siswa",
+            school_name: schoolName,
+            npsn: normalizeCredential(fd.get("npsn")),
+            kabupaten: normalizeCredential(fd.get("kabupaten")),
+            provinsi: normalizeCredential(fd.get("provinsi")),
+            class_name: normalizeCredential(fd.get("class_name")),
+          };
           const payload = {
-            role_requested: normalizeCredential(
-              fd.get("role_requested"),
-            ).toLowerCase(),
+            role_requested: "siswa",
             full_name: normalizeCredential(fd.get("full_name")),
             email: normalizeCredential(fd.get("email")),
             phone: normalizeCredential(fd.get("phone")),
-            institution_name: normalizeCredential(fd.get("institution_name")),
+            institution_name: schoolName,
             code: normalizeCredential(fd.get("code")),
+            form_payload: JSON.stringify(payloadForm),
           };
           const data = await api(
             "/api/v1/auth/signup/otp/verify",
@@ -734,6 +743,11 @@
     const typeSelect = document.getElementById("type-select");
     const subjectSelect = document.getElementById("subject-select");
     const examSelect = document.getElementById("exam-select");
+    const selfEnrollActions = document.getElementById("self-enroll-actions");
+    const selfEnrollOpenBtn = document.getElementById("self-enroll-open-btn");
+    const selfEnrollDialog = document.getElementById("self-enroll-dialog");
+    const selfEnrollBody = document.getElementById("self-enroll-body");
+    const selfEnrollCloseBtn = document.getElementById("self-enroll-close-btn");
     const examTokenDialog = document.getElementById("exam-token-dialog");
     const examTokenDialogForm = document.getElementById(
       "exam-token-dialog-form",
@@ -807,6 +821,7 @@
       .trim()
       .toLowerCase();
     const isStudentRole = userRole === "siswa";
+    const isNonRegular = !!(user && user.is_non_regular);
     const tokenDialogHelpDefault = String(
       (examTokenDialogHelp && examTokenDialogHelp.textContent) ||
         "Token wajib diisi. Mintakan token ujian ke proktor.",
@@ -820,6 +835,9 @@
         "Baca petunjuk berikut sebelum memulai ujian.",
     ).trim();
     let subjects = [];
+    if (selfEnrollActions) {
+      selfEnrollActions.hidden = !isNonRegular;
+    }
     const initDone = beginBusy(form, msg, "Memuat daftar mapel...");
     try {
       subjects = await api("/api/v1/subjects", "GET");
@@ -843,6 +861,39 @@
       o.textContent = lvl;
       levelSelect.appendChild(o);
     });
+
+    function fmtShortDate(raw) {
+      if (!raw) return "-";
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return "-";
+      return d.toLocaleString("id-ID");
+    }
+
+    async function loadPublishedExams() {
+      if (!selfEnrollBody) return [];
+      const list = await api("/api/v1/exams/published", "GET");
+      const items = Array.isArray(list) ? list : [];
+      if (!items.length) {
+        selfEnrollBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Belum ada ujian yang bisa diikuti.</td></tr>';
+        return items;
+      }
+      selfEnrollBody.innerHTML = "";
+      items.forEach(function (it) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = [
+          "<td>" + escapeHtml(String(it.code || "-")) + "</td>",
+          "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
+          "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
+          "<td>" + escapeHtml(fmtShortDate(it.end_at)) + "</td>",
+          '<td><button class="btn btn-secondary btn-inline" type="button" data-self-enroll="' +
+            escapeHtml(String(it.id || 0)) +
+            '">Daftar</button></td>',
+        ].join("");
+        selfEnrollBody.appendChild(tr);
+      });
+      return items;
+    }
 
     function resetSelect(sel, placeholder) {
       sel.innerHTML = "";
@@ -936,6 +987,62 @@
     examSelect.addEventListener("change", function () {
       startBtn.disabled = !examSelect.value;
     });
+
+    if (selfEnrollOpenBtn) {
+      selfEnrollOpenBtn.addEventListener("click", async function () {
+        if (!isNonRegular) {
+          text(msg, "Fitur ini hanya untuk peserta non-reguler.");
+          return;
+        }
+        const done = beginBusy(
+          selfEnrollOpenBtn,
+          msg,
+          "Memuat daftar ujian...",
+        );
+        try {
+          await loadPublishedExams();
+          if (
+            selfEnrollDialog &&
+            typeof selfEnrollDialog.showModal === "function"
+          ) {
+            selfEnrollDialog.showModal();
+          } else {
+            selfEnrollDialog?.setAttribute?.("open", "open");
+          }
+        } catch (err) {
+          text(msg, "Gagal memuat daftar ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (selfEnrollCloseBtn) {
+      selfEnrollCloseBtn.addEventListener("click", function () {
+        if (selfEnrollDialog && typeof selfEnrollDialog.close === "function") {
+          selfEnrollDialog.close();
+        }
+      });
+    }
+
+    if (selfEnrollBody) {
+      selfEnrollBody.addEventListener("click", async function (e) {
+        const btn = e.target && e.target.closest("button[data-self-enroll]");
+        if (!btn) return;
+        const examID = Number(btn.getAttribute("data-self-enroll") || 0);
+        if (!examID) return;
+        const done = beginBusy(btn, msg, "Mendaftarkan ujian...");
+        try {
+          await api("/api/v1/exams/" + examID + "/self-enroll", "POST", {});
+          text(msg, "Berhasil daftar ujian. Silakan lanjutkan memilih ujian.");
+          await loadPublishedExams();
+        } catch (err) {
+          text(msg, "Gagal daftar ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
 
     async function startAttemptByExamID(examID, token, busyTarget) {
       const done = beginBusy(busyTarget || form, msg, "Menyiapkan attempt...");

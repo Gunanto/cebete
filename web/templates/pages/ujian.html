@@ -43,9 +43,57 @@
             </button>
         </form>
     </div>
+    <div id="self-enroll-actions" class="mt" hidden>
+        <button
+            id="self-enroll-open-btn"
+            class="btn btn-secondary"
+            type="button"
+        >
+            Daftar Ujian Non-Reguler
+        </button>
+    </div>
 
     <p id="simulasi-message" class="muted" role="status" aria-live="polite"></p>
 </section>
+
+<dialog id="self-enroll-dialog" class="admin-dialog admin-dialog-wide">
+    <form id="self-enroll-dialog-form" class="form-grid">
+        <h3>Daftar Ujian Non-Reguler</h3>
+        <p class="muted">
+            Pilih ujian yang akan Anda ikuti. Setelah daftar, lanjutkan dengan
+            memilih ujian dan memasukkan token.
+        </p>
+        <div class="table-wrap">
+            <table class="bs-table">
+                <thead>
+                    <tr>
+                        <th>Kode</th>
+                        <th>Nama Ujian</th>
+                        <th>Mapel</th>
+                        <th>Berakhir</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="self-enroll-body">
+                    <tr>
+                        <td colspan="5" class="muted">
+                            Belum ada ujian yang bisa diikuti.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="actions">
+            <button
+                id="self-enroll-close-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Tutup
+            </button>
+        </div>
+    </form>
+</dialog>
 
 <dialog id="student-profile-dialog" class="admin-dialog">
     <form id="student-profile-dialog-form" class="form-grid">
