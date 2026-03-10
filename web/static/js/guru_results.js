@@ -533,7 +533,7 @@
     fillResultsExamSelect();
   }
 
-  function buildResultsScoreChartHTML(rows, totalQuestions) {
+  function buildResultsScoreChartHTML(rows, totalMaxScore) {
     const list = (Array.isArray(rows) ? rows : [])
       .slice()
       .sort(function (a, b) {
@@ -554,8 +554,8 @@
     });
     const nilaiList = list.map(function (r) {
       const score = Number((r && r.skor_total) || 0);
-      if (totalQuestions <= 0) return 0;
-      return (score / totalQuestions) * 100;
+      if (totalMaxScore <= 0) return 0;
+      return (score / totalMaxScore) * 100;
     });
     const maxScore = 100;
     const ticks = 5;
@@ -683,6 +683,10 @@
     const totalQuestions = Array.isArray(data && data.question_nos)
       ? data.question_nos.length
       : 0;
+    let totalWeight = Number((data && data.total_weight) || 0);
+    if (totalWeight <= 0 && totalQuestions > 0) {
+      totalWeight = totalQuestions;
+    }
     if (!data || !rows.length) {
       setResultsExtra("Muat hasil ujian peserta terlebih dahulu.");
       return;
@@ -732,7 +736,7 @@
       );
       return;
     }
-    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalQuestions));
+    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalWeight));
   }
 
   function renderResultsChart() {
@@ -741,6 +745,10 @@
     const totalQuestions = Array.isArray(data && data.question_nos)
       ? data.question_nos.length
       : 0;
+    let totalWeight = Number((data && data.total_weight) || 0);
+    if (totalWeight <= 0 && totalQuestions > 0) {
+      totalWeight = totalQuestions;
+    }
     if (!rows.length) {
       setResultsExtra("Muat hasil ujian peserta terlebih dahulu.");
       deps.setMsg(
@@ -748,7 +756,7 @@
       );
       return;
     }
-    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalQuestions));
+    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalWeight));
     deps.setMsg("Grafik skor peserta berhasil ditampilkan.");
   }
 
@@ -787,6 +795,10 @@
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
       : [];
+    let totalWeight = Number((matrix && matrix.total_weight) || 0);
+    if (totalWeight <= 0 && questionNos.length > 0) {
+      totalWeight = questionNos.length;
+    }
     resultsAssignmentsCount = rows.length;
     if (deps && typeof deps.refreshStats === "function") {
       deps.refreshStats();
@@ -823,11 +835,10 @@
       const answerStates = Array.isArray(it.answer_states)
         ? it.answer_states
         : [];
-      const totalQuestions = questionNos.length;
       const scoreValue = Number(it.skor_total || 0);
       const nilai =
-        totalQuestions > 0
-          ? ((scoreValue / totalQuestions) * 100).toFixed(2)
+        totalWeight > 0
+          ? ((scoreValue / totalWeight) * 100).toFixed(2)
           : "0.00";
       const answerCells = questionNos.map(function (_, idx) {
         const state = String(answerStates[idx] || "")

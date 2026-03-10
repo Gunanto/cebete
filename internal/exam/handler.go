@@ -1368,7 +1368,7 @@ func (h *Handler) RegradeExam(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrExamForbidden):
 			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		default:
-			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: err.Error()})
 		}
 		return
 	}

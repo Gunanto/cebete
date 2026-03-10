@@ -55,14 +55,19 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		rows = matrix.Rows
 	}
 	totalQuestions := 0
+	totalWeight := 0.0
 	if matrix != nil {
 		totalQuestions = len(matrix.QuestionNos)
+		totalWeight = matrix.TotalWeight
+	}
+	if totalWeight <= 0 && totalQuestions > 0 {
+		totalWeight = float64(totalQuestions)
 	}
 	for idx, it := range rows {
 		row := idx + 2
 		nilai := 0.0
-		if totalQuestions > 0 {
-			nilai = (it.SkorTotal / float64(totalQuestions)) * 100
+		if totalWeight > 0 {
+			nilai = (it.SkorTotal / totalWeight) * 100
 		}
 		values := []interface{}{
 			it.FullName,
