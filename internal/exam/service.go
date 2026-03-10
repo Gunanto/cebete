@@ -1432,6 +1432,53 @@ func (s *Service) ResetExamAttempt(ctx context.Context, examID, studentID, actor
 	return attemptID, nil
 }
 
+func (s *Service) DeleteExamAttempt(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error) {
+	if examID <= 0 || attemptID <= 0 || actorID <= 0 {
+		return 0, ErrInvalidInput
+	}
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	if role == "guru" {
+		owned, err := s.IsExamOwnedBy(ctx, examID, actorID)
+		if err != nil {
+			return 0, err
+		}
+		if !owned {
+			return 0, ErrExamForbidden
+		}
+	}
+	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
+		return 0, err
+	}
+
+	var status string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM attempts
+		WHERE id = $1 AND exam_id = $2
+	`, attemptID, examID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrAttemptNotFound
+		}
+		return 0, fmt.Errorf("load attempt status: %w", err)
+	}
+	if status == "in_progress" {
+		return 0, ErrAttemptNotFinal
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM attempts
+		WHERE id = $1 AND exam_id = $2
+	`, attemptID, examID)
+	if err != nil {
+		return 0, fmt.Errorf("delete attempt: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return 0, ErrAttemptNotFound
+	}
+	return attemptID, nil
+}
+
 func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
@@ -1714,6 +1761,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		FROM attempts a
 		JOIN users u ON u.id = a.student_id
 		WHERE a.exam_id = $1
+		  AND u.role = 'siswa'
 		ORDER BY a.started_at ASC, a.id ASC
 	`, examID)
 	if err != nil {

@@ -24,6 +24,7 @@ type mockExamService struct {
 	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
 	deleteExamFn                    func(ctx context.Context, examID int64) error
 	resetExamAttemptFn              func(ctx context.Context, examID, studentID, actorID int64) (int64, error)
+	deleteExamAttemptFn             func(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error)
 	listSubjectsFn                  func(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error)
 	createSubjectFn                 func(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
 	updateSubjectFn                 func(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
@@ -117,6 +118,13 @@ func (m *mockExamService) DeleteExam(ctx context.Context, examID int64) error {
 		return errors.New("not implemented")
 	}
 	return m.deleteExamFn(ctx, examID)
+}
+
+func (m *mockExamService) DeleteExamAttempt(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error) {
+	if m.deleteExamAttemptFn == nil {
+		return 0, errors.New("not implemented")
+	}
+	return m.deleteExamAttemptFn(ctx, examID, attemptID, actorID, actorRole)
 }
 
 func (m *mockExamService) ResetExamAttempt(ctx context.Context, examID, studentID, actorID int64) (int64, error) {

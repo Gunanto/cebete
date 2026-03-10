@@ -224,6 +224,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/assignments/{user_id}", examHandler.RemoveExamAssignment)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results", examHandler.ListExamParticipantResults)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/results/export", examHandler.ExportExamParticipantResultsExcel)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Delete("/admin/exams/{id}/attempts/{attemptID}", examHandler.DeleteExamAttempt)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/exams/{id}/questions", examHandler.ListExamQuestions)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Post("/admin/exams/{id}/questions", examHandler.UpsertExamQuestion)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/questions/{questionID}", examHandler.UpsertExamQuestion)

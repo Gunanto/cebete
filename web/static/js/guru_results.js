@@ -776,10 +776,10 @@
       }
       if (deps.resultsMatrixHead) {
         deps.resultsMatrixHead.innerHTML =
-          "<th>Nama</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th>";
+          "<th>Nama</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
       }
       deps.resultsAssignmentBody.innerHTML =
-        '<tr><td colspan="6" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
+        '<tr><td colspan="7" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       return;
     }
@@ -814,6 +814,7 @@
         "<th>Nilai</th>",
         "<th>Start Ujian</th>",
         "<th>End Ujian</th>",
+        "<th>Aksi</th>",
       ];
       const dyn = questionNos.map(function (no) {
         return "<th>" + deps.escapeHtml(String(no)) + "</th>";
@@ -823,7 +824,7 @@
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
-        String(6 + questionNos.length) +
+        String(7 + questionNos.length) +
         '" class="muted">Belum ada peserta yang mengikuti ujian ini.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       setResultsExtra("Belum ada data untuk laporan/statistik/grafik.");
@@ -866,6 +867,9 @@
         "<td>" + deps.escapeHtml(String(nilai)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.started_at)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.ended_at)) + "</td>",
+        '<td><button class="btn btn-secondary btn-inline" type="button" data-attempt-delete="' +
+          deps.escapeHtml(String(it.attempt_id || 0)) +
+          '">Hapus</button></td>',
       ]
         .concat(answerCells)
         .join("");
@@ -1219,6 +1223,39 @@
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (deps.resultsAssignmentBody) {
+      deps.resultsAssignmentBody.addEventListener("click", async function (e) {
+        const btn = e.target && e.target.closest("button[data-attempt-delete]");
+        if (!btn) return;
+        const attemptID = Number(btn.getAttribute("data-attempt-delete") || 0);
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) ||
+            (latestResultsMatrix && latestResultsMatrix.exam_id) ||
+            0,
+        );
+        if (examID <= 0 || attemptID <= 0) return;
+        if (!window.confirm("Hapus attempt ini?")) return;
+        const done = deps.beginBusy(
+          btn,
+          deps.msg,
+          "Menghapus attempt ujian...",
+        );
+        try {
+          await deps.api(
+            "/api/v1/admin/exams/" + examID + "/attempts/" + attemptID,
+            "DELETE",
+            {},
+          );
+          await loadExamAssignments(examID);
+          deps.setMsg("Attempt berhasil dihapus dari hasil ujian.");
+        } catch (err) {
+          deps.setMsg("Gagal menghapus attempt: " + err.message);
         } finally {
           done();
         }
