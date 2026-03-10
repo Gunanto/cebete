@@ -111,6 +111,9 @@
     if (!deps || typeof deps.api !== "function") return;
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     setExamManageCache(exams);
+    if (typeof deps.onExamsLoaded === "function") {
+      deps.onExamsLoaded(exams);
+    }
     fillAssignExamOptions(exams);
     if (deps.examsPanel && !deps.examsPanel.hidden) {
       deps.activateMenu("exams");
@@ -510,6 +513,9 @@
           if (deps.questionExamIDInput) {
             deps.questionExamIDInput.value = String(examID);
           }
+          if (typeof deps.onExamSelected === "function") {
+            deps.onExamSelected(examID);
+          }
           try {
             await Promise.all([
               loadExamQuestions(examID),
@@ -771,7 +777,7 @@
       });
     }
 
-    if (deps.resultsRefreshBtn) {
+    if (deps.resultsRefreshBtn && !deps.useSharedResultsModule) {
       deps.resultsRefreshBtn.addEventListener("click", async function () {
         const done = deps.beginBusy(
           deps.resultsRefreshBtn,
@@ -884,17 +890,17 @@
       );
     }
 
-    if (deps.resultsReportBtn) {
+    if (deps.resultsReportBtn && !deps.useSharedResultsModule) {
       deps.resultsReportBtn.addEventListener("click", function () {
         summarizeAttemptResult("report");
       });
     }
-    if (deps.resultsStatsBtn) {
+    if (deps.resultsStatsBtn && !deps.useSharedResultsModule) {
       deps.resultsStatsBtn.addEventListener("click", function () {
         summarizeAttemptResult("stats");
       });
     }
-    if (deps.resultsChartBtn) {
+    if (deps.resultsChartBtn && !deps.useSharedResultsModule) {
       deps.resultsChartBtn.addEventListener("click", function () {
         summarizeAttemptResult("chart");
       });

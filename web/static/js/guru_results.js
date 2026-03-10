@@ -15,6 +15,15 @@
     deps = opts || {};
   }
 
+  function activateResultsMenu() {
+    const fn =
+      (deps && typeof deps.activateMenu === "function" && deps.activateMenu) ||
+      (deps &&
+        typeof deps.activateGuruMenu === "function" &&
+        deps.activateGuruMenu);
+    if (typeof fn === "function") fn("results");
+  }
+
   function setResultsSummary(value) {
     if (!deps || !deps.resultsSummary) return;
     deps.text(deps.resultsSummary, value);
@@ -778,9 +787,7 @@
         deps.refreshStats();
       }
       latestResultsMatrix = null;
-      if (deps.resultsPanel && !deps.resultsPanel.hidden) {
-        deps.activateGuruMenu("results");
-      }
+      if (deps.resultsPanel && !deps.resultsPanel.hidden) activateResultsMenu();
       if (deps.resultsMatrixHead) {
         deps.resultsMatrixHead.innerHTML =
           "<th>Nama</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
@@ -810,9 +817,7 @@
     if (deps && typeof deps.refreshStats === "function") {
       deps.refreshStats();
     }
-    if (deps.resultsPanel && !deps.resultsPanel.hidden) {
-      deps.activateGuruMenu("results");
-    }
+    if (deps.resultsPanel && !deps.resultsPanel.hidden) activateResultsMenu();
     if (deps.resultsMatrixHead) {
       const fixed = [
         "<th>Nama</th>",

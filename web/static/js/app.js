@@ -3441,6 +3441,18 @@
     const resultsRefreshBtn = document.getElementById(
       "proktor-results-refresh-btn",
     );
+    const resultsAssignmentForm = document.getElementById(
+      "proktor-results-assignment-form",
+    );
+    const resultsExamSelect = document.getElementById(
+      "proktor-results-exam-select",
+    );
+    const resultsAssignmentBody = document.getElementById(
+      "proktor-results-assignment-body",
+    );
+    const resultsMatrixHead = document.getElementById(
+      "proktor-results-matrix-head",
+    );
     const resultsAttemptForm = document.getElementById(
       "proktor-results-attempt-form",
     );
@@ -3457,6 +3469,39 @@
     );
     const resultsChartBtn = document.getElementById(
       "proktor-results-chart-btn",
+    );
+    const resultsExportBtn = document.getElementById(
+      "proktor-results-export-btn",
+    );
+    const itemAnalysisBtn = document.getElementById(
+      "proktor-results-item-analysis-btn",
+    );
+    const itemAnalysisDialog = document.getElementById(
+      "proktor-item-analysis-dialog",
+    );
+    const itemAnalysisBody = document.getElementById(
+      "proktor-item-analysis-body",
+    );
+    const itemAnalysisSummary = document.getElementById(
+      "proktor-item-analysis-summary",
+    );
+    const itemAnalysisIdentity = document.getElementById(
+      "proktor-item-analysis-identity",
+    );
+    const itemAnalysisFilter = document.getElementById(
+      "proktor-item-analysis-filter",
+    );
+    const itemAnalysisDetail = document.getElementById(
+      "proktor-item-analysis-detail",
+    );
+    const itemAnalysisSubtitle = document.getElementById(
+      "proktor-item-analysis-subtitle",
+    );
+    const itemAnalysisExportBtn = document.getElementById(
+      "proktor-item-analysis-export-btn",
+    );
+    const itemAnalysisPrintBtn = document.getElementById(
+      "proktor-item-analysis-print-btn",
     );
     const masterPanel = document.getElementById("proktor-master-panel");
     const guidePanel = document.getElementById("proktor-guide-panel");
@@ -3512,6 +3557,10 @@
         examQuestionsLoadBtn: examQuestionsLoadBtn,
         examQuestionsBody: examQuestionsBody,
         resultsRefreshBtn: resultsRefreshBtn,
+        resultsAssignmentForm: resultsAssignmentForm,
+        resultsExamSelect: resultsExamSelect,
+        resultsAssignmentBody: resultsAssignmentBody,
+        resultsMatrixHead: resultsMatrixHead,
         resultsAttemptForm: resultsAttemptForm,
         resultsResetAttemptForm: resultsResetAttemptForm,
         resultsSummary: resultsSummary,
@@ -3519,9 +3568,66 @@
         resultsReportBtn: resultsReportBtn,
         resultsStatsBtn: resultsStatsBtn,
         resultsChartBtn: resultsChartBtn,
+        useSharedResultsModule: true,
+        onExamsLoaded: function (exams) {
+          if (GuruResults && typeof GuruResults.setExams === "function") {
+            GuruResults.setExams(exams);
+          }
+        },
+        onExamSelected: function (examID) {
+          if (GuruResults && typeof GuruResults.selectExam === "function") {
+            GuruResults.selectExam(examID, true);
+          }
+        },
         loadTokenExamOptions: loadTokenExamOptions,
         fillAssignClassSelectBySchool: fillAssignClassSelectBySchool,
         activateMenu: activateProktorMenu,
+      });
+    }
+
+    function initProktorResultsModule() {
+      if (!GuruResults || typeof GuruResults.init !== "function") return;
+      GuruResults.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: msg,
+        text: text,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        activateMenu: activateProktorMenu,
+        resultsPanel: resultsPanel,
+        resultsRefreshBtn: resultsRefreshBtn,
+        resultsAssignmentForm: resultsAssignmentForm,
+        resultsExamSelect: resultsExamSelect,
+        resultsAssignmentBody: resultsAssignmentBody,
+        resultsMatrixHead: resultsMatrixHead,
+        resultsSummary: resultsSummary,
+        resultsExtra: resultsExtra,
+        resultsReportBtn: resultsReportBtn,
+        resultsStatsBtn: resultsStatsBtn,
+        resultsChartBtn: resultsChartBtn,
+        resultsExportBtn: resultsExportBtn,
+        itemAnalysisBtn: itemAnalysisBtn,
+        itemAnalysisDialog: itemAnalysisDialog,
+        itemAnalysisBody: itemAnalysisBody,
+        itemAnalysisSummary: itemAnalysisSummary,
+        itemAnalysisIdentity: itemAnalysisIdentity,
+        itemAnalysisFilter: itemAnalysisFilter,
+        itemAnalysisDetail: itemAnalysisDetail,
+        itemAnalysisSubtitle: itemAnalysisSubtitle,
+        itemAnalysisExportBtn: itemAnalysisExportBtn,
+        itemAnalysisPrintBtn: itemAnalysisPrintBtn,
+        meOrNull: meOrNull,
+        refreshExams: function () {
+          if (
+            ProktorExams &&
+            typeof ProktorExams.loadExamManageTable === "function"
+          ) {
+            return ProktorExams.loadExamManageTable();
+          }
+          return Promise.resolve([]);
+        },
       });
     }
 
@@ -4193,6 +4299,7 @@
     activateProktorMenu("dashboard");
 
     safeInitModule("Enroll Peserta", initProktorExamsModule);
+    safeInitModule("Hasil Ujian", initProktorResultsModule);
     safeInitModule("Kartu Ujian", initProktorCardsModule);
     safeInitModule("Daftar Hadir", initProktorAttendanceModule);
     safeInitModule("Token Ujian", initProktorTokenModule);

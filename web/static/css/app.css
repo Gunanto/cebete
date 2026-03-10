@@ -2083,46 +2083,56 @@ textarea:focus-visible {
     text-align: center;
 }
 
-#guru-results-matrix-table th {
+#guru-results-matrix-table th,
+#proktor-results-matrix-table th {
     text-align: center;
     font-weight: 700;
 }
 
-#guru-results-matrix-table td {
+#guru-results-matrix-table td,
+#proktor-results-matrix-table td {
     text-align: center;
 }
 
-#guru-results-matrix-table td:first-child {
+#guru-results-matrix-table td:first-child,
+#proktor-results-matrix-table td:first-child {
     text-align: left;
 }
 
-#guru-results-matrix-table td.result-cell-correct {
+#guru-results-matrix-table td.result-cell-correct,
+#proktor-results-matrix-table td.result-cell-correct {
     background: #dff4e4;
     color: #1f5f2f;
     font-weight: 600;
 }
 
-#guru-results-matrix-table td.result-cell-wrong {
+#guru-results-matrix-table td.result-cell-wrong,
+#proktor-results-matrix-table td.result-cell-wrong {
     background: #ffe3ea;
     color: #a12a4a;
     font-weight: 600;
 }
 
-#guru-results-panel .table-wrap {
+#guru-results-panel .table-wrap,
+#proktor-results-panel .table-wrap {
     max-height: 62vh;
     overflow-x: scroll;
     overflow-y: auto;
+    padding-right: 20pt;
+    box-sizing: border-box;
     border: 1px solid var(--border);
     border-radius: 10px;
     scrollbar-gutter: stable both-edges;
 }
 
-#guru-results-matrix-table {
+#guru-results-matrix-table,
+#proktor-results-matrix-table {
     width: max-content;
     min-width: max(1400px, 100%);
 }
 
-#guru-results-matrix-table th {
+#guru-results-matrix-table th,
+#proktor-results-matrix-table th {
     position: sticky;
     top: 0;
     z-index: 2;
