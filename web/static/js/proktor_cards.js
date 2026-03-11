@@ -21,11 +21,11 @@
     return "Kelas " + name;
   }
 
-  function renderExamCardsPage(items, startIndex) {
+  function renderExamCardsPage(items) {
     const page = document.createElement("div");
     page.className = "proktor-cards-page";
     for (let i = 0; i < 10; i += 1) {
-      const current = items[startIndex + i];
+      const current = items[i];
       const card = document.createElement("article");
       card.className = "proktor-card";
       if (!current) {
@@ -232,6 +232,66 @@
     });
   }
 
+  function compareCardStudents(a, b) {
+    const schoolA = String((a && a.school_name) || "").trim();
+    const schoolB = String((b && b.school_name) || "").trim();
+    const schoolCmp = schoolA.localeCompare(schoolB, "id");
+    if (schoolCmp !== 0) return schoolCmp;
+
+    const classA = String((a && a.class_name) || "").trim();
+    const classB = String((b && b.class_name) || "").trim();
+    const classCmp = classA.localeCompare(classB, "id");
+    if (classCmp !== 0) return classCmp;
+
+    const participantA = String((a && a.participant_no) || "").trim();
+    const participantB = String((b && b.participant_no) || "").trim();
+    const participantCmp = participantA.localeCompare(participantB, "id", {
+      numeric: true,
+    });
+    if (participantCmp !== 0) return participantCmp;
+
+    const fullNameA = String((a && a.full_name) || "").trim();
+    const fullNameB = String((b && b.full_name) || "").trim();
+    const fullNameCmp = fullNameA.localeCompare(fullNameB, "id");
+    if (fullNameCmp !== 0) return fullNameCmp;
+
+    return String((a && a.username) || "").localeCompare(
+      String((b && b.username) || ""),
+      "id",
+    );
+  }
+
+  function buildCardsPages(students) {
+    const groups = new Map();
+    (Array.isArray(students) ? students : [])
+      .slice()
+      .sort(compareCardStudents)
+      .forEach(function (it) {
+        const schoolID = Number((it && it.school_id) || 0);
+        const classID = Number((it && it.class_id) || 0);
+        const schoolName = String((it && it.school_name) || "").trim();
+        const className = String((it && it.class_name) || "").trim();
+        const key =
+          String(schoolID) +
+          "::" +
+          String(classID) +
+          "::" +
+          schoolName.toLowerCase() +
+          "::" +
+          className.toLowerCase();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(it);
+      });
+
+    const pages = [];
+    groups.forEach(function (groupItems) {
+      for (let i = 0; i < groupItems.length; i += 10) {
+        pages.push(groupItems.slice(i, i + 10));
+      }
+    });
+    return pages;
+  }
+
   function renderFilteredExamCards() {
     if (!deps || !deps.cardsPages) return;
     const students = getFilteredCardsStudents();
@@ -242,13 +302,13 @@
       return;
     }
     deps.cardsPages.innerHTML = "";
-    for (let i = 0; i < students.length; i += 10) {
-      deps.cardsPages.appendChild(renderExamCardsPage(students, i));
-    }
+    buildCardsPages(students).forEach(function (pageItems) {
+      deps.cardsPages.appendChild(renderExamCardsPage(pageItems));
+    });
     setCardsMeta(
       "Total kartu siap cetak: " +
         String(students.length) +
-        " peserta (siswa) sesuai filter.",
+        " peserta (siswa) sesuai filter, dikelompokkan per kelas.",
     );
   }
 
