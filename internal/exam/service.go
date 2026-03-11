@@ -487,7 +487,13 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 
 	var existing Attempt
 	if err := row.Scan(&existing.ID, &existing.ExamID, &existing.StudentID, &existing.Status, &existing.StartedAt, &existing.ExpiresAt); err == nil {
-		return &existing, nil
+		if !time.Now().Before(existing.ExpiresAt) {
+			if _, err := s.finalizeAttempt(ctx, existing.ID, "expired"); err != nil {
+				return nil, err
+			}
+		} else {
+			return &existing, nil
+		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("query existing attempt: %w", err)
 	}
@@ -1597,6 +1603,9 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 	if examID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			u.id,
@@ -1800,6 +1809,9 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 	if examID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
+		return nil, err
+	}
 
 	var examExists bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1)`, examID).Scan(&examExists); err != nil {
@@ -1946,7 +1958,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		_ = answerRows.Close()
 
 		scoreRows, err := s.db.QueryContext(ctx, `
-			SELECT s.attempt_id, s.question_id, s.is_correct
+			SELECT s.attempt_id, s.question_id, s.is_correct, COALESCE(s.feedback->>'reason', '')
 			FROM attempt_scores s
 			JOIN attempts a ON a.id = s.attempt_id
 			WHERE a.exam_id = $1
@@ -1958,7 +1970,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 			var attemptID int64
 			var questionID int64
 			var isCorrect sql.NullBool
-			if err := scoreRows.Scan(&attemptID, &questionID, &isCorrect); err != nil {
+			var reason string
+			if err := scoreRows.Scan(&attemptID, &questionID, &isCorrect, &reason); err != nil {
 				_ = scoreRows.Close()
 				return nil, fmt.Errorf("scan attempt score state for results matrix: %w", err)
 			}
@@ -1969,6 +1982,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 				} else {
 					state = "wrong"
 				}
+			} else if strings.TrimSpace(strings.ToLower(reason)) == "unanswered" {
+				state = "wrong"
 			}
 			if _, ok := answerStateByAttemptQuestion[attemptID]; !ok {
 				answerStateByAttemptQuestion[attemptID] = map[int64]string{}
@@ -4136,6 +4151,44 @@ func (s *Service) finalizeAttempt(ctx context.Context, attemptID int64, finalSta
 		return nil, fmt.Errorf("commit finalize: %w", err)
 	}
 	return summary, nil
+}
+
+func (s *Service) finalizeExpiredAttemptsForExam(ctx context.Context, examID int64) error {
+	if examID <= 0 {
+		return ErrInvalidInput
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id
+		FROM attempts
+		WHERE exam_id = $1
+		  AND status = 'in_progress'
+		  AND expires_at <= now()
+		ORDER BY expires_at ASC, id ASC
+	`, examID)
+	if err != nil {
+		return fmt.Errorf("list expired attempts for exam: %w", err)
+	}
+	defer rows.Close()
+
+	attemptIDs := make([]int64, 0)
+	for rows.Next() {
+		var attemptID int64
+		if err := rows.Scan(&attemptID); err != nil {
+			return fmt.Errorf("scan expired attempt for exam: %w", err)
+		}
+		attemptIDs = append(attemptIDs, attemptID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate expired attempts for exam: %w", err)
+	}
+
+	for _, attemptID := range attemptIDs {
+		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+			return fmt.Errorf("finalize expired attempt %d: %w", attemptID, err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) recomputeFinalizedAttemptTx(ctx context.Context, tx *sql.Tx, attemptID int64) error {

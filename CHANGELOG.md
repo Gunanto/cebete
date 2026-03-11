@@ -10,12 +10,14 @@
   - endpoint `GET /api/v1/exams/published`,
   - endpoint `POST /api/v1/exams/{id}/self-enroll`.
 - Aksi hapus attempt pada menu `Hasil Ujian` guru (endpoint delete attempt).
+- Menu `Hasil Ujian` proktor setara dengan guru: matrix hasil per peserta, export Excel, laporan/statistik/grafik, hapus attempt, dan Analisis Butir Soal (dialog + export/print).
 
 ### Changed
 - Nilai hasil ujian dinormalisasi menggunakan total bobot soal (maksimum 100), baik di UI maupun export Excel.
 - Hasil ujian hanya menampilkan attempt `siswa` (attempt guru dari menu Coba Ujian tidak ikut laporan/analisis).
 - Tombol `Analisis Butir Soal` di menu Hasil Ujian menggunakan ikon.
 - Tabel verifikasi pendaftaran proktor menampilkan detail form non-reguler (popup detail).
+- Tabel `Hasil Ujian` proktor mengikuti styling guru termasuk padding kanan area scroll agar kolom terakhir tidak terpotong.
 
 ### Fixed
 - Regrade ujian tidak lagi gagal karena konflik cursor transaksi pada query attempt.

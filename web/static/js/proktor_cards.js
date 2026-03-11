@@ -27,6 +27,7 @@
         continue;
       }
       const schoolName = String((current.school_name || "").trim() || "-");
+      const className = String((current.class_name || "").trim() || "-");
       const participantNo = String(
         (current.participant_no || "").trim() || "-",
       );
@@ -41,6 +42,9 @@
       const photoAlt = "Foto " + fullName;
       card.innerHTML = [
         '<div class="proktor-card-head">',
+        '<span class="proktor-card-class">Kelas ' +
+          deps.escapeHtml(className) +
+          "</span>",
         "<h4>Kartu Peserta Ujian</h4>",
         "<p>" + deps.escapeHtml(schoolName) + "</p>",
         "</div>",
@@ -64,7 +68,9 @@
         "<tr><td>Username</td><td>:</td><td>" +
           deps.escapeHtml(username) +
           "</td></tr>",
-        "<tr><td>Email</td><td>:</td><td>" + deps.escapeHtml(email) + "</td></tr>",
+        "<tr><td>Email</td><td>:</td><td>" +
+          deps.escapeHtml(email) +
+          "</td></tr>",
         "</table>",
         "</div>",
         '<div class="proktor-card-photo-actions">',
@@ -84,7 +90,9 @@
         "<span>Dibuat: " +
           deps.escapeHtml(deps.fmtDate(new Date().toISOString())) +
           "</span>",
-        '<span class="proktor-card-badge">' + deps.escapeHtml(status) + "</span>",
+        '<span class="proktor-card-badge">' +
+          deps.escapeHtml(status) +
+          "</span>",
         "</div>",
       ].join("");
       page.appendChild(card);
@@ -105,9 +113,11 @@
       "/api/v1/admin/exams/" + id + "/assignments",
       "GET",
     );
-    cardsStudentsAll = (Array.isArray(items) ? items : []).filter(function (it) {
-      return String((it && it.role) || "").toLowerCase() === "siswa";
-    });
+    cardsStudentsAll = (Array.isArray(items) ? items : []).filter(
+      function (it) {
+        return String((it && it.role) || "").toLowerCase() === "siswa";
+      },
+    );
     cardsPhotoByUserID = {};
     cardsStudentsAll.forEach(function (it) {
       const userID = Number((it && it.user_id) || 0);
@@ -239,8 +249,7 @@
 
     if (deps.cardsPages) {
       deps.cardsPages.addEventListener("click", function (e) {
-        const pickBtn =
-          e.target && e.target.closest("button[data-photo-pick]");
+        const pickBtn = e.target && e.target.closest("button[data-photo-pick]");
         if (pickBtn) {
           const userID = String(pickBtn.getAttribute("data-photo-pick") || "");
           if (!userID) return;

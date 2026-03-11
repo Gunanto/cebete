@@ -2385,6 +2385,7 @@ textarea:focus-visible {
     color: #fff;
     padding: 6px;
     text-align: center;
+    position: relative;
 }
 
 .proktor-card-head h4 {
@@ -2398,6 +2399,21 @@ textarea:focus-visible {
     margin: 2px 0 0;
     font-size: 7pt;
     opacity: 0.92;
+}
+
+.proktor-card-class {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 7pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    padding: 1px 6px;
+    border-radius: 10px;
+    white-space: nowrap;
 }
 
 .proktor-card-body {
