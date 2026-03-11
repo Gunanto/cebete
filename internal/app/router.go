@@ -243,7 +243,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/users", authHandler.ListUsers)
 
 			secure.Group(func(admin chi.Router) {
-				admin.Use(authHandler.RequireRoles("admin", "proktor"))
+				admin.Use(authHandler.RequireRoles("admin", "proktor", "guru"))
 				admin.Get("/admin/dashboard/stats", authHandler.DashboardStats)
 				admin.Get("/admin/exams", examHandler.ListExamsForToken)
 				admin.Post("/admin/exams/{id}/token", examHandler.GenerateExamToken)
