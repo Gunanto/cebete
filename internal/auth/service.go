@@ -92,6 +92,11 @@ type SignupVerifyInput struct {
 	FormPayload     string
 }
 
+type SignupOTPCheckInput struct {
+	Email string
+	Code  string
+}
+
 type RegistrationRecord struct {
 	ID            int64      `json:"id"`
 	RoleRequested string     `json:"role_requested"`
@@ -708,6 +713,81 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 
 	_ = s.clearGuard(ctx, "otp_verify", guardKey)
 	return registrationID, nil
+}
+
+func (s *Service) CheckSignupOTP(ctx context.Context, in SignupOTPCheckInput) error {
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
+	in.Code = strings.TrimSpace(in.Code)
+
+	if in.Email == "" || in.Code == "" {
+		return ErrInvalidOTP
+	}
+
+	guardKey := normalizeGuardKey(in.Email)
+	locked, _, err := s.isGuardLocked(ctx, "otp_verify", guardKey)
+	if err != nil {
+		return fmt.Errorf("check signup otp guard: %w", err)
+	}
+	if locked {
+		return ErrRateLimited
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin signup otp check tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, code_hash, expires_at, attempt_count, max_attempt
+		FROM auth_otp_codes
+		WHERE email = $1
+		  AND purpose = 'verify_email'
+		  AND used_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, in.Email)
+
+	var otpID int64
+	var codeHash string
+	var expiresAt time.Time
+	var attempts int
+	var maxAttempt int
+	if err := row.Scan(&otpID, &codeHash, &expiresAt, &attempts, &maxAttempt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+			return ErrInvalidOTP
+		}
+		return fmt.Errorf("load signup otp check: %w", err)
+	}
+
+	if time.Now().After(expiresAt) {
+		_, _ = tx.ExecContext(ctx, `UPDATE auth_otp_codes SET used_at = now() WHERE id = $1`, otpID)
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return ErrOTPExpired
+	}
+	if attempts >= maxAttempt {
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return ErrInvalidOTP
+	}
+
+	expected := hashOTP(in.Email, in.Code)
+	if !secureEqual(expected, codeHash) {
+		_, _ = tx.ExecContext(ctx, `UPDATE auth_otp_codes SET attempt_count = attempt_count + 1 WHERE id = $1`, otpID)
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit signup otp check failed attempt: %w", err)
+		}
+		_ = s.registerFailure(ctx, "otp_verify", guardKey, s.otpMaxFailures, s.otpLockDuration)
+		return ErrInvalidOTP
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit signup otp check: %w", err)
+	}
+
+	_ = s.clearGuard(ctx, "otp_verify", guardKey)
+	return nil
 }
 
 func (s *Service) BootstrapAccounts(ctx context.Context, in BootstrapInput) error {

@@ -396,8 +396,32 @@
     const signupRequestOTPBtn = document.getElementById(
       "signup-request-otp-btn",
     );
+    const showSignupBtn = document.getElementById("login-show-signup-btn");
+    const showOTPBtn = document.getElementById("login-show-otp-btn");
+    const backToPasswordBtn = document.getElementById(
+      "login-back-to-password-btn",
+    );
+    const loginOTPBackBtn = document.getElementById("login-otp-back-btn");
+    const signupBackToLoginBtn = document.getElementById(
+      "signup-back-to-login-btn",
+    );
+    const signupBackToRequestBtn = document.getElementById(
+      "signup-back-to-request-btn",
+    );
+    const signupBackToVerifyBtn = document.getElementById(
+      "signup-back-to-verify-btn",
+    );
+    const signupVerifyOTPBtn = document.getElementById("signup-verify-otp-btn");
+    const loginSubHeader = document.getElementById("login-sub-header");
     const signupEmailInput = document.getElementById("signup-email");
     const signupOTPCodeInput = document.getElementById("signup-otp-code");
+    const signupEmailFinalInput = document.getElementById("signup-email-final");
+    const signupOTPCodeFinalInput = document.getElementById(
+      "signup-otp-code-final",
+    );
+    const signupStepRequest = document.getElementById("signup-step-request");
+    const signupStepVerify = document.getElementById("signup-step-verify");
+    const signupStepProfile = document.getElementById("signup-step-profile");
     const loginOTPRequestBtn = document.getElementById("login-otp-request-btn");
     const loginOTPEmailInput = document.getElementById("login-otp-email");
     const loginOTPCodeInput = document.getElementById("login-otp-code");
@@ -457,9 +481,15 @@
       text(
         msg,
         showSignup
-          ? "Masukkan data pendaftaran, kirim OTP, lalu verifikasi."
+          ? "Masukkan email, verifikasi OTP, lalu lengkapi data pendaftaran."
           : "Masukkan username/email dan password untuk login.",
       );
+      if (loginSubHeader) {
+        loginSubHeader.textContent = showSignup
+          ? "Masukkan email aktif untuk menerima OTP."
+          : "Silakan masuk untuk melanjutkan.";
+      }
+      if (showSignup) resetSignupSteps();
     }
 
     function resetLoginOTPSteps() {
@@ -469,6 +499,27 @@
       loginOTPDigitInputs.forEach(function (input) {
         input.value = "";
       });
+    }
+
+    function activateSignupStep(step) {
+      if (signupStepRequest) signupStepRequest.hidden = step !== "request";
+      if (signupStepVerify) signupStepVerify.hidden = step !== "verify";
+      if (signupStepProfile) signupStepProfile.hidden = step !== "profile";
+      if (loginSubHeader && showSignupPanel()) {
+        loginSubHeader.textContent =
+          step === "verify"
+            ? "Verifikasi email OTP untuk lanjut."
+            : step === "profile"
+              ? "Lengkapi data siswa non-reguler."
+              : "Masukkan email aktif untuk menerima OTP.";
+      }
+    }
+
+    function resetSignupSteps() {
+      activateSignupStep("request");
+      if (signupOTPCodeInput) signupOTPCodeInput.value = "";
+      if (signupOTPCodeFinalInput) signupOTPCodeFinalInput.value = "";
+      if (signupEmailFinalInput) signupEmailFinalInput.value = "";
     }
 
     function syncLoginOTPCode() {
@@ -539,6 +590,15 @@
           ? "Masukkan email, kirim OTP, lalu verifikasi untuk login."
           : "Masukkan username/email dan password untuk login.",
       );
+      if (loginSubHeader && !showSignupPanel()) {
+        loginSubHeader.textContent = useOTP
+          ? "Masukkan email, terima OTP, lalu verifikasi untuk login."
+          : "Silakan masuk untuk melanjutkan.";
+      }
+    }
+
+    function showSignupPanel() {
+      return Boolean(signupPanel && !signupPanel.hidden);
     }
 
     if (signinTabBtn) {
@@ -559,6 +619,50 @@
     if (otpMethodTabBtn) {
       otpMethodTabBtn.addEventListener("click", function () {
         activateAuthMethod("otp");
+      });
+    }
+    if (showOTPBtn) {
+      showOTPBtn.addEventListener("click", function () {
+        activateAuthMethod("otp");
+      });
+    }
+    if (showSignupBtn) {
+      showSignupBtn.addEventListener("click", function () {
+        activateLoginTab("signup");
+      });
+    }
+    if (backToPasswordBtn) {
+      backToPasswordBtn.addEventListener("click", function () {
+        resetLoginOTPSteps();
+        activateAuthMethod("password");
+      });
+    }
+    if (loginOTPBackBtn) {
+      loginOTPBackBtn.addEventListener("click", function () {
+        resetLoginOTPSteps();
+        if (loginOTPEmailInput && loginOTPEmailInput.focus) {
+          loginOTPEmailInput.focus();
+        }
+      });
+    }
+    if (signupBackToLoginBtn) {
+      signupBackToLoginBtn.addEventListener("click", function () {
+        activateLoginTab("signin");
+        activateAuthMethod("password");
+      });
+    }
+    if (signupBackToRequestBtn) {
+      signupBackToRequestBtn.addEventListener("click", function () {
+        activateSignupStep("request");
+        if (signupEmailInput && signupEmailInput.focus)
+          signupEmailInput.focus();
+      });
+    }
+    if (signupBackToVerifyBtn) {
+      signupBackToVerifyBtn.addEventListener("click", function () {
+        activateSignupStep("verify");
+        if (signupOTPCodeInput && signupOTPCodeInput.focus)
+          signupOTPCodeInput.focus();
       });
     }
 
@@ -660,10 +764,12 @@
           await api("/api/v1/auth/signup/otp/request", "POST", {
             email: email,
           });
+          if (signupEmailFinalInput) signupEmailFinalInput.value = email;
           text(
             msg,
             "OTP sudah dikirim jika email memenuhi syarat pendaftaran.",
           );
+          activateSignupStep("verify");
           if (signupOTPCodeInput && signupOTPCodeInput.focus)
             signupOTPCodeInput.focus();
         } catch (err) {
@@ -674,14 +780,38 @@
       });
     }
 
+    if (signupVerifyOTPBtn && signupEmailInput && signupOTPCodeInput) {
+      signupVerifyOTPBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          signupForm || signupVerifyOTPBtn,
+          msg,
+          "Memverifikasi OTP pendaftaran...",
+        );
+        try {
+          const email = normalizeCredential(signupEmailInput.value);
+          const code = normalizeCredential(signupOTPCodeInput.value);
+          await api("/api/v1/auth/signup/otp/check", "POST", {
+            email: email,
+            code: code,
+          });
+          if (signupEmailFinalInput) signupEmailFinalInput.value = email;
+          if (signupOTPCodeFinalInput) signupOTPCodeFinalInput.value = code;
+          activateSignupStep("profile");
+          text(msg, "OTP valid. Lanjut isi data pendaftaran.");
+          const fullNameInput = document.getElementById("signup-full-name");
+          if (fullNameInput && fullNameInput.focus) fullNameInput.focus();
+        } catch (err) {
+          text(msg, "Verifikasi OTP gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
     if (signupForm) {
       signupForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const done = beginBusy(
-          signupForm,
-          msg,
-          "Memverifikasi OTP dan membuat pendaftaran...",
-        );
+        const done = beginBusy(signupForm, msg, "Membuat pendaftaran...");
         const fd = new FormData(signupForm);
         try {
           const schoolName = normalizeCredential(fd.get("institution_name"));
@@ -717,7 +847,7 @@
               "). Tunggu verifikasi proktor/admin sebelum bisa login.",
           );
           signupForm.reset();
-          if (signupOTPCodeInput) signupOTPCodeInput.value = "";
+          resetSignupSteps();
         } catch (err) {
           text(msg, "Pendaftaran gagal: " + err.message);
         } finally {

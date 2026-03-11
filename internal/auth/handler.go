@@ -63,6 +63,11 @@ type signupVerifyOTPRequest struct {
 	FormPayload     json.RawMessage `json:"form_payload"`
 }
 
+type signupCheckOTPRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
 type createRegistrationRequest struct {
 	RoleRequested   string          `json:"role_requested"`
 	Email           string          `json:"email"`
@@ -276,6 +281,36 @@ func (h *Handler) VerifySignupOTP(w http.ResponseWriter, r *http.Request) {
 			"registration_id": registrationID,
 			"status":          "pending",
 		},
+	})
+}
+
+func (h *Handler) CheckSignupOTP(w http.ResponseWriter, r *http.Request) {
+	var req signupCheckOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	if err := h.svc.CheckSignupOTP(r.Context(), SignupOTPCheckInput{
+		Email: req.Email,
+		Code:  req.Code,
+	}); err != nil {
+		switch {
+		case errors.Is(err, ErrRateLimited):
+			writeJSON(w, r, http.StatusTooManyRequests, apiResponse{OK: false, Error: "too many otp attempts"})
+		case errors.Is(err, ErrInvalidOTP):
+			writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "invalid otp"})
+		case errors.Is(err, ErrOTPExpired):
+			writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "otp expired"})
+		default:
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{
+		OK:   true,
+		Data: map[string]string{"status": "otp verified"},
 	})
 }
 

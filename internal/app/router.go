@@ -152,6 +152,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/otp/request", authHandler.RequestOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/otp/verify", authHandler.VerifyOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/request", authHandler.RequestSignupOTP)
+		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/check", authHandler.CheckSignupOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/verify", authHandler.VerifySignupOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/registrations", authHandler.CreateRegistration)
 		api.With(RateLimitMiddleware(aiRateLimiter)).Post("/assistant", assistantHandler.Reply)

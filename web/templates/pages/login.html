@@ -1,14 +1,13 @@
 {{define "login_content"}}
 <section class="login-shell">
-    <header class="login-brand-head">
-        <div class="login-brand-badge" aria-hidden="true">
-            <img src="/static/brand/gcbt-icon.svg" alt="" />
-        </div>
-        <h2>Selamat Datang</h2>
-        <p>Silakan masuk ke akun Anda.</p>
-    </header>
-
     <section class="login-modern-card">
+        <header class="login-brand-head" id="login-header-text">
+            <div class="login-brand-badge" aria-hidden="true">
+                <img src="/static/brand/gcbt-icon.svg" alt="" />
+            </div>
+            <h2>Selamat Datang</h2>
+            <p id="login-sub-header">Silakan masuk untuk melanjutkan.</p>
+        </header>
         <div
             class="login-modern-tabs login-main-tabs"
             role="tablist"
@@ -33,7 +32,11 @@
                 Daftar Non-Reguler
             </button>
         </div>
-        <div class="login-modern-tabs" role="tablist" aria-label="Metode login">
+        <div
+            class="login-modern-tabs login-method-tabs"
+            role="tablist"
+            aria-label="Metode login"
+        >
             <button
                 id="login-auth-tab-password"
                 type="button"
@@ -78,80 +81,13 @@
 
         <section id="login-signin-panel" class="login-modern-panel">
             <form id="login-form" class="login-modern-form">
-                <label for="login-identifier">Username atau Email</label>
-                <div class="login-input-wrap">
-                    <span class="login-input-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path
-                                d="M20 21a8 8 0 0 0-16 0m11-11a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </span>
-                    <input
-                        id="login-identifier"
-                        type="text"
-                        name="identifier"
-                        placeholder="Masukkan username atau email"
-                        required
-                    />
-                </div>
-
-                <div class="login-row-between">
-                    <label for="login-password">Password</label>
-                    <a class="login-help-link" href="#">Lupa password?</a>
-                </div>
-                <div class="login-password-wrap login-input-wrap">
-                    <span class="login-input-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path
-                                d="M7 10V7a5 5 0 0 1 10 0v3m-9 0h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2Z"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </span>
-                    <input
-                        id="login-password"
-                        type="password"
-                        name="password"
-                        placeholder="Masukkan password"
-                        required
-                    />
-                    <button
-                        id="toggle-login-password"
-                        type="button"
-                        class="login-toggle-password"
-                        aria-label="Tampilkan password"
-                        aria-pressed="false"
-                    >
-                        <span data-eye-open aria-hidden="true">
+                <div class="login-input-group">
+                    <label for="login-identifier">Username atau Email</label>
+                    <div class="login-input-wrap">
+                        <span class="login-input-icon" aria-hidden="true">
                             <svg viewBox="0 0 24 24" fill="none">
                                 <path
-                                    d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                />
-                                <circle
-                                    cx="12"
-                                    cy="12"
-                                    r="3"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                />
-                            </svg>
-                        </span>
-                        <span data-eye-closed aria-hidden="true" hidden>
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <path
-                                    d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.2 5.3A11 11 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-4.4 4.8M6.1 8.3A17 17 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 2.8-.3"
+                                    d="M20 21a8 8 0 0 0-16 0m11-11a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
                                     stroke="currentColor"
                                     stroke-width="1.8"
                                     stroke-linecap="round"
@@ -159,16 +95,157 @@
                                 />
                             </svg>
                         </span>
-                    </button>
+                        <input
+                            id="login-identifier"
+                            type="text"
+                            name="identifier"
+                            placeholder="Contoh: user123 atau nama@email.com"
+                            required
+                        />
+                    </div>
                 </div>
 
-                <button class="login-primary-btn" type="submit">
-                    Masuk Sekarang
+                <div class="login-input-group">
+                    <div class="login-row-between">
+                        <label for="login-password">Password</label>
+                        <a
+                            class="login-help-link"
+                            href="mailto:gunanto75@gmail.com?subject=Bantuan%20Reset%20Password"
+                        >
+                            Lupa password?
+                        </a>
+                    </div>
+                    <div class="login-password-wrap login-input-wrap">
+                        <span class="login-input-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M7 10V7a5 5 0 0 1 10 0v3m-9 0h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2Z"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        <input
+                            id="login-password"
+                            type="password"
+                            name="password"
+                            placeholder="Masukkan password"
+                            required
+                        />
+                        <button
+                            id="toggle-login-password"
+                            type="button"
+                            class="login-toggle-password"
+                            aria-label="Tampilkan password"
+                            aria-pressed="false"
+                        >
+                            <span data-eye-open aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <path
+                                        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <circle
+                                        cx="12"
+                                        cy="12"
+                                        r="3"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    />
+                                </svg>
+                            </span>
+                            <span data-eye-closed aria-hidden="true" hidden>
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <path
+                                        d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.2 5.3A11 11 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-4.4 4.8M6.1 8.3A17 17 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 2.8-.3"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <button class="login-primary-btn" type="submit">Masuk</button>
+
+                <div class="login-divider">Atau jika belum punya akun</div>
+
+                <button
+                    id="login-show-signup-btn"
+                    type="button"
+                    class="login-secondary-btn login-secondary-btn-icon"
+                >
+                    <span class="login-tab-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path
+                                d="M3 6h18v12H3V6Zm0 1 9 6 9-6"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </span>
+                    Daftar via OTP Email
+                </button>
+                <button
+                    id="login-show-otp-btn"
+                    type="button"
+                    class="login-link-btn"
+                >
+                    Masuk via OTP Email
                 </button>
             </form>
 
             <form id="login-otp-form" class="login-modern-form" hidden>
                 <div id="login-otp-step-request" class="login-otp-step">
+                    <button
+                        id="login-back-to-password-btn"
+                        type="button"
+                        class="login-back-link"
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 12H5m7 7-7-7 7-7"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        Kembali ke login password
+                    </button>
+                    <div class="login-state-card">
+                        <div class="login-state-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M3 6h18v12H3V6Zm0 1 9 6 9-6"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>Kirim OTP ke email</strong>
+                            <p>
+                                Masukkan email yang sudah terdaftar. Setelah OTP
+                                diterima, isi 6 digit kode lalu klik "Verifikasi
+                                dan Masuk".
+                            </p>
+                        </div>
+                    </div>
                     <label for="login-otp-email">Alamat Email Terdaftar</label>
                     <div class="login-input-wrap">
                         <span class="login-input-icon" aria-hidden="true">
@@ -191,18 +268,64 @@
                         />
                     </div>
                     <p class="login-hint">
-                        Kami akan mengirimkan kode OTP 6 digit ke email Anda.
+                        Kami akan mengirim kode OTP 6 digit ke email Anda.
                     </p>
                     <button
                         id="login-otp-request-btn"
                         type="button"
-                        class="login-secondary-btn"
+                        class="login-primary-btn"
                     >
                         Kirim Kode OTP
                     </button>
                 </div>
 
                 <div id="login-otp-step-verify" class="login-otp-step" hidden>
+                    <button
+                        id="login-otp-back-btn"
+                        type="button"
+                        class="login-back-link"
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 12H5m7 7-7-7 7-7"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        Ganti email
+                    </button>
+                    <div class="login-state-card login-state-card-muted">
+                        <div class="login-state-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M12 3l7.5 4.5v4.7c0 4.7-3.2 9.1-7.5 10.8C7.7 21.3 4.5 16.9 4.5 12.2V7.5L12 3Z"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                                <path
+                                    d="m9.5 12 1.7 1.7L14.8 10"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>Verifikasi OTP</strong>
+                            <p>
+                                Tempel atau ketik 6 digit OTP dari email Anda.
+                                Login baru selesai saat tombol verifikasi
+                                dikirim.
+                            </p>
+                        </div>
+                    </div>
                     <p class="login-otp-note">
                         Kode OTP sudah dikirim. Masukkan kode verifikasi untuk
                         melanjutkan login.
@@ -262,127 +385,279 @@
                     <button class="login-primary-btn" type="submit">
                         Verifikasi dan Masuk
                     </button>
-                    <button
-                        id="login-otp-reset-btn"
-                        type="button"
-                        class="login-link-btn"
-                    >
-                        Ganti Email
-                    </button>
                 </div>
             </form>
         </section>
         <section id="login-signup-panel" class="login-modern-panel" hidden>
             <form id="signup-form" class="login-modern-form">
                 <input type="hidden" name="role_requested" value="siswa" />
-                <label for="signup-full-name">Nama Lengkap</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-full-name"
-                        type="text"
-                        name="full_name"
-                        placeholder="Nama sesuai identitas"
-                        required
-                    />
+                <input id="signup-email-final" type="hidden" name="email" />
+                <input id="signup-otp-code-final" type="hidden" name="code" />
+
+                <div id="signup-step-request" class="login-otp-step">
+                    <button
+                        id="signup-back-to-login-btn"
+                        type="button"
+                        class="login-back-link"
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 12H5m7 7-7-7 7-7"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        Kembali ke login
+                    </button>
+                    <div class="login-state-card">
+                        <div class="login-state-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M3 6h18v12H3V6Zm0 1 9 6 9-6"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>Pendaftaran siswa non-reguler</strong>
+                            <p>
+                                Langkah 1 dari 3. Masukkan email aktif untuk
+                                menerima OTP verifikasi.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-email">Email</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-email"
+                                type="email"
+                                placeholder="nama@email.com"
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        id="signup-request-otp-btn"
+                        type="button"
+                        class="login-primary-btn"
+                    >
+                        Kirim OTP ke Email
+                    </button>
                 </div>
 
-                <label for="signup-email">Email</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-email"
-                        type="email"
-                        name="email"
-                        placeholder="nama@email.com"
-                        required
-                    />
+                <div id="signup-step-verify" class="login-otp-step" hidden>
+                    <button
+                        id="signup-back-to-request-btn"
+                        type="button"
+                        class="login-back-link"
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 12H5m7 7-7-7 7-7"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        Ganti email
+                    </button>
+                    <div class="login-state-card login-state-card-muted">
+                        <div class="login-state-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M12 3l7.5 4.5v4.7c0 4.7-3.2 9.1-7.5 10.8C7.7 21.3 4.5 16.9 4.5 12.2V7.5L12 3Z"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                                <path
+                                    d="m9.5 12 1.7 1.7L14.8 10"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>Verifikasi OTP</strong>
+                            <p>
+                                Langkah 2 dari 3. Masukkan 6 digit OTP dari
+                                email, lalu lanjut ke form data siswa.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-otp-code">Kode OTP</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-otp-code"
+                                type="text"
+                                placeholder="Masukkan 6 digit OTP"
+                                inputmode="numeric"
+                                maxlength="6"
+                                autocomplete="one-time-code"
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        id="signup-verify-otp-btn"
+                        type="button"
+                        class="login-primary-btn"
+                    >
+                        Verifikasi OTP
+                    </button>
                 </div>
 
-                <label for="signup-phone">No. HP (opsional)</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-phone"
-                        type="tel"
-                        name="phone"
-                        placeholder="08xxxxxxxxxx"
-                    />
-                </div>
+                <div id="signup-step-profile" class="login-otp-step" hidden>
+                    <button
+                        id="signup-back-to-verify-btn"
+                        type="button"
+                        class="login-back-link"
+                    >
+                        <span aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 12H5m7 7-7-7 7-7"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        Kembali ke verifikasi OTP
+                    </button>
+                    <div class="login-state-card">
+                        <div class="login-state-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 1 1 14 0"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>Lengkapi data siswa</strong>
+                            <p>
+                                Langkah 3 dari 3. Setelah data lengkap, kirim
+                                pendaftaran untuk ditinjau admin/proktor.
+                            </p>
+                        </div>
+                    </div>
 
-                <label for="signup-school-name">Nama Sekolah</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-school-name"
-                        type="text"
-                        name="institution_name"
-                        placeholder="Nama sekolah"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-full-name">Nama Lengkap</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-full-name"
+                                type="text"
+                                name="full_name"
+                                placeholder="Nama sesuai identitas"
+                                required
+                            />
+                        </div>
+                    </div>
 
-                <label for="signup-npsn">NPSN</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-npsn"
-                        type="text"
-                        name="npsn"
-                        placeholder="Nomor pokok sekolah nasional"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-phone">No. HP (opsional)</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-phone"
+                                type="tel"
+                                name="phone"
+                                placeholder="08xxxxxxxxxx"
+                            />
+                        </div>
+                    </div>
 
-                <label for="signup-kabupaten">Kabupaten</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-kabupaten"
-                        type="text"
-                        name="kabupaten"
-                        placeholder="Kabupaten/Kota"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-school-name">Nama Sekolah</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-school-name"
+                                type="text"
+                                name="institution_name"
+                                placeholder="Nama sekolah"
+                                required
+                            />
+                        </div>
+                    </div>
 
-                <label for="signup-provinsi">Provinsi</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-provinsi"
-                        type="text"
-                        name="provinsi"
-                        placeholder="Provinsi"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-npsn">NPSN</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-npsn"
+                                type="text"
+                                name="npsn"
+                                placeholder="Nomor pokok sekolah nasional"
+                                required
+                            />
+                        </div>
+                    </div>
 
-                <label for="signup-class-name">Kelas</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-class-name"
-                        type="text"
-                        name="class_name"
-                        placeholder="Contoh: X IPA 1"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-kabupaten">Kabupaten</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-kabupaten"
+                                type="text"
+                                name="kabupaten"
+                                placeholder="Kabupaten/Kota"
+                                required
+                            />
+                        </div>
+                    </div>
 
-                <label for="signup-otp-code">Kode OTP</label>
-                <div class="login-input-wrap">
-                    <input
-                        id="signup-otp-code"
-                        type="text"
-                        name="code"
-                        placeholder="Masukkan kode OTP"
-                        required
-                    />
-                </div>
+                    <div class="login-input-group">
+                        <label for="signup-provinsi">Provinsi</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-provinsi"
+                                type="text"
+                                name="provinsi"
+                                placeholder="Provinsi"
+                                required
+                            />
+                        </div>
+                    </div>
 
-                <button
-                    id="signup-request-otp-btn"
-                    type="button"
-                    class="login-secondary-btn"
-                >
-                    Kirim OTP Verifikasi
-                </button>
-                <button class="login-primary-btn" type="submit">
-                    Kirim Pendaftaran
-                </button>
+                    <div class="login-input-group">
+                        <label for="signup-class-name">Kelas</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-class-name"
+                                type="text"
+                                name="class_name"
+                                placeholder="Contoh: X IPA 1"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <button class="login-primary-btn" type="submit">
+                        Kirim Pendaftaran
+                    </button>
+                </div>
             </form>
         </section>
     </section>
@@ -394,9 +669,8 @@
         aria-live="polite"
     ></p>
     <p class="login-signup-foot">
-        Belum punya akun? Hubungi admin/proktor di
-        <a href="mailto:gunanto75@gmail.com">gunanto75@gmail.com</a>
-        untuk pendaftaran.
+        Butuh bantuan? Hubungi
+        <a href="mailto:gunanto75@gmail.com">Admin</a>
     </p>
 </section>
 {{end}}
