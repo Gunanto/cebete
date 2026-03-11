@@ -615,40 +615,51 @@
     if (typeof deps.syncManuscriptSubjectState === "function") {
       deps.syncManuscriptSubjectState();
     }
-    
+
     // Fallback: if syncManuscriptSubjectState didn't populate fields (e.g., transferred questions not in blueprint cache),
     // populate them directly from item data
     const subjectID = Number(item.subject_id || 0);
     if (subjectID > 0 && deps.manuscriptSubjectSelect) {
-      if (!deps.manuscriptSubjectSelect.value || deps.manuscriptSubjectSelect.value === "") {
+      if (
+        !deps.manuscriptSubjectSelect.value ||
+        deps.manuscriptSubjectSelect.value === ""
+      ) {
         deps.manuscriptSubjectSelect.value = String(subjectID);
         deps.manuscriptSubjectSelect.disabled = true;
-        
+
         // Fill learning goal select for this subject
         if (typeof deps.fillLearningGoalSelect === "function") {
-          deps.fillLearningGoalSelect(deps.manuscriptLearningGoalSelect, subjectID);
+          deps.fillLearningGoalSelect(
+            deps.manuscriptLearningGoalSelect,
+            subjectID,
+          );
         }
-        
+
         // Set learning goal value
         const learningGoalID = Number(item.learning_goal_id || 0);
         if (learningGoalID > 0 && deps.manuscriptLearningGoalSelect) {
           deps.manuscriptLearningGoalSelect.value = String(learningGoalID);
         }
-        
+
         // Fill question code select for this subject
         if (typeof deps.fillQuestionCodeSelect === "function") {
-          deps.fillQuestionCodeSelect(deps.manuscriptQuestionCodeSelect, subjectID, true);
+          deps.fillQuestionCodeSelect(
+            deps.manuscriptQuestionCodeSelect,
+            subjectID,
+            true,
+          );
         }
-        
+
         // Set question code value
         const questionCodeID = Number(item.question_code_id || 0);
         if (deps.manuscriptQuestionCodeSelect) {
-          deps.manuscriptQuestionCodeSelect.value = questionCodeID > 0 ? String(questionCodeID) : "";
+          deps.manuscriptQuestionCodeSelect.value =
+            questionCodeID > 0 ? String(questionCodeID) : "";
           deps.manuscriptQuestionCodeSelect.disabled = false;
         }
       }
     }
-    
+
     applyTypeUI(true);
     setQuillHTMLValue(manuscriptStimulusQuill, item.stimulus_html);
     setQuillHTMLValue(manuscriptStemQuill, item.stem_html);
@@ -673,7 +684,9 @@
   function previewVersion(item) {
     if (!item || !deps || !deps.manuscriptPreviewContent) return;
     const keyObj = parseAnswerKeyObject(item.answer_key);
-    const safeJSON = deps.escapeHtml(JSON.stringify(keyObj, null, 2));
+    const rawQuestionType = String(item.question_type || "")
+      .trim()
+      .toLowerCase();
     const stem = String(item.stem_html || "").trim();
     const explanation = String(item.explanation_html || "").trim();
     const hint = String(item.hint_html || "").trim();
@@ -681,21 +694,49 @@
     const statements = Array.isArray(keyObj && keyObj.statements)
       ? keyObj.statements
       : [];
+    const questionType = (function () {
+      if (rawQuestionType) return rawQuestionType;
+      if (Array.isArray(keyObj && keyObj.correct)) return "multi_jawaban";
+      if (typeof (keyObj && keyObj.correct) === "string") return "pg_tunggal";
+      if (Array.isArray(keyObj && keyObj.statements)) {
+        return "benar_salah_pernyataan";
+      }
+      return "";
+    })();
     const stimulusHTML = String(item.stimulus_html || "").trim()
       ? String(item.stimulus_html || "").trim()
       : '<div class="muted">(tanpa stimulus)</div>';
+    const infoCode = deps.resolveManuscriptQuestionCode
+      ? deps.resolveManuscriptQuestionCode(item)
+      : "";
+    const infoTypeRaw = deps.resolveManuscriptQuestionType
+      ? deps.resolveManuscriptQuestionType(item)
+      : questionType;
+    const infoType = deps.shortQuestionType
+      ? deps.shortQuestionType(infoTypeRaw)
+      : infoTypeRaw;
+    const infoGoal = deps.resolveManuscriptLearningGoal
+      ? deps.resolveManuscriptLearningGoal(item)
+      : "";
+    const infoCodeHTML = infoCode
+      ? deps.escapeHtml(String(infoCode))
+      : '<span class="muted">-</span>';
+    const infoTypeHTML = infoType
+      ? deps.escapeHtml(String(infoType))
+      : '<span class="muted">-</span>';
+    const infoGoalHTML = infoGoal
+      ? deps.escapeHtml(String(infoGoal))
+      : '<span class="muted">-</span>';
     const optionsHTML = options.length
-      ? options
+      ? "<ol>" +
+        options
           .map(function (it) {
-            return (
-              '<div class="mt"><strong>' +
-              deps.escapeHtml(String((it && it.option_key) || "")) +
-              "</strong><div>" +
-              String((it && it.option_html) || "") +
-              "</div></div>"
-            );
+            const key = deps.escapeHtml(String((it && it.option_key) || ""));
+            const html = String((it && it.option_html) || "");
+            return "<li><strong>" + key + "</strong> " + html + "</li>";
           })
-          .join("")
+          .join("") +
+        "</ol>"
       : '<div class="muted">Tidak ada opsi tersimpan.</div>';
     const statementsHTML = statements.length
       ? "<ol>" +
@@ -703,27 +744,76 @@
           .map(function (it) {
             const id = deps.escapeHtml(String((it && it.id) || "-"));
             const text = deps.escapeHtml(String((it && it.statement) || ""));
-            const keyLabel = (it && it.correct) === true ? "Benar" : "Salah";
-            return (
-              "<li><div><strong>" +
-              id +
-              "</strong> " +
-              text +
-              '</div><div class="muted">Kunci: ' +
-              deps.escapeHtml(keyLabel) +
-              "</div></li>"
-            );
+            return "<li><strong>" + id + "</strong> " + text + "</li>";
           })
           .join("") +
         "</ol>"
       : '<div class="muted">Tidak ada pernyataan tersimpan.</div>';
-    const rightPanelHTML = statements.length
-      ? '<div><strong>Pernyataan:</strong><div class="box mt">' +
-        statementsHTML +
-        "</div></div>"
-      : '<div><strong>Opsi:</strong><div class="box mt">' +
-        optionsHTML +
-        "</div></div>";
+    const correctKeysFromOptions = options
+      .filter(function (it) {
+        return it && it.is_correct === true;
+      })
+      .map(function (it) {
+        return String((it && it.option_key) || "").trim();
+      })
+      .filter(Boolean);
+    const answerKeyHTML = (function () {
+      if (questionType === "pg_tunggal") {
+        const fromKey = String(keyObj.correct || "").trim();
+        const correct = deps.escapeHtml(
+          fromKey || String(correctKeysFromOptions[0] || "").trim(),
+        );
+        return correct
+          ? '<div class="answer-key-value">' + correct + "</div>"
+          : '<div class="muted">Kunci jawaban belum diisi.</div>';
+      }
+      if (questionType === "multi_jawaban") {
+        const correctList = Array.isArray(keyObj.correct)
+          ? keyObj.correct
+              .map(function (it) {
+                return String(it || "").trim();
+              })
+              .filter(Boolean)
+          : [];
+        const merged = correctList.length
+          ? correctList
+          : correctKeysFromOptions;
+        return correctList.length
+          ? '<div class="answer-key-value">' +
+              deps.escapeHtml(merged.join(", ")) +
+              "</div>"
+          : '<div class="muted">Kunci jawaban belum diisi.</div>';
+      }
+      if (questionType === "benar_salah_pernyataan") {
+        return statements.length
+          ? "<ol>" +
+              statements
+                .map(function (it) {
+                  const id = deps.escapeHtml(String((it && it.id) || "-"));
+                  const keyLabel =
+                    (it && it.correct) === true ? "Benar" : "Salah";
+                  return (
+                    "<li><strong>" +
+                    id +
+                    "</strong> " +
+                    deps.escapeHtml(keyLabel) +
+                    "</li>"
+                  );
+                })
+                .join("") +
+              "</ol>"
+          : '<div class="muted">Kunci jawaban belum diisi.</div>';
+      }
+      if (correctKeysFromOptions.length) {
+        return (
+          '<div class="answer-key-value">' +
+          deps.escapeHtml(correctKeysFromOptions.join(", ")) +
+          "</div>"
+        );
+      }
+      return '<div class="muted">Kunci jawaban belum diisi.</div>';
+    })();
+    const optionSectionHTML = statements.length ? statementsHTML : optionsHTML;
     if (deps.manuscriptPreviewTitle) {
       deps.text(
         deps.manuscriptPreviewTitle,
@@ -734,22 +824,29 @@
       );
     }
     deps.manuscriptPreviewContent.innerHTML = [
-      '<div class="mt preview-grid">' +
-        '<div class="preview-col">' +
-        '<div><strong>Stimulus:</strong><div class="box mt">' +
-        stimulusHTML +
-        "</div></div>" +
-        '<div class="mt"><strong>Stem:</strong><div class="box mt">' +
-        (stem || '<span class="muted">(kosong)</span>') +
-        "</div></div>" +
+      '<div class="mt">' +
+        "<div><strong>Kode Soal:</strong> " +
+        infoCodeHTML +
         "</div>" +
-        '<div class="preview-col">' +
-        rightPanelHTML +
-        '<div class="mt"><strong>Answer Key:</strong><pre class="code-box">' +
-        safeJSON +
-        "</pre></div>" +
+        '<div class="mt"><strong>Tipe Soal:</strong> ' +
+        infoTypeHTML +
+        "</div>" +
+        '<div class="mt"><strong>Tujuan Pembelajaran:</strong> ' +
+        infoGoalHTML +
         "</div>" +
         "</div>",
+      '<div class="mt"><strong>Stimulus:</strong><div class="mt">' +
+        stimulusHTML +
+        "</div></div>",
+      '<div class="mt"><strong>Rumusan Butir Soal:</strong><div class="mt">' +
+        (stem || '<span class="muted">(kosong)</span>') +
+        "</div></div>",
+      '<div class="mt"><strong>Opsi Jawaban:</strong><div class="mt">' +
+        optionSectionHTML +
+        "</div></div>",
+      '<div class="mt"><strong>Kunci Jawaban:</strong><div class="mt">' +
+        answerKeyHTML +
+        "</div></div>",
       '<div class="mt"><strong>Penjelasan:</strong><div class="box mt">' +
         (explanation || '<span class="muted">(kosong)</span>') +
         "</div></div>",

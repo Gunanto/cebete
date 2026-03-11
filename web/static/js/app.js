@@ -6406,6 +6406,10 @@
         findQuestionByID: findQuestionByID,
         loadBlueprints: loadBlueprints,
         fillBlueprintSelect: fillBlueprintSelect,
+        resolveManuscriptQuestionType: resolveManuscriptQuestionType,
+        resolveManuscriptQuestionCode: resolveManuscriptQuestionCode,
+        resolveManuscriptLearningGoal: resolveManuscriptLearningGoal,
+        shortQuestionType: shortQuestionType,
         loadAllManuscriptVersionsFromBlueprints:
           loadAllManuscriptVersionsFromBlueprints,
         reloadManuscriptsByCurrentTableScope:
