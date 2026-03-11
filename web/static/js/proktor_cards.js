@@ -70,6 +70,9 @@
         "<tr><td>Nama</td><td>:</td><td>" +
           deps.escapeHtml(fullName) +
           "</td></tr>",
+        "<tr><td>Kelas</td><td>:</td><td>" +
+          deps.escapeHtml(formatClassLabel(className)) +
+          "</td></tr>",
         "<tr><td>Username</td><td>:</td><td>" +
           deps.escapeHtml(username) +
           "</td></tr>",
