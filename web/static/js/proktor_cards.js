@@ -13,6 +13,14 @@
     deps.cardsMeta.classList.remove("muted");
   }
 
+  function formatClassLabel(raw) {
+    const name = String(raw || "").trim();
+    if (!name) return "Tak Ada Kelas";
+    const lower = name.toLowerCase();
+    if (lower.startsWith("kelas ")) return name;
+    return "Kelas " + name;
+  }
+
   function renderExamCardsPage(items, startIndex) {
     const page = document.createElement("div");
     page.className = "proktor-cards-page";
@@ -27,7 +35,7 @@
         continue;
       }
       const schoolName = String((current.school_name || "").trim() || "-");
-      const className = String((current.class_name || "").trim() || "-");
+      const className = String((current.class_name || "").trim() || "");
       const participantNo = String(
         (current.participant_no || "").trim() || "-",
       );
@@ -42,9 +50,6 @@
       const photoAlt = "Foto " + fullName;
       card.innerHTML = [
         '<div class="proktor-card-head">',
-        '<span class="proktor-card-class">Kelas ' +
-          deps.escapeHtml(className) +
-          "</span>",
         "<h4>Kartu Peserta Ujian</h4>",
         "<p>" + deps.escapeHtml(schoolName) + "</p>",
         "</div>",
@@ -82,6 +87,9 @@
           '"' +
           (photoSrc ? "" : " disabled") +
           ">Hapus</button>",
+        '<span class="proktor-card-class">' +
+          deps.escapeHtml(formatClassLabel(className)) +
+          "</span>",
         '<input type="file" accept="image/*" data-photo-input="' +
           deps.escapeHtml(String(userID)) +
           '" hidden />',

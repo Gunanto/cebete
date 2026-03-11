@@ -2385,7 +2385,6 @@ textarea:focus-visible {
     color: #fff;
     padding: 6px;
     text-align: center;
-    position: relative;
 }
 
 .proktor-card-head h4 {
@@ -2402,18 +2401,17 @@ textarea:focus-visible {
 }
 
 .proktor-card-class {
-    position: absolute;
-    top: 4px;
-    right: 6px;
     font-size: 7pt;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    background: rgba(255, 255, 255, 0.16);
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: #e2e8f0;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
     padding: 1px 6px;
     border-radius: 10px;
     white-space: nowrap;
+    margin-left: auto;
 }
 
 .proktor-card-body {
@@ -2470,6 +2468,7 @@ textarea:focus-visible {
     display: flex;
     gap: 4px;
     padding: 0 8px 4px;
+    align-items: center;
 }
 
 .proktor-card-photo-btn {
