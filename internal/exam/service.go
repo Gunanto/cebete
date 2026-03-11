@@ -242,6 +242,7 @@ type ExamAssignmentUser struct {
 type ExamParticipantResult struct {
 	ExamID      int64                      `json:"exam_id"`
 	QuestionNos []int                      `json:"question_nos"`
+	AnswerKeys  []string                   `json:"answer_keys,omitempty"`
 	TotalWeight float64                    `json:"total_weight"`
 	Rows        []ExamParticipantResultRow `json:"rows"`
 }
@@ -1830,13 +1831,56 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		SeqNo        int
 		QuestionID   int64
 		QuestionType string
+		AnswerKey    []byte
 		Weight       float64
 	}
 	questionCols := make([]examQuestionColumn, 0)
 	qRows, err := s.db.QueryContext(ctx, `
-		SELECT eq.seq_no, eq.question_id, q.question_type, eq.weight
+		SELECT
+			eq.seq_no,
+			eq.question_id,
+			q.question_type,
+			COALESCE(
+				NULLIF(qv.answer_key, '{}'::jsonb),
+				NULLIF(qv_fallback.answer_key, '{}'::jsonb),
+				'{}'::jsonb
+			) AS answer_key,
+			eq.weight
 		FROM exam_questions eq
 		JOIN questions q ON q.id = eq.question_id
+		LEFT JOIN LATERAL (
+			SELECT qv.answer_key
+			FROM question_versions qv
+			WHERE qv.question_id = eq.question_id
+			ORDER BY CASE
+				WHEN qv.version_no = q.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT qv2.answer_key
+			FROM questions q2
+			JOIN question_versions qv2 ON qv2.question_id = q2.id
+			WHERE q.question_code_id IS NOT NULL
+			  AND q2.question_code_id = q.question_code_id
+			  AND q2.id <> q.id
+			  AND q2.question_type = q.question_type
+			  AND (
+				NULLIF(btrim(q.metadata->>'title'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(q.metadata->>'title'), '')
+			  )
+			  AND (
+				NULLIF(btrim(q.metadata->>'material'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(q.metadata->>'material'), '')
+			  )
+			ORDER BY CASE
+				WHEN qv2.status = 'final' THEN 0
+				ELSE 1
+			END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
 		WHERE eq.exam_id = $1
 		ORDER BY eq.seq_no ASC
 	`, examID)
@@ -1845,7 +1889,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 	}
 	for qRows.Next() {
 		var c examQuestionColumn
-		if err := qRows.Scan(&c.SeqNo, &c.QuestionID, &c.QuestionType, &c.Weight); err != nil {
+		if err := qRows.Scan(&c.SeqNo, &c.QuestionID, &c.QuestionType, &c.AnswerKey, &c.Weight); err != nil {
 			_ = qRows.Close()
 			return nil, fmt.Errorf("scan exam question for results matrix: %w", err)
 		}
@@ -1858,11 +1902,13 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 	_ = qRows.Close()
 
 	questionNos := make([]int, 0, len(questionCols))
+	answerKeys := make([]string, 0, len(questionCols))
 	questionTypeByID := make(map[int64]string, len(questionCols))
 	questionIndexByID := make(map[int64]int, len(questionCols))
 	totalWeight := 0.0
 	for idx, c := range questionCols {
 		questionNos = append(questionNos, c.SeqNo)
+		answerKeys = append(answerKeys, formatAnswerKeyForResultsMatrix(c.QuestionType, c.AnswerKey))
 		questionTypeByID[c.QuestionID] = c.QuestionType
 		questionIndexByID[c.QuestionID] = idx
 		totalWeight += c.Weight
@@ -2057,6 +2103,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 	return &ExamParticipantResult{
 		ExamID:      examID,
 		QuestionNos: questionNos,
+		AnswerKeys:  answerKeys,
 		TotalWeight: totalWeight,
 		Rows:        resultRows,
 	}, nil
@@ -4909,6 +4956,61 @@ func formatAnswerForResultsMatrix(questionType string, payload []byte) string {
 			}
 		}
 		return b.String()
+	default:
+		return ""
+	}
+}
+
+func formatAnswerKeyForResultsMatrix(questionType string, payload []byte) string {
+	qType := strings.TrimSpace(strings.ToLower(questionType))
+	if len(payload) == 0 {
+		return ""
+	}
+	switch qType {
+	case "pg_tunggal":
+		var obj struct {
+			Correct string `json:"correct"`
+		}
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return ""
+		}
+		return strings.ToUpper(strings.TrimSpace(obj.Correct))
+	case "multi_jawaban":
+		var obj struct {
+			Correct []string `json:"correct"`
+		}
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return ""
+		}
+		keys := make([]string, 0, len(obj.Correct))
+		for _, key := range obj.Correct {
+			key = strings.ToUpper(strings.TrimSpace(key))
+			if key != "" {
+				keys = append(keys, key)
+			}
+		}
+		return strings.Join(keys, ",")
+	case "benar_salah_pernyataan":
+		var obj struct {
+			Statements []struct {
+				Correct bool `json:"correct"`
+			} `json:"statements"`
+		}
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return ""
+		}
+		if len(obj.Statements) == 0 {
+			return ""
+		}
+		vals := make([]string, 0, len(obj.Statements))
+		for _, st := range obj.Statements {
+			if st.Correct {
+				vals = append(vals, "T")
+				continue
+			}
+			vals = append(vals, "F")
+		}
+		return strings.Join(vals, ",")
 	default:
 		return ""
 	}

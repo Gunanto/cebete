@@ -32,7 +32,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 	f := excelize.NewFile()
 	sheet := f.GetSheetName(0)
 
-	headers := []string{
+	fixedHeaders := []string{
 		"Nama",
 		"Kelas",
 		"Attempt Ke-",
@@ -41,13 +41,31 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		"Start Ujian",
 		"End Ujian",
 	}
+	headers := append([]string{}, fixedHeaders...)
 	if matrix != nil {
 		for _, no := range matrix.QuestionNos {
 			headers = append(headers, strconv.Itoa(no))
 		}
 	}
-	for i, h := range headers {
+	answerKeyRow := make([]string, len(headers))
+	if len(answerKeyRow) > 0 {
+		answerKeyRow[0] = "Kunci Jawaban"
+	}
+	if matrix != nil {
+		for idx, key := range matrix.AnswerKeys {
+			col := len(fixedHeaders) + idx
+			if col >= len(answerKeyRow) {
+				break
+			}
+			answerKeyRow[col] = strings.TrimSpace(key)
+		}
+	}
+	for i, v := range answerKeyRow {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		_ = f.SetCellValue(sheet, cell, v)
+	}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
 		_ = f.SetCellValue(sheet, cell, h)
 	}
 
@@ -65,7 +83,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		totalWeight = float64(totalQuestions)
 	}
 	for idx, it := range rows {
-		row := idx + 2
+		row := idx + 3
 		nilai := 0.0
 		if totalWeight > 0 {
 			nilai = (it.SkorTotal / totalWeight) * 100
