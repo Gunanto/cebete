@@ -37,6 +37,9 @@
                     A
                 </button>
             </div>
+            <div id="question-title" class="attempt-question-progress">
+                Soal nomor 1 dari 1
+            </div>
         </div>
         <div class="attempt-tools">
             <button id="info-soal-btn" type="button" class="chip chip-primary">
@@ -58,15 +61,10 @@
     </div>
 
     <div class="attempt-layout">
-        <article class="panel stimulus-panel">
-            <h3>Stimulus</h3>
-            <div id="stimulus-box" class="box muted">Belum ada stimulus.</div>
-        </article>
-
-        <article class="panel question-panel">
-            <h3 id="question-title">Soal</h3>
-            <div id="stem-box" class="box"></div>
-            <div id="options-box" class="box"></div>
+        <article class="attempt-question-flow">
+            <div id="stimulus-box"></div>
+            <div id="stem-box"></div>
+            <div id="options-box"></div>
         </article>
         <section id="daftar-soal-panel" class="question-list-panel" hidden>
             <div class="question-list-head">Navigasi Nomor Soal</div>

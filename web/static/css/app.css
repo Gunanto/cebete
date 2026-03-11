@@ -941,6 +941,10 @@ textarea:focus-visible {
 .attempt-font-row {
     display: flex;
     justify-content: flex-start;
+    align-items: center;
+    gap: 18px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .attempt-font-tools {
@@ -952,6 +956,12 @@ textarea:focus-visible {
 .attempt-font-label {
     color: #475569;
     font-weight: 600;
+}
+
+.attempt-question-progress {
+    color: #1e3a5f;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .font-size-btn {
@@ -1122,10 +1132,14 @@ textarea:focus-visible {
 
 .attempt-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     margin-top: 14px;
     align-items: start;
+}
+
+.attempt-question-flow {
+    min-width: 0;
 }
 
 .panel {
@@ -1147,6 +1161,28 @@ textarea:focus-visible {
 #attempt-root #stimulus-box,
 #attempt-root #stimulus-box * {
     color: #111827;
+}
+
+#attempt-root #stimulus-box,
+#attempt-root #stem-box,
+#attempt-root #options-box {
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    min-height: 0;
+}
+
+#attempt-root #stimulus-box {
+    margin-bottom: 18px;
+}
+
+#attempt-root #stimulus-box[hidden] {
+    display: none !important;
+}
+
+#attempt-root #stem-box {
+    margin-bottom: 18px;
 }
 
 .code-box {
@@ -3078,6 +3114,8 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     }
     .attempt-font-row {
         justify-content: flex-start;
+        width: 100%;
+        flex-wrap: wrap;
     }
     .attempt-subhead {
         display: block;
@@ -3085,6 +3123,9 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     .attempt-font-tools {
         width: 100%;
         flex-wrap: wrap;
+    }
+    .attempt-question-progress {
+        white-space: normal;
     }
     .attempt-info-grid {
         grid-template-columns: 1fr;

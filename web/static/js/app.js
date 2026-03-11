@@ -2218,15 +2218,16 @@
       syncSubmitVisibility();
       renderQuestionListState();
       text(questionTitle, "Soal nomor " + no + " dari " + totalQuestions);
+      const stimulusHTML = String(q.stimulus_html || "").trim();
       html(
         stemBox,
         normalizeAttemptStemHTML(q.stem_html) ||
           '<p class="muted">Soal tidak tersedia.</p>',
       );
-      html(
-        stimulusBox,
-        q.stimulus_html || '<p class="muted">Tidak ada stimulus.</p>',
-      );
+      if (stimulusBox) {
+        stimulusBox.hidden = stimulusHTML === "";
+      }
+      html(stimulusBox, stimulusHTML);
       doubtCheckbox.checked = !!q.is_doubt;
       renderOptions(q);
       renderAttemptMath();
