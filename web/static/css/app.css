@@ -2605,6 +2605,20 @@ textarea:focus-visible {
     opacity: 0.92;
 }
 
+.proktor-card-head-class {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 .proktor-card-class {
     font-size: 7pt;
     font-weight: 600;
@@ -3429,6 +3443,11 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     }
     body[data-page="proktor_content"] .proktor-card-head {
         background: #1a5f7a !important;
+        color: #fff !important;
+    }
+    body[data-page="proktor_content"] .proktor-card-head-class {
+        background: rgba(255, 255, 255, 0.16) !important;
+        border-color: rgba(255, 255, 255, 0.3) !important;
         color: #fff !important;
     }
     body[data-page="proktor_content"] .proktor-card-photo {
