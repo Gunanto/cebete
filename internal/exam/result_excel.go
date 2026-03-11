@@ -34,6 +34,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 
 	headers := []string{
 		"Nama",
+		"Kelas",
 		"Attempt Ke-",
 		"Skor Total",
 		"Nilai",
@@ -71,6 +72,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		}
 		values := []interface{}{
 			it.FullName,
+			strings.TrimSpace(derefString(it.ClassName)),
 			it.AttemptKe,
 			it.SkorTotal,
 			fmt.Sprintf("%.2f", nilai),
@@ -93,6 +95,13 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		return nil, fmt.Errorf("write excel: %w", err)
 	}
 	return b.Bytes(), nil
+}
+
+func derefString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func sanitizeExcelFilename(input string) string {

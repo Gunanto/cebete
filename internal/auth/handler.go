@@ -505,7 +505,21 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
-	out, err := h.svc.AdminDashboardStats(r.Context())
+	user, ok := CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	var (
+		out *AdminDashboardStats
+		err error
+	)
+	if strings.EqualFold(user.Role, "guru") {
+		out, err = h.svc.GuruDashboardStats(r.Context(), user.ID)
+	} else {
+		out, err = h.svc.AdminDashboardStats(r.Context())
+	}
 	if err != nil {
 		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		return

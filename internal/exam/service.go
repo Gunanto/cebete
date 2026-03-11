@@ -250,6 +250,7 @@ type ExamParticipantResultRow struct {
 	UserID       int64      `json:"user_id"`
 	Username     string     `json:"username"`
 	FullName     string     `json:"full_name"`
+	ClassName    *string    `json:"class_name,omitempty"`
 	AttemptID    int64      `json:"attempt_id"`
 	AttemptKe    int        `json:"attempt_ke"`
 	SkorTotal    float64    `json:"skor_total"`
@@ -1872,6 +1873,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		StudentID   int64
 		Username    string
 		FullName    string
+		ClassName   *string
 		Score       float64
 		StartedAt   time.Time
 		EndedAt     time.Time
@@ -1884,12 +1886,22 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 			u.id,
 			u.username,
 			u.full_name,
+			enr.class_name,
 			COALESCE(a.score, 0),
 			a.started_at,
 			COALESCE(a.submitted_at, a.expires_at) AS ended_at,
 			a.submitted_at
 		FROM attempts a
 		JOIN users u ON u.id = a.student_id
+		LEFT JOIN LATERAL (
+			SELECT c.name AS class_name
+			FROM enrollments e
+			JOIN classes c ON c.id = e.class_id
+			WHERE e.user_id = u.id
+			  AND e.status = 'active'
+			ORDER BY e.enrolled_at DESC, e.id DESC
+			LIMIT 1
+		) enr ON TRUE
 		WHERE a.exam_id = $1
 		  AND u.role = 'siswa'
 		ORDER BY a.started_at ASC, a.id ASC
@@ -1901,12 +1913,14 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 	attemptIDs := make([]int64, 0)
 	for rows.Next() {
 		var it attemptRowLite
+		var className sql.NullString
 		var submittedAt sql.NullTime
 		if err := rows.Scan(
 			&it.AttemptID,
 			&it.StudentID,
 			&it.Username,
 			&it.FullName,
+			&className,
 			&it.Score,
 			&it.StartedAt,
 			&it.EndedAt,
@@ -1917,6 +1931,9 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		if submittedAt.Valid {
 			v := submittedAt.Time
 			it.SubmittedAt = &v
+		}
+		if className.Valid {
+			it.ClassName = &className.String
 		}
 		attemptRows = append(attemptRows, it)
 		attemptIDs = append(attemptIDs, it.AttemptID)
@@ -2005,6 +2022,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 			UserID:       a.StudentID,
 			Username:     a.Username,
 			FullName:     a.FullName,
+			ClassName:    a.ClassName,
 			AttemptID:    a.AttemptID,
 			AttemptKe:    attemptCountByStudent[a.StudentID],
 			SkorTotal:    a.Score,

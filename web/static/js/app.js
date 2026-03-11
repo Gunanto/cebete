@@ -4942,6 +4942,7 @@
     );
 
     const tabQuillByWrap = new WeakMap();
+    let guruUniqueParticipantCount = 0;
 
     function refreshGuruSummaryStats() {
       if (statLearningGoals) {
@@ -4967,11 +4968,9 @@
         statExams.textContent = String(Number(total || 0));
       }
       if (statResults) {
-        const total =
-          GuruExams && typeof GuruExams.getResultsCount === "function"
-            ? GuruExams.getResultsCount()
-            : 0;
-        statResults.textContent = String(Number(total || 0));
+        statResults.textContent = String(
+          Number(guruUniqueParticipantCount || 0),
+        );
       }
     }
 
@@ -6706,6 +6705,10 @@
     }
 
     async function loadGuruDashboard() {
+      const dashboardStats = await api("/api/v1/admin/dashboard/stats", "GET");
+      guruUniqueParticipantCount = Number(
+        (dashboardStats && dashboardStats.unique_participant_count) || 0,
+      );
       await Promise.all([
         loadEducationLevelsForGuruSubjectForm(),
         loadSubjects(),
@@ -6734,6 +6737,7 @@
         renderManuscripts([]);
       }
       fillSubjectEducationLevelSelect("");
+      refreshGuruSummaryStats();
     }
 
     try {

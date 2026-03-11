@@ -144,11 +144,12 @@ type AdminUserRecord struct {
 }
 
 type AdminDashboardStats struct {
-	AdminCount   int64 `json:"admin_count"`
-	ProktorCount int64 `json:"proktor_count"`
-	GuruCount    int64 `json:"guru_count"`
-	SiswaCount   int64 `json:"siswa_count"`
-	SchoolCount  int64 `json:"school_count"`
+	AdminCount             int64 `json:"admin_count"`
+	ProktorCount           int64 `json:"proktor_count"`
+	GuruCount              int64 `json:"guru_count"`
+	SiswaCount             int64 `json:"siswa_count"`
+	SchoolCount            int64 `json:"school_count"`
+	UniqueParticipantCount int64 `json:"unique_participant_count"`
 }
 
 type StudentExamProfile struct {
@@ -1568,6 +1569,24 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 		WHERE is_active = TRUE
 	`).Scan(&out.SchoolCount); err != nil {
 		return nil, fmt.Errorf("query school stats: %w", err)
+	}
+	return out, nil
+}
+
+func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminDashboardStats, error) {
+	out := &AdminDashboardStats{}
+	if guruID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT a.student_id)
+		FROM attempts a
+		JOIN exams e ON e.id = a.exam_id
+		JOIN users u ON u.id = a.student_id
+		WHERE e.created_by = $1
+		  AND u.role = 'siswa'
+	`, guruID).Scan(&out.UniqueParticipantCount); err != nil {
+		return nil, fmt.Errorf("query guru dashboard unique participant count: %w", err)
 	}
 	return out, nil
 }
