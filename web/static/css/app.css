@@ -2619,20 +2619,6 @@ textarea:focus-visible {
     text-transform: uppercase;
 }
 
-.proktor-card-class {
-    font-size: 7pt;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    background: #e2e8f0;
-    color: #0f172a;
-    border: 1px solid #cbd5e1;
-    padding: 1px 6px;
-    border-radius: 10px;
-    white-space: nowrap;
-    margin-left: auto;
-}
-
 .proktor-card-body {
     padding: 8px;
     display: flex;
@@ -3451,28 +3437,66 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
         border: 1px solid #111827 !important;
         background: #fff !important;
         height: 50mm;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
     }
     body[data-page="proktor_content"] .proktor-card-head {
         background: #1a5f7a !important;
         color: #fff !important;
+        padding: 4px 6px;
     }
     body[data-page="proktor_content"] .proktor-card-head-class {
         background: rgba(255, 255, 255, 0.16) !important;
         border-color: rgba(255, 255, 255, 0.3) !important;
         color: #fff !important;
+        margin-top: 2px;
+        font-size: 6pt;
+        padding: 1px 6px;
+    }
+    body[data-page="proktor_content"] .proktor-card-head h4 {
+        font-size: 9pt;
+    }
+    body[data-page="proktor_content"] .proktor-card-head p {
+        font-size: 6pt;
+        margin-top: 1px;
+    }
+    body[data-page="proktor_content"] .proktor-card-body {
+        padding: 5px 6px;
+        gap: 6px;
+        min-height: 0;
+        overflow: hidden;
     }
     body[data-page="proktor_content"] .proktor-card-photo {
         background: #f8fafc !important;
         border-color: #cbd5e1 !important;
+        width: 16mm;
+        height: 20mm;
+        font-size: 5.5pt;
+    }
+    body[data-page="proktor_content"] .proktor-card-table {
+        font-size: 7pt;
+    }
+    body[data-page="proktor_content"] .proktor-card-table td {
+        padding: 0;
+    }
+    body[data-page="proktor_content"] .proktor-card-table td:first-child {
+        width: 46px;
+        font-size: 6pt;
     }
     body[data-page="proktor_content"] .proktor-card-foot {
         background: #f8fafc !important;
         border-top: 1px solid #e2e8f0 !important;
         color: #64748b !important;
+        padding: 3px 6px;
+        font-size: 5.5pt;
+        min-height: 16px;
     }
     body[data-page="proktor_content"] .proktor-card-badge {
         background: #22a06b !important;
         color: #fff !important;
+        font-size: 5.5pt;
+        padding: 1px 5px;
+        white-space: nowrap;
     }
     body[data-page="proktor_content"] .attendance-list-table,
     body[data-page="proktor_content"] .attendance-list-table th,

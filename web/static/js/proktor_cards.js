@@ -93,9 +93,6 @@
           '"' +
           (photoSrc ? "" : " disabled") +
           ">Hapus</button>",
-        '<span class="proktor-card-class">' +
-          deps.escapeHtml(formatClassLabel(className)) +
-          "</span>",
         '<input type="file" accept="image/*" data-photo-input="' +
           deps.escapeHtml(String(userID)) +
           '" hidden />',
