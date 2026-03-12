@@ -461,6 +461,7 @@
       if (role === "admin") return "/admin";
       if (role === "proktor") return "/proktor";
       if (role === "guru") return "/guru";
+      if (role === "siswa") return "/peserta";
       return "/ujian";
     }
 
@@ -2742,154 +2743,49 @@
     const attemptID = Number(root.getAttribute("data-attempt-id") || 0);
     const resultPageTitle = document.getElementById("result-page-title");
     const summaryBox = document.getElementById("result-summary");
-    const tbody = document.querySelector("#result-table tbody");
-    const scoreOnlyCard = document.getElementById("result-scoreonly-card");
-    const resultTable = document.getElementById("result-table");
-    const resultTableBox = resultTable ? resultTable.closest(".box") : null;
-    const printBtn = document.getElementById("result-scoreonly-print-btn");
-    const endBtn = document.getElementById("result-scoreonly-end-btn");
+    const examTitleCell = document.getElementById("result-exam-title");
+    const examScoreCell = document.getElementById("result-exam-score");
 
-    function formatDateTimeID(value) {
-      if (!value) return "-";
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return String(value);
-      return d.toLocaleString("id-ID");
-    }
-
-    function setCell(id, value) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const raw = String(value || "").trim();
-      el.textContent = raw ? raw : "-";
-    }
-
-    function formatMinutesDuration(startAt, endAt) {
-      if (!startAt || !endAt) return "-";
-      const start = new Date(startAt);
-      const end = new Date(endAt);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return "-";
-      }
-      const mins = Math.max(
-        0,
-        Math.round((end.getTime() - start.getTime()) / 60000),
-      );
-      return String(mins) + " menit";
-    }
-
-    async function logoutAndExit() {
-      try {
-        await api("/api/v1/auth/logout", "POST");
-      } catch (_) {
-        // Ignore logout API error and still redirect.
-      }
-      window.location.href = "/login";
+    function normalizeScore(score, totalWeight, totalQuestions) {
+      const raw = Number(score || 0);
+      const weight = Number(totalWeight || 0);
+      if (weight > 0) return (raw / weight) * 100;
+      const total = Number(totalQuestions || 0);
+      if (total > 0) return (raw / total) * 100;
+      return raw;
     }
 
     try {
       const out = await api("/api/v1/attempts/" + attemptID + "/result", "GET");
       const s = out.summary;
-      const scoreValue = Number((s && s.score) || 0);
-      const scoreLabel = Number.isFinite(scoreValue)
-        ? scoreValue.toLocaleString("id-ID", {
+      const normalizedScore = normalizeScore(
+        s && s.score,
+        s && s.total_weight,
+        s && s.total_questions,
+      );
+      const scoreLabel = Number.isFinite(normalizedScore)
+        ? normalizedScore.toLocaleString("id-ID", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })
-        : String((s && s.score) || 0);
+        : String(normalizedScore || 0);
       const examTitle = String((s && s.title) || "").trim();
       if (resultPageTitle) {
         resultPageTitle.textContent = examTitle
           ? "Hasil " + examTitle
-          : "Hasil #" + String(attemptID);
+          : "Hasil Ujian";
       }
-      html(
-        summaryBox,
-        "<strong>Status:</strong> " +
-          escapeHtml(s.status) +
-          " | <strong>Skor:</strong> " +
-          escapeHtml(String(scoreLabel)) +
-          " | <strong>Benar:</strong> " +
-          escapeHtml(String(s.total_correct)) +
-          " | <strong>Salah:</strong> " +
-          escapeHtml(String(s.total_wrong)) +
-          " | <strong>Kosong:</strong> " +
-          escapeHtml(String(s.total_unanswered)),
-      );
-
-      tbody.innerHTML = "";
-      if (out.score_only) {
-        if (resultTableBox) resultTableBox.hidden = true;
-        if (scoreOnlyCard) scoreOnlyCard.hidden = false;
-        if (printBtn) {
-          printBtn.addEventListener("click", function () {
-            window.print();
-          });
-        }
-        if (endBtn) {
-          endBtn.addEventListener("click", function () {
-            logoutAndExit();
-          });
-        }
-        let profile = null;
-        try {
-          profile = await api("/api/v1/auth/me/student-profile", "GET");
-        } catch (_) {
-          profile = null;
-        }
-        const finishedAt = s.submitted_at || s.expires_at || "";
-        setCell("result-scoreonly-student-name", profile && profile.full_name);
-        setCell(
-          "result-scoreonly-participant-no",
-          profile && profile.participant_no,
-        );
-        setCell("result-scoreonly-class-name", profile && profile.class_name);
-        setCell("result-scoreonly-school-name", profile && profile.school_name);
-        setCell("result-scoreonly-exam-title", examTitle);
-        setCell("result-scoreonly-exam-code", s.exam_code);
-        setCell("result-scoreonly-subject-name", s.subject_name);
-        setCell("result-scoreonly-started-at", formatDateTimeID(s.started_at));
-        setCell("result-scoreonly-ended-at", formatDateTimeID(finishedAt));
-        setCell(
-          "result-scoreonly-duration",
-          formatMinutesDuration(s.started_at, finishedAt),
-        );
-        setCell("result-scoreonly-teacher-name", s.teacher_name);
-        setCell("result-scoreonly-score-value", scoreLabel);
+      if (summaryBox) {
         html(
           summaryBox,
-          "<strong>Nilai Akhir:</strong> Nilai Anda adalah " +
-            escapeHtml(String(scoreLabel)) +
-            ".",
+          "<strong>Status:</strong> " +
+            escapeHtml(s.status) +
+            " | <strong>Nilai Akhir:</strong> " +
+            escapeHtml(String(scoreLabel)),
         );
-        return;
       }
-      if (resultTableBox) resultTableBox.hidden = false;
-      if (scoreOnlyCard) scoreOnlyCard.hidden = true;
-      out.items.forEach(function (it, idx) {
-        const tr = document.createElement("tr");
-        const breakdown =
-          Array.isArray(it.breakdown) && it.breakdown.length
-            ? "<br><small>" +
-              it.breakdown
-                .map(function (b) {
-                  return escapeHtml(b.id + ":" + (b.correct ? "ok" : "x"));
-                })
-                .join(", ") +
-              "</small>"
-            : "";
-        tr.innerHTML = [
-          "<td>" + (idx + 1) + "</td>",
-          "<td>" + escapeHtml(String(it.question_id)) + "</td>",
-          "<td>" +
-            escapeHtml(shortQuestionTypeLabel(it.question_type)) +
-            "</td>",
-          "<td>" + escapeHtml((it.selected || []).join(", ")) + "</td>",
-          "<td>" + escapeHtml((it.correct || []).join(", ")) + "</td>",
-          "<td>" + escapeHtml(it.reason || "") + breakdown + "</td>",
-          "<td>" + escapeHtml(String(it.earned_score || 0)) + "</td>",
-        ].join("");
-        tbody.appendChild(tr);
-      });
+      if (examTitleCell) examTitleCell.textContent = examTitle || "-";
+      if (examScoreCell) examScoreCell.textContent = scoreLabel;
     } catch (err) {
       text(summaryBox, "Gagal memuat hasil: " + err.message);
     }
@@ -3440,6 +3336,281 @@
     } catch (err) {
       setMsg("Gagal memuat data awal admin: " + err.message);
     }
+  }
+
+  async function initPesertaPage() {
+    const root = document.querySelector('[data-page="peserta_content"]');
+    if (!root) return;
+
+    const user = await meOrNull();
+    if (!user) {
+      window.location.href = "/login";
+      return;
+    }
+    if (String((user && user.role) || "").toLowerCase() !== "siswa") {
+      window.location.href = "/";
+      return;
+    }
+
+    const msg = document.getElementById("peserta-message");
+    const pageTitle = document.getElementById("peserta-page-title");
+    const pageDesc = document.getElementById("peserta-page-desc");
+    const sidebar = document.getElementById("peserta-sidebar");
+    const sidebarToggle = document.getElementById("peserta-sidebar-toggle");
+    const sidebarBackdrop = document.getElementById("peserta-sidebar-backdrop");
+    const avatar = document.getElementById("peserta-avatar");
+    const userName = document.getElementById("peserta-user-name");
+    const userClass = document.getElementById("peserta-user-class");
+    const profileName = document.getElementById("peserta-profile-name");
+    const profileParticipantNo = document.getElementById(
+      "peserta-profile-participant-no",
+    );
+    const profileNISN = document.getElementById("peserta-profile-nisn");
+    const profileClassName = document.getElementById(
+      "peserta-profile-class-name",
+    );
+    const profileSchoolName = document.getElementById(
+      "peserta-profile-school-name",
+    );
+    const examsBody = document.getElementById("peserta-exams-body");
+    const resultForm = document.getElementById("peserta-result-form");
+    const resultExamSelect = document.getElementById(
+      "peserta-result-exam-select",
+    );
+    const resultBody = document.getElementById("peserta-result-body");
+    const menuButtons = Array.from(
+      document.querySelectorAll("[data-peserta-menu]"),
+    );
+    const panels = {
+      dashboard: document.getElementById("peserta-dashboard-panel"),
+      exams: document.getElementById("peserta-exams-panel"),
+      results: document.getElementById("peserta-results-panel"),
+      profile: document.getElementById("peserta-profile-panel"),
+    };
+
+    function setSidebarOpen(open) {
+      if (!sidebar || !sidebarToggle || !sidebarBackdrop) return;
+      document.body.classList.toggle("sidebar-open", open);
+      sidebarToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      sidebarBackdrop.hidden = !open;
+    }
+
+    function setActiveMenu(menu) {
+      menuButtons.forEach(function (btn) {
+        btn.classList.toggle(
+          "active",
+          String(btn.dataset.pesertaMenu || "") === menu,
+        );
+      });
+      Object.keys(panels).forEach(function (key) {
+        if (panels[key]) panels[key].hidden = key !== menu;
+      });
+      const activeBtn = menuButtons.find(function (btn) {
+        return String(btn.dataset.pesertaMenu || "") === menu;
+      });
+      if (activeBtn) {
+        if (pageTitle) pageTitle.textContent = activeBtn.dataset.title || "";
+        if (pageDesc) pageDesc.textContent = activeBtn.dataset.desc || "";
+      }
+      if (window.innerWidth <= 900) setSidebarOpen(false);
+    }
+
+    function setCell(el, value) {
+      if (!el) return;
+      const raw = String(value || "").trim();
+      el.textContent = raw || "-";
+    }
+
+    function fmtShortDate(raw) {
+      if (!raw) return "-";
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return "-";
+      return d.toLocaleString("id-ID");
+    }
+
+    function normalizeScore(score, totalWeight, totalQuestions) {
+      const raw = Number(score || 0);
+      const weight = Number(totalWeight || 0);
+      if (weight > 0) return (raw / weight) * 100;
+      const total = Number(totalQuestions || 0);
+      if (total > 0) return (raw / total) * 100;
+      return raw;
+    }
+
+    menuButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const target = String(btn.dataset.pesertaMenu || "");
+        if (target) setActiveMenu(target);
+      });
+    });
+    const jumpButtons = Array.from(
+      document.querySelectorAll("[data-peserta-jump]"),
+    );
+    jumpButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const target = String(btn.dataset.pesertaJump || "");
+        if (target) setActiveMenu(target);
+      });
+    });
+    if (sidebarToggle) {
+      sidebarToggle.addEventListener("click", function () {
+        setSidebarOpen(!document.body.classList.contains("sidebar-open"));
+      });
+    }
+    if (sidebarBackdrop) {
+      sidebarBackdrop.addEventListener("click", function () {
+        setSidebarOpen(false);
+      });
+    }
+    window.addEventListener("resize", function () {
+      if (window.innerWidth > 900) setSidebarOpen(false);
+    });
+
+    try {
+      const profile = await api("/api/v1/auth/me/student-profile", "GET");
+      const fullName = profile && profile.full_name;
+      setCell(profileName, fullName);
+      setCell(profileParticipantNo, profile && profile.participant_no);
+      setCell(profileNISN, profile && profile.nisn);
+      setCell(profileClassName, profile && profile.class_name);
+      setCell(profileSchoolName, profile && profile.school_name);
+      if (userName) setCell(userName, fullName);
+      if (userClass)
+        setCell(
+          userClass,
+          profile && profile.class_name ? "Kelas " + profile.class_name : "-",
+        );
+      if (avatar && fullName) {
+        avatar.textContent =
+          String(fullName || "P")
+            .trim()
+            .charAt(0) || "P";
+      }
+      if (msg) {
+        text(
+          msg,
+          "Selamat datang, " +
+            String((fullName && String(fullName).trim()) || "Peserta") +
+            ".",
+        );
+      }
+    } catch (err) {
+      if (msg) text(msg, "Gagal memuat profil peserta: " + err.message);
+    }
+
+    if (examsBody) {
+      try {
+        const list = await api("/api/v1/exams/published", "GET");
+        const items = Array.isArray(list) ? list : [];
+        if (!items.length) {
+          examsBody.innerHTML =
+            '<tr><td colspan="5" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
+        } else {
+          examsBody.innerHTML = "";
+          items.forEach(function (it) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = [
+              "<td>" + escapeHtml(String(it.code || "-")) + "</td>",
+              "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
+              "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
+              "<td>" + escapeHtml(fmtShortDate(it.end_at)) + "</td>",
+              '<td><a class="btn btn-secondary btn-inline" href="/ujian">Buka Ujian</a></td>',
+            ].join("");
+            examsBody.appendChild(tr);
+          });
+        }
+      } catch (err) {
+        examsBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Gagal memuat daftar ujian aktif.</td></tr>';
+      }
+    }
+
+    if (resultExamSelect) {
+      try {
+        const list = await api("/api/v1/exams/me", "GET");
+        const items = Array.isArray(list) ? list : [];
+        if (!items.length) {
+          resultExamSelect.innerHTML =
+            '<option value="">Belum ada ujian yang diikuti.</option>';
+        } else {
+          resultExamSelect.innerHTML =
+            '<option value="">Pilih ujian...</option>';
+          items.forEach(function (it) {
+            const opt = document.createElement("option");
+            opt.value = String(it.id || 0);
+            opt.textContent = String(it.title || "-");
+            resultExamSelect.appendChild(opt);
+          });
+        }
+      } catch (_) {
+        resultExamSelect.innerHTML =
+          '<option value="">Gagal memuat daftar ujian.</option>';
+      }
+    }
+
+    if (resultForm && resultBody) {
+      resultForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const examID = Number(
+          (resultExamSelect && resultExamSelect.value) || 0,
+        );
+        if (!examID || examID <= 0) {
+          if (msg) text(msg, "Pilih ujian terlebih dahulu.");
+          return;
+        }
+        resultBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Memuat daftar nilai...</td></tr>';
+        try {
+          const out = await api(
+            "/api/v1/exams/" + examID + "/attempts/me",
+            "GET",
+          );
+          const attempts = Array.isArray(out && out.attempts)
+            ? out.attempts
+            : [];
+          const totalWeight = Number((out && out.total_weight) || 0);
+          const totalQuestions = Number((out && out.total_questions) || 0);
+          if (!attempts.length) {
+            resultBody.innerHTML =
+              '<tr><td colspan="5" class="muted">Belum ada attempt untuk ujian ini.</td></tr>';
+            return;
+          }
+          resultBody.innerHTML = "";
+          attempts.forEach(function (it) {
+            const scoreValue = normalizeScore(
+              it.score,
+              totalWeight,
+              totalQuestions,
+            );
+            const scoreLabel = Number.isFinite(scoreValue)
+              ? scoreValue.toLocaleString("id-ID", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })
+              : "0.00";
+            const timeLabel = it.submitted_at
+              ? fmtShortDate(it.submitted_at)
+              : fmtShortDate(it.started_at);
+            const tr = document.createElement("tr");
+            tr.innerHTML = [
+              "<td>Attempt " + escapeHtml(String(it.attempt_no || 0)) + "</td>",
+              "<td>" + escapeHtml(String(it.status || "-")) + "</td>",
+              "<td>" + escapeHtml(String(scoreLabel)) + "</td>",
+              "<td>" + escapeHtml(String(timeLabel || "-")) + "</td>",
+              '<td><a class="btn btn-secondary btn-inline" href="/hasil/' +
+                escapeHtml(String(it.attempt_id || 0)) +
+                '">Lihat</a></td>',
+            ].join("");
+            resultBody.appendChild(tr);
+          });
+        } catch (err) {
+          resultBody.innerHTML =
+            '<tr><td colspan="5" class="muted">Gagal memuat daftar nilai.</td></tr>';
+        }
+      });
+    }
+
+    setActiveMenu("dashboard");
   }
 
   async function initProktorPage() {
@@ -7033,6 +7204,7 @@
   initProktorPage();
   initGuruPage();
   initAuthoringPage();
+  initPesertaPage();
   initAttemptPage();
   initResultPage();
 })();

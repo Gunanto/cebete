@@ -3194,14 +3194,16 @@ body[data-page="attempt_content"] .container > .card {
 
 body[data-page="admin_content"] .admin-layout,
 body[data-page="proktor_content"] .admin-layout,
-body[data-page="guru_content"] .admin-layout {
+body[data-page="guru_content"] .admin-layout,
+body[data-page="peserta_content"] .admin-layout {
     grid-template-columns: minmax(230px, 250px) minmax(0, 1fr);
     gap: 18px;
 }
 
 body[data-page="admin_content"] .admin-sidebar,
 body[data-page="proktor_content"] .admin-sidebar,
-body[data-page="guru_content"] .admin-sidebar {
+body[data-page="guru_content"] .admin-sidebar,
+body[data-page="peserta_content"] .admin-sidebar {
     position: sticky;
     top: 18px;
     align-self: start;
@@ -3215,7 +3217,8 @@ body[data-page="guru_content"] .admin-sidebar {
 
 body[data-page="admin_content"] .admin-content > .panel,
 body[data-page="proktor_content"] .admin-content > .panel,
-body[data-page="guru_content"] .admin-content > .panel {
+body[data-page="guru_content"] .admin-content > .panel,
+body[data-page="peserta_content"] .admin-content > .panel {
     border-radius: 14px;
     background: #ffffff;
     box-shadow: 0 8px 20px rgba(31, 65, 122, 0.08);
@@ -3229,7 +3232,8 @@ body[data-page="guru_content"] .proktor-stats-grid {
 
 body[data-page="admin_content"] .admin-menu-btn,
 body[data-page="proktor_content"] .admin-menu-btn,
-body[data-page="guru_content"] .admin-menu-btn {
+body[data-page="guru_content"] .admin-menu-btn,
+body[data-page="peserta_content"] .admin-menu-btn {
     width: 100%;
     justify-content: flex-start;
     border-radius: 12px;
@@ -3237,13 +3241,15 @@ body[data-page="guru_content"] .admin-menu-btn {
 
 body[data-page="admin_content"] .admin-menu-btn.active,
 body[data-page="proktor_content"] .admin-menu-btn.active,
-body[data-page="guru_content"] .admin-menu-btn.active {
+body[data-page="guru_content"] .admin-menu-btn.active,
+body[data-page="peserta_content"] .admin-menu-btn.active {
     box-shadow: 0 6px 14px rgba(32, 86, 168, 0.24);
 }
 
 body[data-page="admin_content"] .admin-content > .dashboard-hero,
 body[data-page="proktor_content"] .admin-content > .dashboard-hero,
-body[data-page="guru_content"] .admin-content > .dashboard-hero {
+body[data-page="guru_content"] .admin-content > .dashboard-hero,
+body[data-page="peserta_content"] .admin-content > .dashboard-hero {
     border: 1px solid #756de6;
     background: linear-gradient(135deg, #3f43c4 0%, #6a48d8 52%, #8648d7 100%);
     color: #f7f7ff;
@@ -3297,7 +3303,8 @@ body[data-page="guru_content"] .admin-content > .dashboard-hero {
 
 body[data-page="admin_content"] .dashboard-hero .admin-stat-card,
 body[data-page="proktor_content"] .dashboard-hero .admin-stat-card,
-body[data-page="guru_content"] .dashboard-hero .admin-stat-card {
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card,
+body[data-page="peserta_content"] .dashboard-hero .admin-stat-card {
     background: rgba(255, 255, 255, 0.88);
     border-color: rgba(255, 255, 255, 0.88);
     box-shadow: 0 8px 14px rgba(28, 17, 92, 0.12);
@@ -3308,8 +3315,25 @@ body[data-page="admin_content"] .dashboard-hero .admin-stat-card .stat-value,
 body[data-page="proktor_content"] .dashboard-hero .admin-stat-card .stat-label,
 body[data-page="proktor_content"] .dashboard-hero .admin-stat-card .stat-value,
 body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-label,
-body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value,
+body[data-page="peserta_content"] .dashboard-hero .admin-stat-card .stat-label,
+body[data-page="peserta_content"] .dashboard-hero .admin-stat-card .stat-value {
     color: #0f172a;
+}
+
+body[data-page="peserta_content"] #peserta-sidebar-toggle {
+    display: none;
+}
+
+body[data-page="peserta_content"] .portal-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1000;
+}
+
+body[data-page="peserta_content"] .portal-sidebar-backdrop[hidden] {
+    display: none;
 }
 
 @media (max-width: 900px) {
@@ -3372,17 +3396,20 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     body[data-page="admin_content"] .container,
     body[data-page="proktor_content"] .container,
     body[data-page="guru_content"] .container,
-    body[data-page="attempt_content"] .container {
+    body[data-page="attempt_content"] .container,
+    body[data-page="peserta_content"] .container {
         padding: 14px 12px 18px;
     }
     body[data-page="admin_content"] .admin-layout,
     body[data-page="proktor_content"] .admin-layout,
-    body[data-page="guru_content"] .admin-layout {
+    body[data-page="guru_content"] .admin-layout,
+    body[data-page="peserta_content"] .admin-layout {
         grid-template-columns: 1fr;
     }
     body[data-page="admin_content"] .admin-sidebar,
     body[data-page="proktor_content"] .admin-sidebar,
-    body[data-page="guru_content"] .admin-sidebar {
+    body[data-page="guru_content"] .admin-sidebar,
+    body[data-page="peserta_content"] .admin-sidebar {
         position: static;
         max-height: none;
     }
@@ -3392,6 +3419,26 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
     .dashboard-quick-actions {
         width: 100%;
         justify-content: flex-start;
+    }
+
+    body[data-page="peserta_content"] #peserta-sidebar-toggle {
+        display: inline-flex;
+    }
+
+    body[data-page="peserta_content"] .admin-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: min(84vw, 320px);
+        z-index: 1001;
+        transform: translateX(-105%);
+        transition: transform 0.25s ease;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.28);
+    }
+
+    body[data-page="peserta_content"].sidebar-open .admin-sidebar {
+        transform: translateX(0);
     }
 }
 

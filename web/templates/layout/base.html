@@ -39,7 +39,9 @@
             {{else if eq .Page "proktor_content"}} {{template "proktor_content"
             .}} {{else if eq .Page "guru_content"}} {{template "guru_content"
             .}} {{else if eq .Page "admin_content"}} {{template "admin_content"
-            .}} {{else if eq .Page "attempt_content"}} {{template
+            .}} {{else if eq .Page "peserta_content"}} {{template
+            "peserta_content" .}} {{else if eq .Page "attempt_content"}}
+            {{template
             "attempt_content" .}} {{else if eq .Page "result_content"}}
             {{template "result_content" .}} {{end}}
         </main>

@@ -77,6 +77,7 @@ type AttemptSummary struct {
 	SubmittedAt     *time.Time `json:"submitted_at,omitempty"`
 	RemainingSecs   int64      `json:"remaining_secs"`
 	TotalQuestions  int        `json:"total_questions"`
+	TotalWeight     float64    `json:"total_weight"`
 	Answered        int        `json:"answered"`
 	Doubt           int        `json:"doubt"`
 	TotalCorrect    int        `json:"total_correct"`
@@ -96,6 +97,30 @@ type AttemptResult struct {
 	Summary   AttemptSummary      `json:"summary"`
 	Items     []AttemptResultItem `json:"items"`
 	ScoreOnly bool                `json:"score_only,omitempty"`
+}
+
+type StudentExamOption struct {
+	ID          int64  `json:"id"`
+	Code        string `json:"code"`
+	Title       string `json:"title"`
+	SubjectName string `json:"subject_name"`
+}
+
+type StudentAttemptSummary struct {
+	AttemptID   int64      `json:"attempt_id"`
+	AttemptNo   int        `json:"attempt_no"`
+	Status      string     `json:"status"`
+	Score       float64    `json:"score"`
+	StartedAt   time.Time  `json:"started_at"`
+	SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+}
+
+type StudentExamAttempts struct {
+	ExamID         int64                   `json:"exam_id"`
+	ExamTitle      string                  `json:"exam_title"`
+	TotalWeight    float64                 `json:"total_weight"`
+	TotalQuestions int                     `json:"total_questions"`
+	Attempts       []StudentAttemptSummary `json:"attempts"`
 }
 
 type SubjectOption struct {
@@ -4534,6 +4559,10 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	if err != nil {
 		return nil, err
 	}
+	totalWeight, err := s.loadExamTotalWeight(ctx, q, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
 
 	summary := &AttemptSummary{
 		ID:             row.ID,
@@ -4549,6 +4578,7 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 		ExamStartAt:    examStartAt,
 		ExamEndAt:      examEndAt,
 		TotalQuestions: totalQuestions,
+		TotalWeight:    totalWeight,
 		Answered:       answered,
 		Doubt:          doubt,
 		RemainingSecs:  remainingSeconds(row.Status, row.ExpiresAt),
@@ -4603,6 +4633,9 @@ func (s *Service) loadAttemptSummaryMeta(ctx context.Context, q queryable, examI
 		LEFT JOIN users u ON u.id = e.created_by
 		WHERE e.id = $1
 	`, examID).Scan(&codeRaw, &titleRaw, &subjectRaw, &teacherRaw, &startAtRaw, &endAtRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", "", "", nil, nil, ErrExamNotFound
+		}
 		return "", "", "", "", nil, nil, fmt.Errorf("load attempt summary meta: %w", err)
 	}
 	if startAtRaw.Valid {
@@ -4622,6 +4655,124 @@ func (s *Service) loadExamTitle(ctx context.Context, q queryable, examID int64) 
 		return "", err
 	}
 	return title, nil
+}
+
+func (s *Service) ListStudentExamOptions(ctx context.Context, studentID int64) ([]StudentExamOption, error) {
+	if studentID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT ON (e.id)
+			e.id,
+			e.code,
+			e.title,
+			COALESCE(s.name, '') AS subject_name,
+			e.created_at
+		FROM attempts a
+		JOIN exams e ON e.id = a.exam_id
+		LEFT JOIN subjects s ON s.id = e.subject_id
+		WHERE a.student_id = $1
+		ORDER BY e.id, e.created_at DESC
+	`, studentID)
+	if err != nil {
+		return nil, fmt.Errorf("list student exams: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]StudentExamOption, 0)
+	for rows.Next() {
+		var it StudentExamOption
+		var createdAt time.Time
+		if err := rows.Scan(&it.ID, &it.Code, &it.Title, &it.SubjectName, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan student exam: %w", err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate student exams: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) ListStudentExamAttempts(ctx context.Context, examID, studentID int64) (*StudentExamAttempts, error) {
+	if examID <= 0 || studentID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	title, err := s.loadExamTitle(ctx, s.db, examID)
+	if err != nil {
+		return nil, err
+	}
+	totalWeight, err := s.loadExamTotalWeight(ctx, s.db, examID)
+	if err != nil {
+		return nil, err
+	}
+	totalQuestions, err := s.loadExamQuestionCount(ctx, s.db, examID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, status, COALESCE(score, 0), started_at, submitted_at
+		FROM attempts
+		WHERE exam_id = $1 AND student_id = $2
+		ORDER BY started_at ASC, id ASC
+	`, examID, studentID)
+	if err != nil {
+		return nil, fmt.Errorf("list student exam attempts: %w", err)
+	}
+	defer rows.Close()
+
+	attempts := make([]StudentAttemptSummary, 0)
+	attemptNo := 0
+	for rows.Next() {
+		var it StudentAttemptSummary
+		var submittedAt sql.NullTime
+		if err := rows.Scan(&it.AttemptID, &it.Status, &it.Score, &it.StartedAt, &submittedAt); err != nil {
+			return nil, fmt.Errorf("scan student attempt: %w", err)
+		}
+		attemptNo += 1
+		it.AttemptNo = attemptNo
+		if submittedAt.Valid {
+			it.SubmittedAt = &submittedAt.Time
+		}
+		attempts = append(attempts, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate student attempts: %w", err)
+	}
+	return &StudentExamAttempts{
+		ExamID:         examID,
+		ExamTitle:      title,
+		TotalWeight:    totalWeight,
+		TotalQuestions: totalQuestions,
+		Attempts:       attempts,
+	}, nil
+}
+
+func (s *Service) loadExamTotalWeight(ctx context.Context, q queryable, examID int64) (float64, error) {
+	var total sql.NullFloat64
+	if err := q.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(weight), 0)
+		FROM exam_questions
+		WHERE exam_id = $1
+	`, examID).Scan(&total); err != nil {
+		return 0, fmt.Errorf("load exam total weight: %w", err)
+	}
+	if total.Valid {
+		return total.Float64, nil
+	}
+	return 0, nil
+}
+
+func (s *Service) loadExamQuestionCount(ctx context.Context, q queryable, examID int64) (int, error) {
+	var total int
+	if err := q.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM exam_questions
+		WHERE exam_id = $1
+	`, examID).Scan(&total); err != nil {
+		return 0, fmt.Errorf("load exam question count: %w", err)
+	}
+	return total, nil
 }
 
 func (s *Service) countProgress(ctx context.Context, q queryable, attemptID, examID int64) (totalQuestions, answered, doubt int, err error) {

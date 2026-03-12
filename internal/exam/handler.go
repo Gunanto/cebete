@@ -71,6 +71,8 @@ type examService interface {
 	ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 	RegradeExamAttempts(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
 	SelfEnrollExam(ctx context.Context, examID, studentID int64) error
+	ListStudentExamOptions(ctx context.Context, studentID int64) ([]StudentExamOption, error)
+	ListStudentExamAttempts(ctx context.Context, examID, studentID int64) (*StudentExamAttempts, error)
 }
 
 type response struct {
@@ -497,6 +499,59 @@ func (h *Handler) SelfEnrollExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: map[string]any{"enrolled": true}})
+}
+
+func (h *Handler) ListStudentExams(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(user.Role)) != "siswa" {
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		return
+	}
+	items, err := h.svc.ListStudentExamOptions(r.Context(), user.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListStudentExamAttempts(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(user.Role)) != "siswa" {
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		return
+	}
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	out, err := h.svc.ListStudentExamAttempts(r.Context(), examID, user.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
 }
 
 func (h *Handler) ListAdminExams(w http.ResponseWriter, r *http.Request) {

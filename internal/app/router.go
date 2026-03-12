@@ -133,6 +133,9 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	r.Get("/guru", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "guru_content", "Dashboard Guru", map[string]any{})
 	})
+	r.Get("/peserta", func(w http.ResponseWriter, r *http.Request) {
+		renderPage(w, "peserta_content", "Dashboard Peserta", map[string]any{})
+	})
 	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "admin_content", "Admin Dashboard", map[string]any{})
 	})
@@ -179,6 +182,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("guru")).Delete("/subjects/{id}", examHandler.DeleteSubject)
 			secure.Get("/exams", examHandler.ListExams)
 			secure.With(authHandler.RequireRoles("siswa")).Get("/exams/published", examHandler.ListPublishedExams)
+			secure.With(authHandler.RequireRoles("siswa")).Get("/exams/me", examHandler.ListStudentExams)
+			secure.With(authHandler.RequireRoles("siswa")).Get("/exams/{id}/attempts/me", examHandler.ListStudentExamAttempts)
 			secure.With(authHandler.RequireRoles("siswa")).Post("/exams/{id}/self-enroll", examHandler.SelfEnrollExam)
 			secure.Get("/levels", masterHandler.ListEducationLevels)
 
