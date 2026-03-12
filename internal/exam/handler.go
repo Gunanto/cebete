@@ -38,8 +38,7 @@ type examService interface {
 	DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
-	ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error)
-	ListPublishedExamsForNonRegular(ctx context.Context) ([]ExamTokenExam, error)
+	ListPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
@@ -452,14 +451,16 @@ func (h *Handler) ListPublishedExams(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		return
 	}
-	var items []ExamTokenExam
-	var err error
-	if user.IsNonRegular {
-		items, err = h.svc.ListPublishedExamsForNonRegular(r.Context())
-	} else {
-		items, err = h.svc.ListPublishedExams(r.Context())
-	}
+	items, err := h.svc.ListPublishedExamsForStudent(r.Context(), user.ID)
 	if err != nil {
+		if errors.Is(err, ErrAssignmentFeature) {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
+			return
+		}
+		if errors.Is(err, ErrInvalidInput) {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+			return
+		}
 		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		return
 	}

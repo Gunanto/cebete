@@ -981,15 +981,14 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 	return items, nil
 }
 
-func (s *Service) ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error) {
-	return s.listPublishedExams(ctx, false)
+func (s *Service) ListPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error) {
+	return s.listPublishedExamsForStudent(ctx, studentID)
 }
 
-func (s *Service) ListPublishedExamsForNonRegular(ctx context.Context) ([]ExamTokenExam, error) {
-	return s.listPublishedExams(ctx, true)
-}
-
-func (s *Service) listPublishedExams(ctx context.Context, onlyNonRegular bool) ([]ExamTokenExam, error) {
+func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error) {
+	if studentID <= 0 {
+		return nil, ErrInvalidInput
+	}
 	now := time.Now()
 	query := `
 		SELECT
@@ -1001,21 +1000,21 @@ func (s *Service) listPublishedExams(ctx context.Context, onlyNonRegular bool) (
 			s.education_level,
 			s.subject_type,
 			e.end_at
-		FROM exams e
+		FROM exam_assignments ea
+		JOIN exams e ON e.id = ea.exam_id
 		JOIN subjects s ON s.id = e.subject_id
-		WHERE e.is_active = TRUE
-		  AND (e.start_at IS NULL OR e.start_at <= $1)
-		  AND (e.end_at IS NULL OR e.end_at > $1)
-	`
-	if onlyNonRegular {
-		query += `
-		  AND e.allow_non_regular_self_enroll = TRUE`
-	}
-	query += `
+		WHERE ea.user_id = $1
+		  AND ea.status = 'active'
+		  AND e.is_active = TRUE
+		  AND (e.start_at IS NULL OR e.start_at <= $2)
+		  AND (e.end_at IS NULL OR e.end_at > $2)
 		ORDER BY e.created_at DESC, e.id DESC
 	`
-	rows, err := s.db.QueryContext(ctx, query, now)
+	rows, err := s.db.QueryContext(ctx, query, studentID, now)
 	if err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return nil, ErrAssignmentFeature
+		}
 		return nil, fmt.Errorf("query published exams: %w", err)
 	}
 	defer rows.Close()
