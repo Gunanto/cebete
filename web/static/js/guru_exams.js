@@ -306,6 +306,10 @@
     if (deps && deps.examRandomizeOptionsInput) {
       deps.examRandomizeOptionsInput.checked = !!examRow.randomize_options;
     }
+    if (deps && deps.examAllowNonRegularInput) {
+      deps.examAllowNonRegularInput.checked =
+        !!examRow.allow_non_regular_self_enroll;
+    }
   }
 
   function reviewPolicyLabel(policy) {
@@ -362,7 +366,7 @@
     if (!deps || !deps.examsBody) return;
     if (!Array.isArray(exams) || !exams.length) {
       deps.examsBody.innerHTML =
-        '<tr><td colspan="11" class="muted">Belum ada data ujian.</td></tr>';
+        '<tr><td colspan="12" class="muted">Belum ada data ujian.</td></tr>';
       return;
     }
     deps.examsBody.innerHTML = "";
@@ -379,6 +383,13 @@
         "<td>" + deps.escapeHtml(deps.fmtDate(it.start_at)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.end_at)) + "</td>",
         "<td>" + deps.escapeHtml(reviewPolicyLabel(it.review_policy)) + "</td>",
+        "<td>" +
+          '<span class="chip ' +
+          (it.allow_non_regular_self_enroll ? "chip-success" : "chip-muted") +
+          '">' +
+          deps.escapeHtml(it.allow_non_regular_self_enroll ? "Ya" : "Tidak") +
+          "</span>" +
+          "</td>",
         "<td>" +
           deps.escapeHtml(String(it.duration_minutes || 0)) +
           " menit</td>",
@@ -609,6 +620,8 @@
           review_policy: String(fd.get("review_policy") || "after_submit"),
           randomize_questions: fd.get("randomize_questions") !== null,
           randomize_options: fd.get("randomize_options") !== null,
+          allow_non_regular_self_enroll:
+            fd.get("allow_non_regular_self_enroll") !== null,
           is_active: true,
         };
         examFormSubmitting = true;

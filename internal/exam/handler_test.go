@@ -16,54 +16,55 @@ import (
 )
 
 type mockExamService struct {
-	startAttemptFn                  func(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
-	previewExamByTokenFn            func(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
-	listAdminExamsFn                func(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
-	listAdminExamsByOwnerFn         func(ctx context.Context, ownerID int64, includeInactive bool) ([]ExamAdminRecord, error)
-	createExamFn                    func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
-	updateExamFn                    func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
-	deleteExamFn                    func(ctx context.Context, examID int64) error
-	resetExamAttemptFn              func(ctx context.Context, examID, studentID, actorID int64) (int64, error)
-	deleteExamAttemptFn             func(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error)
-	listSubjectsFn                  func(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error)
-	createSubjectFn                 func(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
-	updateSubjectFn                 func(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
-	deleteSubjectFn                 func(ctx context.Context, subjectID, actorID int64, actorRole string) error
-	listExamsFn                     func(ctx context.Context, subjectID int64) ([]ExamOption, error)
-	listExamsForTokenFn             func(ctx context.Context) ([]ExamTokenExam, error)
-	listPublishedExamsFn            func(ctx context.Context) ([]ExamTokenExam, error)
-	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
-	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
-	listExamParticipantResultsFn    func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
-	exportExamParticipantResultsFn  func(ctx context.Context, examID int64) ([]byte, string, error)
-	replaceExamAssignmentsFn        func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
-	replaceExamAssignmentsByClassFn func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
-	appendExamAssignmentsByClassFn  func(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
-	removeExamAssignmentFn          func(ctx context.Context, examID, userID, actorID int64) error
-	previewExamByTokenForStaffFn    func(ctx context.Context, examToken string) (*ExamTokenPreview, error)
-	listExamQuestionsFn             func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
-	listExamQuestionCodeRulesFn     func(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
-	upsertExamQuestionCodeRuleFn    func(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
-	deleteExamQuestionCodeRuleFn    func(ctx context.Context, examID, questionCodeID int64) error
-	syncExamQuestionsByCodeFn       func(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error)
-	upsertExamQuestionFn            func(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error)
-	upsertExamQuestionIncidentFn    func(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error)
-	deleteExamQuestionFn            func(ctx context.Context, examID, questionID int64) error
-	isExamOwnedByFn                 func(ctx context.Context, examID, ownerID int64) (bool, error)
-	getAttemptSummaryFn             func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
-	getAttemptQuestionFn            func(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error)
-	getAttemptResultFn              func(ctx context.Context, attemptID int64) (*AttemptResult, error)
-	saveAnswerFn                    func(ctx context.Context, input SaveAnswerInput) error
-	submitAttemptFn                 func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
-	getAttemptOwnerFn               func(ctx context.Context, attemptID int64) (int64, error)
-	logAttemptEventFn               func(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
-	listAttemptEventsFn             func(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
-	listExamEventsFn                func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error)
-	listExamClassEventsFn           func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
-	setUserPhotoDataURLFn           func(ctx context.Context, userID int64, dataURL string) (string, error)
-	clearUserPhotoDataURLFn         func(ctx context.Context, userID int64) error
-	regradeExamAttemptsFn           func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
-	selfEnrollExamFn                func(ctx context.Context, examID, studentID int64) error
+	startAttemptFn                    func(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error)
+	previewExamByTokenFn              func(ctx context.Context, studentID int64, examToken string) (*ExamTokenPreview, error)
+	listAdminExamsFn                  func(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error)
+	listAdminExamsByOwnerFn           func(ctx context.Context, ownerID int64, includeInactive bool) ([]ExamAdminRecord, error)
+	createExamFn                      func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error)
+	updateExamFn                      func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error)
+	deleteExamFn                      func(ctx context.Context, examID int64) error
+	resetExamAttemptFn                func(ctx context.Context, examID, studentID, actorID int64) (int64, error)
+	deleteExamAttemptFn               func(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error)
+	listSubjectsFn                    func(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error)
+	createSubjectFn                   func(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error)
+	updateSubjectFn                   func(ctx context.Context, in UpdateSubjectInput) (*SubjectOption, error)
+	deleteSubjectFn                   func(ctx context.Context, subjectID, actorID int64, actorRole string) error
+	listExamsFn                       func(ctx context.Context, subjectID int64) ([]ExamOption, error)
+	listExamsForTokenFn               func(ctx context.Context) ([]ExamTokenExam, error)
+	listPublishedExamsFn              func(ctx context.Context) ([]ExamTokenExam, error)
+	listPublishedExamsForNonRegularFn func(ctx context.Context) ([]ExamTokenExam, error)
+	generateExamTokenFn               func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
+	listExamAssignmentsFn             func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
+	listExamParticipantResultsFn      func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	exportExamParticipantResultsFn    func(ctx context.Context, examID int64) ([]byte, string, error)
+	replaceExamAssignmentsFn          func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
+	replaceExamAssignmentsByClassFn   func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	appendExamAssignmentsByClassFn    func(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	removeExamAssignmentFn            func(ctx context.Context, examID, userID, actorID int64) error
+	previewExamByTokenForStaffFn      func(ctx context.Context, examToken string) (*ExamTokenPreview, error)
+	listExamQuestionsFn               func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
+	listExamQuestionCodeRulesFn       func(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
+	upsertExamQuestionCodeRuleFn      func(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
+	deleteExamQuestionCodeRuleFn      func(ctx context.Context, examID, questionCodeID int64) error
+	syncExamQuestionsByCodeFn         func(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error)
+	upsertExamQuestionFn              func(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error)
+	upsertExamQuestionIncidentFn      func(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error)
+	deleteExamQuestionFn              func(ctx context.Context, examID, questionID int64) error
+	isExamOwnedByFn                   func(ctx context.Context, examID, ownerID int64) (bool, error)
+	getAttemptSummaryFn               func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
+	getAttemptQuestionFn              func(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error)
+	getAttemptResultFn                func(ctx context.Context, attemptID int64) (*AttemptResult, error)
+	saveAnswerFn                      func(ctx context.Context, input SaveAnswerInput) error
+	submitAttemptFn                   func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
+	getAttemptOwnerFn                 func(ctx context.Context, attemptID int64) (int64, error)
+	logAttemptEventFn                 func(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
+	listAttemptEventsFn               func(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
+	listExamEventsFn                  func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error)
+	listExamClassEventsFn             func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error)
+	setUserPhotoDataURLFn             func(ctx context.Context, userID int64, dataURL string) (string, error)
+	clearUserPhotoDataURLFn           func(ctx context.Context, userID int64) error
+	regradeExamAttemptsFn             func(ctx context.Context, examID, actorID int64, actorRole string) (*RegradeExamResult, error)
+	selfEnrollExamFn                  func(ctx context.Context, examID, studentID int64) error
 }
 
 func (m *mockExamService) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
@@ -183,6 +184,13 @@ func (m *mockExamService) ListPublishedExams(ctx context.Context) ([]ExamTokenEx
 		return nil, errors.New("not implemented")
 	}
 	return m.listPublishedExamsFn(ctx)
+}
+
+func (m *mockExamService) ListPublishedExamsForNonRegular(ctx context.Context) ([]ExamTokenExam, error) {
+	if m.listPublishedExamsForNonRegularFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listPublishedExamsForNonRegularFn(ctx)
 }
 
 func (m *mockExamService) GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {
@@ -418,6 +426,68 @@ func decodeBody(t *testing.T, rr *httptest.ResponseRecorder) map[string]interfac
 		t.Fatalf("decode response: %v", err)
 	}
 	return out
+}
+
+func TestListPublishedExamsUsesNonRegularFilter(t *testing.T) {
+	calledRegular := false
+	calledNonRegular := false
+	h := NewHandler(&mockExamService{
+		listPublishedExamsFn: func(ctx context.Context) ([]ExamTokenExam, error) {
+			calledRegular = true
+			return []ExamTokenExam{{ID: 1, Code: "REG"}}, nil
+		},
+		listPublishedExamsForNonRegularFn: func(ctx context.Context) ([]ExamTokenExam, error) {
+			calledNonRegular = true
+			return []ExamTokenExam{{ID: 2, Code: "NR"}}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exams/published", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 21, Role: "siswa", IsNonRegular: true}))
+	w := httptest.NewRecorder()
+
+	h.ListPublishedExams(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if calledRegular {
+		t.Fatalf("regular published exam listing should not be called for non-regular users")
+	}
+	if !calledNonRegular {
+		t.Fatalf("non-regular published exam listing should be called")
+	}
+}
+
+func TestListPublishedExamsUsesRegularListingForRegularStudent(t *testing.T) {
+	calledRegular := false
+	calledNonRegular := false
+	h := NewHandler(&mockExamService{
+		listPublishedExamsFn: func(ctx context.Context) ([]ExamTokenExam, error) {
+			calledRegular = true
+			return []ExamTokenExam{{ID: 1, Code: "REG"}}, nil
+		},
+		listPublishedExamsForNonRegularFn: func(ctx context.Context) ([]ExamTokenExam, error) {
+			calledNonRegular = true
+			return []ExamTokenExam{{ID: 2, Code: "NR"}}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exams/published", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 22, Role: "siswa"}))
+	w := httptest.NewRecorder()
+
+	h.ListPublishedExams(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !calledRegular {
+		t.Fatalf("regular published exam listing should be called")
+	}
+	if calledNonRegular {
+		t.Fatalf("non-regular published exam listing should not be called for regular users")
+	}
 }
 
 func TestGetAttemptForbiddenForNonOwner(t *testing.T) {

@@ -146,6 +146,7 @@ type ExamAdminRecord struct {
 	ReviewPolicy       string     `json:"review_policy"`
 	RandomizeQuestions bool       `json:"randomize_questions"`
 	RandomizeOptions   bool       `json:"randomize_options"`
+	AllowNonRegular    bool       `json:"allow_non_regular_self_enroll"`
 	IsActive           bool       `json:"is_active"`
 	CreatedBy          *int64     `json:"created_by,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
@@ -164,6 +165,7 @@ type CreateExamInput struct {
 	ReviewPolicy       string
 	RandomizeQuestions bool
 	RandomizeOptions   bool
+	AllowNonRegular    bool
 	CreatedBy          int64
 }
 
@@ -179,6 +181,7 @@ type UpdateExamInput struct {
 	ReviewPolicy       string
 	RandomizeQuestions bool
 	RandomizeOptions   bool
+	AllowNonRegular    bool
 	IsActive           bool
 }
 
@@ -954,8 +957,16 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 }
 
 func (s *Service) ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error) {
+	return s.listPublishedExams(ctx, false)
+}
+
+func (s *Service) ListPublishedExamsForNonRegular(ctx context.Context) ([]ExamTokenExam, error) {
+	return s.listPublishedExams(ctx, true)
+}
+
+func (s *Service) listPublishedExams(ctx context.Context, onlyNonRegular bool) ([]ExamTokenExam, error) {
 	now := time.Now()
-	rows, err := s.db.QueryContext(ctx, `
+	query := `
 		SELECT
 			e.id,
 			e.code,
@@ -970,8 +981,15 @@ func (s *Service) ListPublishedExams(ctx context.Context) ([]ExamTokenExam, erro
 		WHERE e.is_active = TRUE
 		  AND (e.start_at IS NULL OR e.start_at <= $1)
 		  AND (e.end_at IS NULL OR e.end_at > $1)
+	`
+	if onlyNonRegular {
+		query += `
+		  AND e.allow_non_regular_self_enroll = TRUE`
+	}
+	query += `
 		ORDER BY e.created_at DESC, e.id DESC
-	`, now)
+	`
+	rows, err := s.db.QueryContext(ctx, query, now)
 	if err != nil {
 		return nil, fmt.Errorf("query published exams: %w", err)
 	}
@@ -1137,6 +1155,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 			e.review_policy,
 			e.randomize_questions,
 			e.randomize_options,
+			e.allow_non_regular_self_enroll,
 			e.is_active,
 			e.created_by,
 			e.created_at,
@@ -1189,6 +1208,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 					e.review_policy,
 					e.randomize_questions,
 					e.randomize_options,
+					e.allow_non_regular_self_enroll,
 					e.is_active,
 					e.created_by,
 					e.created_at,
@@ -1235,6 +1255,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 			&it.ReviewPolicy,
 			&it.RandomizeQuestions,
 			&it.RandomizeOptions,
+			&it.AllowNonRegular,
 			&it.IsActive,
 			&createdBy,
 			&it.CreatedAt,
@@ -1278,10 +1299,11 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		if err := s.db.QueryRowContext(ctx, `
 			INSERT INTO exams (
 				code, title, subject_id, duration_minutes, max_attempts,
-				start_at, end_at, review_policy, randomize_questions, randomize_options, is_active, created_by, created_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,now())
+				start_at, end_at, review_policy, randomize_questions, randomize_options,
+				allow_non_regular_self_enroll, is_active, created_by, created_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,$12,now())
 			RETURNING id
-		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.CreatedBy).Scan(&outID); err != nil {
+		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.CreatedBy).Scan(&outID); err != nil {
 			return 0, err
 		}
 		return outID, nil
@@ -1369,10 +1391,11 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 			review_policy = $9,
 			randomize_questions = $10,
 			randomize_options = $11,
-			is_active = $12
+			allow_non_regular_self_enroll = $12,
+			is_active = $13
 		WHERE id = $1
 		RETURNING id
-	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.IsActive).Scan(&outID); err != nil {
+	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.IsActive).Scan(&outID); err != nil {
 		if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
 			return nil, ErrReviewPolicySchema
 		}
@@ -1426,6 +1449,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 			e.review_policy,
 			e.randomize_questions,
 			e.randomize_options,
+			e.allow_non_regular_self_enroll,
 			e.is_active,
 			e.created_by,
 			e.created_at,
@@ -1464,6 +1488,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 					e.review_policy,
 					e.randomize_questions,
 					e.randomize_options,
+					e.allow_non_regular_self_enroll,
 					e.is_active,
 					e.created_by,
 					e.created_at,
@@ -1506,6 +1531,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 		&it.ReviewPolicy,
 		&it.RandomizeQuestions,
 		&it.RandomizeOptions,
+		&it.AllowNonRegular,
 		&it.IsActive,
 		&createdBy,
 		&it.CreatedAt,

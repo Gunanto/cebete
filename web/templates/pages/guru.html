@@ -1091,6 +1091,7 @@
                                     <th>Mulai</th>
                                     <th>Selesai</th>
                                     <th>Lihat Hasil</th>
+                                    <th>Non-Reguler</th>
                                     <th>Durasi</th>
                                     <th>Attempt</th>
                                     <th>Soal</th>
@@ -1100,7 +1101,7 @@
                             </thead>
                             <tbody id="guru-exams-body">
                                 <tr>
-                                    <td colspan="11" class="muted">
+                                    <td colspan="12" class="muted">
                                         Belum ada data ujian.
                                     </td>
                                 </tr>
@@ -1201,6 +1202,13 @@
                         <label>
                             <input name="randomize_options" type="checkbox" />
                             Acak Opsi Jawaban
+                        </label>
+                        <label>
+                            <input
+                                name="allow_non_regular_self_enroll"
+                                type="checkbox"
+                            />
+                            Tampilkan untuk peserta non-reguler
                         </label>
                         <button
                             id="guru-exam-save-btn"

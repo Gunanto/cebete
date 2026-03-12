@@ -4855,6 +4855,10 @@
       examForm && examForm.elements
         ? examForm.elements.namedItem("randomize_options")
         : null;
+    const examAllowNonRegularInput =
+      examForm && examForm.elements
+        ? examForm.elements.namedItem("allow_non_regular_self_enroll")
+        : null;
     const examSubjectSelect = document.getElementById("guru-exam-subject");
     const examsBody = document.getElementById("guru-exams-body");
     const examQuestionForm = document.getElementById("guru-exam-question-form");
@@ -5560,6 +5564,7 @@
         examForm: examForm,
         examRandomizeQuestionsInput: examRandomizeQuestionsInput,
         examRandomizeOptionsInput: examRandomizeOptionsInput,
+        examAllowNonRegularInput: examAllowNonRegularInput,
         examSubjectSelect: examSubjectSelect,
         examsBody: examsBody,
         examQuestionForm: examQuestionForm,

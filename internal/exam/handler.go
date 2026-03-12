@@ -39,6 +39,7 @@ type examService interface {
 	ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
 	ListPublishedExams(ctx context.Context) ([]ExamTokenExam, error)
+	ListPublishedExamsForNonRegular(ctx context.Context) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
@@ -137,6 +138,7 @@ type examManageRequest struct {
 	ReviewPolicy       string `json:"review_policy"`
 	RandomizeQuestions bool   `json:"randomize_questions"`
 	RandomizeOptions   bool   `json:"randomize_options"`
+	AllowNonRegular    bool   `json:"allow_non_regular_self_enroll"`
 	IsActive           *bool  `json:"is_active"`
 }
 
@@ -448,7 +450,13 @@ func (h *Handler) ListPublishedExams(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 		return
 	}
-	items, err := h.svc.ListPublishedExams(r.Context())
+	var items []ExamTokenExam
+	var err error
+	if user.IsNonRegular {
+		items, err = h.svc.ListPublishedExamsForNonRegular(r.Context())
+	} else {
+		items, err = h.svc.ListPublishedExams(r.Context())
+	}
 	if err != nil {
 		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		return
@@ -541,6 +549,7 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 		ReviewPolicy:       req.ReviewPolicy,
 		RandomizeQuestions: req.RandomizeQuestions,
 		RandomizeOptions:   req.RandomizeOptions,
+		AllowNonRegular:    req.AllowNonRegular,
 		CreatedBy:          user.ID,
 	})
 	if err != nil {
@@ -610,6 +619,7 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		ReviewPolicy:       req.ReviewPolicy,
 		RandomizeQuestions: req.RandomizeQuestions,
 		RandomizeOptions:   req.RandomizeOptions,
+		AllowNonRegular:    req.AllowNonRegular,
 		IsActive:           isActive,
 	})
 	if err != nil {

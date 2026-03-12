@@ -1,0 +1,2 @@
+ALTER TABLE exams
+ADD COLUMN IF NOT EXISTS allow_non_regular_self_enroll BOOLEAN NOT NULL DEFAULT FALSE;
