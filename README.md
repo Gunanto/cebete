@@ -239,7 +239,8 @@ curl -s -X POST http://localhost:8080/api/v1/auth/otp/request \
 
 Catatan:
 - Jika SMTP aktif, OTP dikirim via email.
-- Jika SMTP belum aktif, OTP tampil di log server (`[DEV-OTP]`).
+- Jika SMTP belum aktif, OTP tampil di log server (`[DEV-OTP]` untuk login, `[DEV-SIGNUP-OTP]` untuk signup non-reguler).
+- Jika SMTP dikonfigurasi tetapi pengiriman gagal, endpoint sekarang mengembalikan error agar kegagalan delivery tidak tersamarkan sebagai sukses.
 
 ### Verify OTP
 

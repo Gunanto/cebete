@@ -18,6 +18,7 @@ type Config struct {
 	CSRFEnforced        bool
 	AuthRateLimitPerMin int
 	AIRateLimitPerMin   int
+	AppBaseURL          string
 
 	SMTPHost     string
 	SMTPPort     int
@@ -63,6 +64,7 @@ func LoadConfig() Config {
 		CSRFEnforced:        boolOrDefault("CSRF_ENFORCED", false),
 		AuthRateLimitPerMin: intOrDefault("AUTH_RATE_LIMIT_PER_MINUTE", 60),
 		AIRateLimitPerMin:   intOrDefault("AI_RATE_LIMIT_PER_MINUTE", 30),
+		AppBaseURL:          envOrDefault("APP_BASE_URL", "http://localhost:8080"),
 		SMTPHost:            os.Getenv("SMTP_HOST"),
 		SMTPPort:            smtpPort,
 		SMTPUser:            os.Getenv("SMTP_USER"),

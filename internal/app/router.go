@@ -38,16 +38,18 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	template.Must(tmpl.ParseGlob("web/templates/pages/*.html"))
 
 	mailer := auth.NewSMTPMailer(auth.SMTPConfig{
-		Host: cfg.SMTPHost,
-		Port: cfg.SMTPPort,
-		User: cfg.SMTPUser,
-		Pass: cfg.SMTPPass,
-		From: cfg.SMTPFrom,
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		User:     cfg.SMTPUser,
+		Pass:     cfg.SMTPPass,
+		From:     cfg.SMTPFrom,
+		StartTLS: cfg.SMTPStartTLS,
 	})
 
 	authSvc := auth.NewService(db, auth.ServiceConfig{
 		BootstrapToken: cfg.BootstrapToken,
 		Mailer:         mailer,
+		AppBaseURL:     cfg.AppBaseURL,
 	})
 	authHandler := auth.NewHandler(authSvc)
 	auditSvc := audit.NewService(db)
@@ -115,6 +117,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	r.Get("/login", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "login_content", "Login CBT LMS", map[string]any{})
 	})
+	r.Get("/auth/first-login", authHandler.FirstLoginMagicLink)
 	r.Get("/ujian", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "ujian_content", "Ikuti Ujian", map[string]any{})
 	})

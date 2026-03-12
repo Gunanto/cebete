@@ -773,6 +773,39 @@
           if (signupOTPCodeInput && signupOTPCodeInput.focus)
             signupOTPCodeInput.focus();
         } catch (err) {
+          const errMsg = String((err && err.message) || "").toLowerCase();
+          const email = normalizeCredential(signupEmailInput.value);
+          if (errMsg.includes("email already registered")) {
+            activateLoginTab("signin");
+            activateAuthMethod("otp");
+            if (loginOTPEmailInput) {
+              loginOTPEmailInput.value = email;
+            }
+            try {
+              await api("/api/v1/auth/otp/request", "POST", { email: email });
+              text(
+                msg,
+                "Email ini sudah terdaftar. Kami kirim OTP login ke email tersebut. Masukkan 6 digit OTP untuk masuk.",
+              );
+              if (loginOTPStepRequest) loginOTPStepRequest.hidden = true;
+              if (loginOTPStepVerify) loginOTPStepVerify.hidden = false;
+              if (
+                loginOTPDigitInputs.length > 0 &&
+                loginOTPDigitInputs[0].focus
+              ) {
+                loginOTPDigitInputs[0].focus();
+              } else if (loginOTPCodeInput && loginOTPCodeInput.focus) {
+                loginOTPCodeInput.focus();
+              }
+            } catch (loginErr) {
+              text(
+                msg,
+                "Email ini sudah terdaftar. Silakan login via OTP Email. Gagal kirim OTP login: " +
+                  loginErr.message,
+              );
+            }
+            return;
+          }
           text(msg, "Gagal kirim OTP: " + err.message);
         } finally {
           done();
@@ -873,11 +906,8 @@
     const typeSelect = document.getElementById("type-select");
     const subjectSelect = document.getElementById("subject-select");
     const examSelect = document.getElementById("exam-select");
-    const selfEnrollActions = document.getElementById("self-enroll-actions");
-    const selfEnrollOpenBtn = document.getElementById("self-enroll-open-btn");
-    const selfEnrollDialog = document.getElementById("self-enroll-dialog");
+    const selfEnrollPanel = document.getElementById("self-enroll-panel");
     const selfEnrollBody = document.getElementById("self-enroll-body");
-    const selfEnrollCloseBtn = document.getElementById("self-enroll-close-btn");
     const examTokenDialog = document.getElementById("exam-token-dialog");
     const examTokenDialogForm = document.getElementById(
       "exam-token-dialog-form",
@@ -965,8 +995,8 @@
         "Baca petunjuk berikut sebelum memulai ujian.",
     ).trim();
     let subjects = [];
-    if (selfEnrollActions) {
-      selfEnrollActions.hidden = !isNonRegular;
+    if (selfEnrollPanel) {
+      selfEnrollPanel.hidden = !isNonRegular;
     }
     const initDone = beginBusy(form, msg, "Memuat daftar mapel...");
     try {
@@ -1005,7 +1035,7 @@
       const items = Array.isArray(list) ? list : [];
       if (!items.length) {
         selfEnrollBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Belum ada ujian yang bisa diikuti.</td></tr>';
+          '<tr><td colspan="5" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
         return items;
       }
       selfEnrollBody.innerHTML = "";
@@ -1018,7 +1048,7 @@
           "<td>" + escapeHtml(fmtShortDate(it.end_at)) + "</td>",
           '<td><button class="btn btn-secondary btn-inline" type="button" data-self-enroll="' +
             escapeHtml(String(it.id || 0)) +
-            '">Daftar</button></td>',
+            '">Pilih Ujian</button></td>',
         ].join("");
         selfEnrollBody.appendChild(tr);
       });
@@ -1118,56 +1148,36 @@
       startBtn.disabled = !examSelect.value;
     });
 
-    if (selfEnrollOpenBtn) {
-      selfEnrollOpenBtn.addEventListener("click", async function () {
-        if (!isNonRegular) {
-          text(msg, "Fitur ini hanya untuk peserta non-reguler.");
-          return;
-        }
-        const done = beginBusy(
-          selfEnrollOpenBtn,
-          msg,
-          "Memuat daftar ujian...",
-        );
-        try {
-          await loadPublishedExams();
-          if (
-            selfEnrollDialog &&
-            typeof selfEnrollDialog.showModal === "function"
-          ) {
-            selfEnrollDialog.showModal();
-          } else {
-            selfEnrollDialog?.setAttribute?.("open", "open");
-          }
-        } catch (err) {
-          text(msg, "Gagal memuat daftar ujian: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (selfEnrollCloseBtn) {
-      selfEnrollCloseBtn.addEventListener("click", function () {
-        if (selfEnrollDialog && typeof selfEnrollDialog.close === "function") {
-          selfEnrollDialog.close();
-        }
-      });
-    }
-
     if (selfEnrollBody) {
       selfEnrollBody.addEventListener("click", async function (e) {
         const btn = e.target && e.target.closest("button[data-self-enroll]");
         if (!btn) return;
         const examID = Number(btn.getAttribute("data-self-enroll") || 0);
         if (!examID) return;
-        const done = beginBusy(btn, msg, "Mendaftarkan ujian...");
+        const done = beginBusy(btn, msg, "Menyiapkan ujian...");
         try {
           await api("/api/v1/exams/" + examID + "/self-enroll", "POST", {});
-          text(msg, "Berhasil daftar ujian. Silakan lanjutkan memilih ujian.");
+          pendingStartExamID = examID;
+          pendingStartToken = "";
+          pendingPreviewData = null;
+          text(msg, "Ujian dipilih. Masukkan token untuk melanjutkan.");
           await loadPublishedExams();
+          if (examTokenDialogInput) {
+            examTokenDialogInput.value = "";
+          }
+          if (examTokenDialogHelp) {
+            examTokenDialogHelp.textContent = tokenDialogHelpDefault;
+          }
+          if (
+            examTokenDialog &&
+            typeof examTokenDialog.showModal === "function"
+          ) {
+            examTokenDialog.showModal();
+            return;
+          }
+          text(msg, "Dialog token tidak tersedia. Hubungi proktor.");
         } catch (err) {
-          text(msg, "Gagal daftar ujian: " + err.message);
+          text(msg, "Gagal menyiapkan ujian: " + err.message);
         } finally {
           done();
         }
@@ -1299,7 +1309,7 @@
 
     if (examTokenDialogCancelBtn) {
       examTokenDialogCancelBtn.addEventListener("click", function () {
-        if (isStudentRole) {
+        if (isStudentRole && !isNonRegular) {
           api("/api/v1/auth/logout", "POST")
             .catch(function () {
               // no-op
@@ -1310,11 +1320,19 @@
           return;
         }
         pendingStartExamID = 0;
+        pendingStartToken = "";
+        pendingPreviewData = null;
+        if (examTokenDialogInput) {
+          examTokenDialogInput.value = "";
+        }
         if (examTokenDialogHelp) {
           examTokenDialogHelp.textContent = tokenDialogHelpDefault;
         }
         if (examTokenDialog && typeof examTokenDialog.close === "function") {
           examTokenDialog.close();
+        }
+        if (isNonRegular) {
+          text(msg, "Kembali ke daftar ujian aktif.");
         }
       });
     }
@@ -1541,6 +1559,21 @@
 
     if (isStudentRole) {
       if (legacyFlow) legacyFlow.hidden = true;
+      if (isNonRegular) {
+        const done = beginBusy(form, msg, "Memuat daftar ujian aktif...");
+        try {
+          await loadPublishedExams();
+          text(
+            msg,
+            "Pilih salah satu ujian aktif terlebih dulu. Token baru diminta setelah ujian dipilih.",
+          );
+        } catch (err) {
+          text(msg, "Gagal memuat daftar ujian aktif: " + err.message);
+        } finally {
+          done();
+        }
+        return;
+      }
       if (examTokenDialogInput) examTokenDialogInput.value = "";
       if (examTokenDialogHelp) {
         examTokenDialogHelp.textContent = tokenDialogHelpDefault;

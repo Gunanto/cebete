@@ -747,7 +747,7 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.svc.ApproveRegistration(r.Context(), id, admin.ID)
+	userID, firstLoginLinkSent, err := h.svc.ApproveRegistration(r.Context(), id, admin.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrRegistrationNotFound):
@@ -760,7 +760,26 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{"status": "approved", "user_id": userID}})
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{"status": "approved", "user_id": userID, "first_login_link_sent": firstLoginLinkSent}})
+}
+
+func (h *Handler) FirstLoginMagicLink(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	user, err := h.svc.ConsumeFirstLoginMagicLink(r.Context(), token)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrMagicLinkInvalid), errors.Is(err, ErrMagicLinkExpired):
+			http.Redirect(w, r, "/login?first_login=invalid", http.StatusFound)
+		default:
+			http.Redirect(w, r, "/login?first_login=error", http.StatusFound)
+		}
+		return
+	}
+	if err := h.establishSession(w, r, user); err != nil {
+		http.Redirect(w, r, "/login?first_login=error", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/ujian?first_login=1", http.StatusFound)
 }
 
 func (h *Handler) RejectRegistration(w http.ResponseWriter, r *http.Request) {

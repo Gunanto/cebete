@@ -32,6 +32,8 @@ var (
 	ErrBootstrapDenied      = errors.New("bootstrap denied")
 	ErrUserNotFound         = errors.New("user not found")
 	ErrInvalidInput         = errors.New("invalid input")
+	ErrMagicLinkInvalid     = errors.New("invalid magic link")
+	ErrMagicLinkExpired     = errors.New("magic link expired")
 )
 
 type Service struct {
@@ -46,6 +48,7 @@ type Service struct {
 	otpLockDuration   time.Duration
 	mailer            OTPMailer
 	bootstrapToken    string
+	appBaseURL        string
 }
 
 type ServiceConfig struct {
@@ -59,6 +62,7 @@ type ServiceConfig struct {
 	OTPLockDuration   time.Duration
 	BootstrapToken    string
 	Mailer            OTPMailer
+	AppBaseURL        string
 }
 
 type User struct {
@@ -238,6 +242,7 @@ func NewService(db *sql.DB, cfg ServiceConfig) *Service {
 		otpLockDuration:   cfg.OTPLockDuration,
 		mailer:            cfg.Mailer,
 		bootstrapToken:    strings.TrimSpace(cfg.BootstrapToken),
+		appBaseURL:        strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
 	}
 }
 
@@ -361,7 +366,7 @@ func (s *Service) RequestOTP(ctx context.Context, email string) error {
 	if s.mailer != nil {
 		if err := s.mailer.SendOTP(ctx, email, otpCode); err != nil {
 			log.Printf("smtp otp send failed email=%s err=%v", email, err)
-			fmt.Printf("[DEV-OTP-FALLBACK] email=%s code=%s\n", email, otpCode)
+			return fmt.Errorf("send otp email: %w", err)
 		}
 	} else {
 		fmt.Printf("[DEV-OTP] email=%s code=%s\n", email, otpCode)
@@ -534,7 +539,7 @@ func (s *Service) RequestSignupOTP(ctx context.Context, email string) error {
 	if s.mailer != nil {
 		if err := s.mailer.SendOTP(ctx, email, otpCode); err != nil {
 			log.Printf("smtp signup otp send failed email=%s err=%v", email, err)
-			fmt.Printf("[DEV-SIGNUP-OTP-FALLBACK] email=%s code=%s\n", email, otpCode)
+			return fmt.Errorf("send signup otp email: %w", err)
 		}
 	} else {
 		fmt.Printf("[DEV-SIGNUP-OTP] email=%s code=%s\n", email, otpCode)
@@ -1023,10 +1028,10 @@ func (s *Service) ListRegistrationPending(ctx context.Context, limit int) ([]Reg
 	return s.ListRegistrations(ctx, "pending", limit, 0)
 }
 
-func (s *Service) ApproveRegistration(ctx context.Context, registrationID, reviewerID int64) (int64, error) {
+func (s *Service) ApproveRegistration(ctx context.Context, registrationID, reviewerID int64) (int64, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
+		return 0, false, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -1041,32 +1046,33 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	var role, email, passwordHash, fullName, formPayloadRaw, status string
 	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &formPayloadRaw, &status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrRegistrationNotFound
+			return 0, false, ErrRegistrationNotFound
 		}
-		return 0, fmt.Errorf("load registration: %w", err)
+		return 0, false, fmt.Errorf("load registration: %w", err)
 	}
 	if status != "pending" {
-		return 0, ErrRegistrationState
+		return 0, false, ErrRegistrationState
 	}
 	if strings.TrimSpace(formPayloadRaw) == "" {
 		formPayloadRaw = "{}"
 	}
 	var payload RegistrationFormPayload
 	if err := json.Unmarshal([]byte(formPayloadRaw), &payload); err != nil {
-		return 0, fmt.Errorf("parse form payload: %w", err)
+		return 0, false, fmt.Errorf("parse form payload: %w", err)
 	}
 	isNonRegular := payload.NonRegular
+	shouldSendFirstLoginLink := isNonRegular && role == "siswa"
 
 	var userID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 LIMIT 1`, email).Scan(&userID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("lookup user email: %w", err)
+		return 0, false, fmt.Errorf("lookup user email: %w", err)
 	}
 
 	if userID == 0 {
 		username, err := s.nextUsernameTx(ctx, tx, email)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 
 		err = tx.QueryRowContext(ctx, `
@@ -1082,7 +1088,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 			RETURNING id
 		`, username, passwordHash, fullName, role, email, reviewerID, isNonRegular).Scan(&userID)
 		if err != nil {
-			return 0, fmt.Errorf("insert approved user: %w", err)
+			return 0, false, fmt.Errorf("insert approved user: %w", err)
 		}
 	} else {
 		_, err = tx.ExecContext(ctx, `
@@ -1100,22 +1106,41 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 			WHERE id = $6
 		`, fullName, passwordHash, role, reviewerID, isNonRegular, userID)
 		if err != nil {
-			return 0, fmt.Errorf("update approved user: %w", err)
+			return 0, false, fmt.Errorf("update approved user: %w", err)
 		}
 	}
 
 	if isNonRegular && role == "siswa" {
 		schoolID, err := upsertSchoolTx(ctx, tx, payload.SchoolName, payload.NPSN, payload.Kabupaten, payload.Provinsi)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		classID, err := upsertClassTx(ctx, tx, schoolID, payload.ClassName)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if err := upsertEnrollmentTx(ctx, tx, userID, schoolID, classID); err != nil {
-			return 0, err
+			return 0, false, err
 		}
+	}
+
+	firstLoginURL := ""
+	if shouldSendFirstLoginLink && s.appBaseURL != "" {
+		firstLoginToken, err := generateToken(32)
+		if err != nil {
+			return 0, false, fmt.Errorf("generate first login token: %w", err)
+		}
+		expiresAt := time.Now().Add(30 * time.Minute)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO auth_magic_links (
+				user_id, purpose, token_hash, expires_at, created_at
+			) VALUES (
+				$1, 'first_login', $2, $3, now()
+			)
+		`, userID, hashToken(firstLoginToken), expiresAt); err != nil {
+			return 0, false, fmt.Errorf("insert first login token: %w", err)
+		}
+		firstLoginURL = s.appBaseURL + "/auth/first-login?token=" + firstLoginToken
 	}
 
 	_, err = tx.ExecContext(ctx, `
@@ -1129,13 +1154,24 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		WHERE id = $3
 	`, reviewerID, userID, registrationID)
 	if err != nil {
-		return 0, fmt.Errorf("update registration approved: %w", err)
+		return 0, false, fmt.Errorf("update registration approved: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit approve: %w", err)
+		return 0, false, fmt.Errorf("commit approve: %w", err)
 	}
-	return userID, nil
+	firstLoginLinkSent := false
+	if shouldSendFirstLoginLink && firstLoginURL != "" && s.mailer != nil {
+		if err := s.mailer.SendFirstLoginLink(ctx, email, firstLoginURL); err != nil {
+			log.Printf("smtp first login link send failed email=%s err=%v", email, err)
+		} else {
+			firstLoginLinkSent = true
+		}
+	} else if shouldSendFirstLoginLink && firstLoginURL != "" {
+		fmt.Printf("[DEV-FIRST-LOGIN] email=%s url=%s\n", email, firstLoginURL)
+		firstLoginLinkSent = true
+	}
+	return userID, firstLoginLinkSent, nil
 }
 
 func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, provinsi string) (int64, error) {
@@ -1338,6 +1374,56 @@ func (s *Service) RevokeSession(ctx context.Context, token string) error {
 		return fmt.Errorf("revoke session: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) ConsumeFirstLoginMagicLink(ctx context.Context, token string) (*User, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrMagicLinkInvalid
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin magic link tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, user_id, expires_at
+		FROM auth_magic_links
+		WHERE token_hash = $1
+		  AND purpose = 'first_login'
+		  AND used_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, hashToken(token))
+
+	var linkID int64
+	var userID int64
+	var expiresAt time.Time
+	if err := row.Scan(&linkID, &userID, &expiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrMagicLinkInvalid
+		}
+		return nil, fmt.Errorf("load magic link: %w", err)
+	}
+	if time.Now().After(expiresAt) {
+		_, _ = tx.ExecContext(ctx, `UPDATE auth_magic_links SET used_at = now() WHERE id = $1`, linkID)
+		return nil, ErrMagicLinkExpired
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_magic_links SET used_at = now() WHERE id = $1`, linkID); err != nil {
+		return nil, fmt.Errorf("consume magic link: %w", err)
+	}
+
+	user, err := s.getActiveUserTx(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit magic link: %w", err)
+	}
+	return user, nil
 }
 
 func (s *Service) GetStudentExamProfile(ctx context.Context, userID int64) (*StudentExamProfile, error) {

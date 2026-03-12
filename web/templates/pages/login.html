@@ -270,6 +270,15 @@
                     <p class="login-hint">
                         Kami akan mengirim kode OTP 6 digit ke email Anda.
                     </p>
+                    <div class="login-inline-help">
+                        <strong>Catatan peserta non-reguler</strong>
+                        <p>
+                            Menu ini dipakai untuk login OTP biasa. Untuk
+                            peserta non-reguler yang baru saja disetujui, login
+                            pertama dilakukan lewat tautan yang dikirim ke email
+                            persetujuan, tanpa memasukkan OTP lagi.
+                        </p>
+                    </div>
                     <button
                         id="login-otp-request-btn"
                         type="button"
@@ -452,6 +461,16 @@
                     >
                         Kirim OTP ke Email
                     </button>
+                    <div class="login-inline-help">
+                        <strong>Alur pendaftaran non-reguler</strong>
+                        <p>
+                            1. Masukkan email dan verifikasi OTP pendaftaran. 2.
+                            Isi form data siswa. 3. Tunggu persetujuan
+                            proktor/admin. 4. Setelah disetujui, buka email
+                            persetujuan dan klik tautan login pertama tanpa OTP
+                            tambahan.
+                        </p>
+                    </div>
                 </div>
 
                 <div id="signup-step-verify" class="login-otp-step" hidden>
@@ -522,6 +541,11 @@
                     >
                         Verifikasi OTP
                     </button>
+                    <p class="login-hint">
+                        Setelah OTP pendaftaran valid, Anda masih harus mengisi
+                        form data dan menunggu approval. Login pertama setelah
+                        approve dilakukan lewat tautan email persetujuan.
+                    </p>
                 </div>
 
                 <div id="signup-step-profile" class="login-otp-step" hidden>
