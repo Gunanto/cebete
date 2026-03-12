@@ -4937,6 +4937,12 @@
     const resultsExamSelect = document.getElementById(
       "guru-results-exam-select",
     );
+    const resultsAttemptFilter = document.getElementById(
+      "guru-results-attempt-filter",
+    );
+    const resultsClassFilter = document.getElementById(
+      "guru-results-class-filter",
+    );
     const resultsAssignmentBody = document.getElementById(
       "guru-results-assignment-body",
     );
@@ -6504,6 +6510,8 @@
         resultsRefreshBtn: resultsRefreshBtn,
         resultsAssignmentForm: resultsAssignmentForm,
         resultsExamSelect: resultsExamSelect,
+        resultsAttemptFilter: resultsAttemptFilter,
+        resultsClassFilter: resultsClassFilter,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
         resultsSummary: resultsSummary,

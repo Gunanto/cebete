@@ -10,6 +10,7 @@
   var currentUserCache = null;
   var latestItemAnalysisIdentity = null;
   var examSchoolNameCache = {};
+  var examAssignmentsCache = {};
 
   function setDeps(opts) {
     deps = opts || {};
@@ -208,6 +209,45 @@
     } catch (_) {
       examSchoolNameCache[key] = "";
       return "";
+    }
+  }
+
+  async function ensureExamClassNames(examID, fallbackRows) {
+    const key = String(examID || 0);
+    if (examAssignmentsCache[key]) return examAssignmentsCache[key];
+    const fallback = Array.isArray(fallbackRows)
+      ? fallbackRows
+          .map(function (row) {
+            return String((row && row.class_name) || "").trim();
+          })
+          .filter(function (name) {
+            return name;
+          })
+      : [];
+    if (!deps || typeof deps.api !== "function") {
+      examAssignmentsCache[key] = fallback;
+      return fallback;
+    }
+    try {
+      const rows = await deps.api(
+        "/api/v1/admin/exams/" + Number(examID) + "/assignments",
+        "GET",
+      );
+      const list = Array.isArray(rows) ? rows : [];
+      const names = [];
+      list.forEach(function (it) {
+        const raw = String((it && it.class_name) || "").trim();
+        if (raw && names.indexOf(raw) === -1) names.push(raw);
+      });
+      if (!names.length && fallback.length) {
+        examAssignmentsCache[key] = fallback;
+        return fallback;
+      }
+      examAssignmentsCache[key] = names;
+      return names;
+    } catch (_) {
+      examAssignmentsCache[key] = fallback;
+      return fallback;
     }
   }
 
@@ -549,6 +589,215 @@
     fillResultsExamSelect();
   }
 
+  function getActiveAttemptFilter() {
+    if (!deps || !deps.resultsAttemptFilter) return "";
+    return String(deps.resultsAttemptFilter.value || "").trim();
+  }
+
+  function getActiveClassFilter() {
+    if (!deps || !deps.resultsClassFilter) return "";
+    return String(deps.resultsClassFilter.value || "").trim();
+  }
+
+  function hasActiveResultsFilters() {
+    return Boolean(getActiveAttemptFilter() || getActiveClassFilter());
+  }
+
+  function filterResultsRows(rows) {
+    const attemptFilter = getActiveAttemptFilter();
+    const classFilter = getActiveClassFilter();
+    if (!attemptFilter && !classFilter) return rows;
+    return (Array.isArray(rows) ? rows : []).filter(function (row) {
+      if (attemptFilter) {
+        const attempt = Number((row && row.attempt_ke) || 0);
+        if (attempt !== Number(attemptFilter || 0)) return false;
+      }
+      if (classFilter) {
+        const name = String((row && row.class_name) || "").trim();
+        if (name !== classFilter) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderResultsRows(rows, questionNos, totalWeight) {
+    if (!deps || !deps.resultsAssignmentBody) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const questions = Array.isArray(questionNos) ? questionNos : [];
+    if (!list.length) {
+      deps.resultsAssignmentBody.innerHTML =
+        '<tr><td colspan="' +
+        String(8 + questions.length) +
+        '" class="muted">Tidak ada data sesuai filter yang dipilih.</td></tr>';
+      return;
+    }
+    deps.resultsAssignmentBody.innerHTML = "";
+    list.forEach(function (it) {
+      const answers = Array.isArray(it.answers) ? it.answers : [];
+      const answerStates = Array.isArray(it.answer_states)
+        ? it.answer_states
+        : [];
+      const scoreValue = Number(it.skor_total || 0);
+      const nilai =
+        totalWeight > 0
+          ? ((scoreValue / totalWeight) * 100).toFixed(2)
+          : "0.00";
+      const answerCells = questions.map(function (_, idx) {
+        const state = String(answerStates[idx] || "")
+          .trim()
+          .toLowerCase();
+        const cls =
+          state === "correct"
+            ? "result-cell-correct"
+            : state === "wrong"
+              ? "result-cell-wrong"
+              : "";
+        return (
+          '<td class="' +
+          cls +
+          '">' +
+          deps.escapeHtml(String(answers[idx] || "")) +
+          "</td>"
+        );
+      });
+      const tr = document.createElement("tr");
+      tr.innerHTML = [
+        "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.attempt_ke || 0)) + "</td>",
+        "<td>" + deps.escapeHtml(String(scoreValue)) + "</td>",
+        "<td>" + deps.escapeHtml(String(nilai)) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.started_at)) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.ended_at)) + "</td>",
+        '<td><button class="btn btn-secondary btn-inline" type="button" data-attempt-delete="' +
+          deps.escapeHtml(String(it.attempt_id || 0)) +
+          '">Hapus</button></td>',
+      ]
+        .concat(answerCells)
+        .join("");
+      deps.resultsAssignmentBody.appendChild(tr);
+    });
+  }
+
+  function resultsFilterLabel() {
+    const parts = [];
+    const attemptFilter = getActiveAttemptFilter();
+    const classFilter = getActiveClassFilter();
+    if (attemptFilter) parts.push("Attempt " + attemptFilter);
+    if (classFilter) parts.push("Kelas " + classFilter);
+    if (!parts.length) return "";
+    return "Filter: " + parts.join(", ");
+  }
+
+  function updateAttemptFilterOptions(rows) {
+    if (!deps || !deps.resultsAttemptFilter) return;
+    const current = String(deps.resultsAttemptFilter.value || "");
+    const attempts = {};
+    (Array.isArray(rows) ? rows : []).forEach(function (it) {
+      const val = Number((it && it.attempt_ke) || 0);
+      if (val > 0) attempts[val] = true;
+    });
+    const list = Object.keys(attempts)
+      .map(function (raw) {
+        return Number(raw);
+      })
+      .filter(function (n) {
+        return !Number.isNaN(n);
+      })
+      .sort(function (a, b) {
+        return a - b;
+      });
+    deps.resultsAttemptFilter.innerHTML =
+      '<option value="">Semua attempt</option>';
+    list.forEach(function (val) {
+      const opt = document.createElement("option");
+      opt.value = String(val);
+      opt.textContent = "Attempt " + String(val);
+      if (current && current === opt.value) opt.selected = true;
+      deps.resultsAttemptFilter.appendChild(opt);
+    });
+    if (current && !deps.resultsAttemptFilter.value) {
+      deps.resultsAttemptFilter.value = "";
+    }
+  }
+
+  function updateClassFilterOptions(classNames) {
+    if (!deps || !deps.resultsClassFilter) return;
+    const current = String(deps.resultsClassFilter.value || "");
+    const list = (Array.isArray(classNames) ? classNames : [])
+      .map(function (raw) {
+        return String(raw || "").trim();
+      })
+      .filter(function (name) {
+        return name;
+      })
+      .filter(function (name, idx, arr) {
+        return arr.indexOf(name) === idx;
+      })
+      .sort(function (a, b) {
+        return a.localeCompare(b);
+      });
+    deps.resultsClassFilter.innerHTML = '<option value="">Semua kelas</option>';
+    list.forEach(function (name) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (current && current === opt.value) opt.selected = true;
+      deps.resultsClassFilter.appendChild(opt);
+    });
+    if (current && !deps.resultsClassFilter.value) {
+      deps.resultsClassFilter.value = "";
+    }
+  }
+
+  async function refreshResultsFilters(examID, rows) {
+    updateAttemptFilterOptions(rows);
+    if (!deps || !deps.resultsClassFilter) return;
+    const classNames = await ensureExamClassNames(examID, rows);
+    updateClassFilterOptions(classNames);
+  }
+
+  function applyResultsFilters() {
+    const matrix = latestResultsMatrix;
+    if (!matrix) return;
+    const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
+    const questionNos = Array.isArray(matrix && matrix.question_nos)
+      ? matrix.question_nos
+      : [];
+    let totalWeight = Number((matrix && matrix.total_weight) || 0);
+    if (totalWeight <= 0 && questionNos.length > 0) {
+      totalWeight = questionNos.length;
+    }
+    const filtered = filterResultsRows(rows);
+    renderResultsRows(filtered, questionNos, totalWeight);
+    const total = rows.length;
+    const label = resultsFilterLabel();
+    setResultsSummary(
+      "Exam #" +
+        String((matrix && matrix.exam_id) || "-") +
+        " | Attempt tampil: " +
+        String(filtered.length) +
+        " dari " +
+        String(total) +
+        " | Jumlah soal: " +
+        String(questionNos.length) +
+        (label ? " | " + label : ""),
+    );
+    if (!filtered.length && total > 0) {
+      setResultsExtra("Tidak ada data sesuai filter yang dipilih.");
+      return;
+    }
+    if (hasActiveResultsFilters()) {
+      setResultsExtra(
+        "Filter diterapkan. Gunakan Muat Laporan/Statistik/Grafik atau Download Excel.",
+      );
+      return;
+    }
+    setResultsExtra(
+      "Hasil ujian dimuat. Gunakan Muat Laporan/Statistik/Grafik atau Download Excel.",
+    );
+  }
+
   function buildResultsScoreChartHTML(rows, totalMaxScore) {
     const list = (Array.isArray(rows) ? rows : [])
       .slice()
@@ -696,6 +945,7 @@
   function summarizeAttemptResult(mode) {
     const data = latestResultsMatrix;
     const rows = Array.isArray(data && data.rows) ? data.rows : [];
+    const filteredRows = filterResultsRows(rows);
     const totalQuestions = Array.isArray(data && data.question_nos)
       ? data.question_nos.length
       : 0;
@@ -707,8 +957,12 @@
       setResultsExtra("Muat hasil ujian peserta terlebih dahulu.");
       return;
     }
-    const totalAttempts = rows.length;
-    const totalScore = rows.reduce(function (acc, it) {
+    if (!filteredRows.length) {
+      setResultsExtra("Tidak ada data sesuai filter yang dipilih.");
+      return;
+    }
+    const totalAttempts = filteredRows.length;
+    const totalScore = filteredRows.reduce(function (acc, it) {
       return acc + Number((it && it.skor_total) || 0);
     }, 0);
     const avgScore =
@@ -730,10 +984,10 @@
     if (mode === "stats") {
       let maxScore = 0;
       let minScore = 0;
-      if (rows.length > 0) {
-        maxScore = Number(rows[0].skor_total || 0);
-        minScore = Number(rows[0].skor_total || 0);
-        rows.forEach(function (r) {
+      if (filteredRows.length > 0) {
+        maxScore = Number(filteredRows[0].skor_total || 0);
+        minScore = Number(filteredRows[0].skor_total || 0);
+        filteredRows.forEach(function (r) {
           const s = Number((r && r.skor_total) || 0);
           maxScore = Math.max(maxScore, s);
           minScore = Math.min(minScore, s);
@@ -752,12 +1006,13 @@
       );
       return;
     }
-    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalWeight));
+    setResultsExtraHTML(buildResultsScoreChartHTML(filteredRows, totalWeight));
   }
 
   function renderResultsChart() {
     const data = latestResultsMatrix;
     const rows = Array.isArray(data && data.rows) ? data.rows : [];
+    const filteredRows = filterResultsRows(rows);
     const totalQuestions = Array.isArray(data && data.question_nos)
       ? data.question_nos.length
       : 0;
@@ -772,7 +1027,12 @@
       );
       return;
     }
-    setResultsExtraHTML(buildResultsScoreChartHTML(rows, totalWeight));
+    if (!filteredRows.length) {
+      setResultsExtra("Tidak ada data sesuai filter yang dipilih.");
+      deps.setMsg("Grafik belum bisa ditampilkan: filter tidak memiliki data.");
+      return;
+    }
+    setResultsExtraHTML(buildResultsScoreChartHTML(filteredRows, totalWeight));
     deps.setMsg("Grafik skor peserta berhasil ditampilkan.");
   }
 
@@ -792,6 +1052,8 @@
         deps.resultsMatrixHead.innerHTML =
           "<th>Nama</th><th>Kelas</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
       }
+      updateAttemptFilterOptions([]);
+      updateClassFilterOptions([]);
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="8" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
@@ -809,10 +1071,6 @@
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
       : [];
-    let totalWeight = Number((matrix && matrix.total_weight) || 0);
-    if (totalWeight <= 0 && questionNos.length > 0) {
-      totalWeight = questionNos.length;
-    }
     resultsAssignmentsCount = rows.length;
     if (deps && typeof deps.refreshStats === "function") {
       deps.refreshStats();
@@ -834,6 +1092,7 @@
       });
       deps.resultsMatrixHead.innerHTML = fixed.concat(dyn).join("");
     }
+    await refreshResultsFilters(examID, rows);
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
@@ -843,69 +1102,14 @@
       setResultsExtra("Belum ada data untuk laporan/statistik/grafik.");
       return;
     }
-    deps.resultsAssignmentBody.innerHTML = "";
-    rows.forEach(function (it) {
-      const answers = Array.isArray(it.answers) ? it.answers : [];
-      const answerStates = Array.isArray(it.answer_states)
-        ? it.answer_states
-        : [];
-      const scoreValue = Number(it.skor_total || 0);
-      const nilai =
-        totalWeight > 0
-          ? ((scoreValue / totalWeight) * 100).toFixed(2)
-          : "0.00";
-      const answerCells = questionNos.map(function (_, idx) {
-        const state = String(answerStates[idx] || "")
-          .trim()
-          .toLowerCase();
-        const cls =
-          state === "correct"
-            ? "result-cell-correct"
-            : state === "wrong"
-              ? "result-cell-wrong"
-              : "";
-        return (
-          '<td class="' +
-          cls +
-          '">' +
-          deps.escapeHtml(String(answers[idx] || "")) +
-          "</td>"
-        );
-      });
-      const tr = document.createElement("tr");
-      tr.innerHTML = [
-        "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>",
-        "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
-        "<td>" + deps.escapeHtml(String(it.attempt_ke || 0)) + "</td>",
-        "<td>" + deps.escapeHtml(String(scoreValue)) + "</td>",
-        "<td>" + deps.escapeHtml(String(nilai)) + "</td>",
-        "<td>" + deps.escapeHtml(deps.fmtDate(it.started_at)) + "</td>",
-        "<td>" + deps.escapeHtml(deps.fmtDate(it.ended_at)) + "</td>",
-        '<td><button class="btn btn-secondary btn-inline" type="button" data-attempt-delete="' +
-          deps.escapeHtml(String(it.attempt_id || 0)) +
-          '">Hapus</button></td>',
-      ]
-        .concat(answerCells)
-        .join("");
-      deps.resultsAssignmentBody.appendChild(tr);
-    });
-    setResultsSummary(
-      "Exam #" +
-        String((matrix && matrix.exam_id) || examID) +
-        " | Attempt tercatat: " +
-        String(rows.length) +
-        " | Jumlah soal: " +
-        String(questionNos.length),
-    );
-    setResultsExtra(
-      "Hasil ujian dimuat. Gunakan Muat Laporan/Statistik/Grafik atau Download Excel.",
-    );
+    applyResultsFilters();
   }
 
   async function openItemAnalysisDialog() {
     if (!deps || !deps.itemAnalysisDialog) return;
     const matrix = latestResultsMatrix;
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
+    const filteredRows = filterResultsRows(rows);
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
       : [];
@@ -926,8 +1130,25 @@
       deps.itemAnalysisDialog.showModal();
       return;
     }
+    if (!filteredRows.length) {
+      setItemAnalysisSubtitle("Tidak ada data sesuai filter yang dipilih.");
+      setItemAnalysisSummaryHTML("");
+      setItemAnalysisIdentityHTML("");
+      setItemAnalysisBodyHTML(
+        '<tr><td colspan="9" class="muted">Tidak ada data sesuai filter.</td></tr>',
+      );
+      setItemAnalysisDetailHTML(
+        "Ubah filter Attempt/Kelas untuk melihat analisis.",
+        true,
+      );
+      deps.itemAnalysisDialog.showModal();
+      return;
+    }
     const questions = await ensureExamQuestions(examID);
-    const items = buildItemAnalysis(matrix, questions);
+    const items = buildItemAnalysis(
+      Object.assign({}, matrix, { rows: filteredRows }),
+      questions,
+    );
     latestItemAnalysis = items;
     latestItemAnalysisByID = {};
     items.forEach(function (it) {
@@ -947,13 +1168,13 @@
     let startAtValue = "";
     if (examSafe && examSafe.start_at) {
       startAtValue = deps.fmtDate(examSafe.start_at);
-    } else if (rows.length) {
-      const first = rows.slice().sort(function (a, b) {
+    } else if (filteredRows.length) {
+      const first = filteredRows.slice().sort(function (a, b) {
         return new Date(a.started_at) - new Date(b.started_at);
       })[0];
       startAtValue = deps.fmtDate(first && first.started_at);
     }
-    const maxEnd = maxEndedAt(rows);
+    const maxEnd = maxEndedAt(filteredRows);
     const fallback = getExamSelectInfo(examID) || {};
     const schoolName = await ensureExamSchoolName(examID);
     const identity = {
@@ -972,7 +1193,7 @@
       "Exam #" +
         String(examID) +
         " | Peserta: " +
-        String(rows.length) +
+        String(filteredRows.length) +
         " | Jumlah soal: " +
         String(questionNos.length),
     );
@@ -1297,6 +1518,16 @@
         } finally {
           done();
         }
+      });
+    }
+    if (deps.resultsAttemptFilter) {
+      deps.resultsAttemptFilter.addEventListener("change", function () {
+        applyResultsFilters();
+      });
+    }
+    if (deps.resultsClassFilter) {
+      deps.resultsClassFilter.addEventListener("change", function () {
+        applyResultsFilters();
       });
     }
 
