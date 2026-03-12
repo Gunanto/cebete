@@ -687,6 +687,16 @@ label {
     font-weight: 600;
 }
 
+.inline-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.inline-checkbox-label input[type="checkbox"] {
+    margin: 0;
+}
+
 input,
 select,
 button {
