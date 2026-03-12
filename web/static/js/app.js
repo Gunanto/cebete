@@ -3378,6 +3378,25 @@
       "peserta-result-exam-select",
     );
     const resultBody = document.getElementById("peserta-result-body");
+    const resultDialog = document.getElementById("peserta-result-dialog");
+    const resultDialogTitle = document.getElementById(
+      "peserta-result-dialog-title",
+    );
+    const resultDialogSummary = document.getElementById(
+      "peserta-result-dialog-summary",
+    );
+    const resultDialogExamTitle = document.getElementById(
+      "peserta-result-dialog-exam-title",
+    );
+    const resultDialogSubject = document.getElementById(
+      "peserta-result-dialog-subject",
+    );
+    const resultDialogStatus = document.getElementById(
+      "peserta-result-dialog-status",
+    );
+    const resultDialogExamScore = document.getElementById(
+      "peserta-result-dialog-exam-score",
+    );
     const menuButtons = Array.from(
       document.querySelectorAll("[data-peserta-menu]"),
     );
@@ -3435,6 +3454,69 @@
       const total = Number(totalQuestions || 0);
       if (total > 0) return (raw / total) * 100;
       return raw;
+    }
+
+    const resultCache = new Map();
+
+    async function showResultDialog(attemptID, subjectLabel) {
+      if (!resultDialog || !attemptID) return;
+      if (resultDialogTitle) resultDialogTitle.textContent = "Hasil Ujian";
+      if (resultDialogSummary) text(resultDialogSummary, "Memuat ringkasan...");
+      if (resultDialogExamTitle) resultDialogExamTitle.textContent = "-";
+      if (resultDialogSubject)
+        resultDialogSubject.textContent = subjectLabel || "-";
+      if (resultDialogStatus) resultDialogStatus.textContent = "-";
+      if (resultDialogExamScore) resultDialogExamScore.textContent = "0.00";
+      if (typeof resultDialog.showModal === "function") {
+        resultDialog.showModal();
+      } else {
+        resultDialog.setAttribute("open", "true");
+      }
+      try {
+        let out = resultCache.get(attemptID);
+        if (!out) {
+          out = await api("/api/v1/attempts/" + attemptID + "/result", "GET");
+          resultCache.set(attemptID, out);
+        }
+        const s = out && out.summary;
+        const normalizedScore = normalizeScore(
+          s && s.score,
+          s && s.total_weight,
+          s && s.total_questions,
+        );
+        const scoreLabel = Number.isFinite(normalizedScore)
+          ? normalizedScore.toLocaleString("id-ID", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : String(normalizedScore || 0);
+        const examTitle = String((s && s.title) || "").trim();
+        if (resultDialogTitle) {
+          resultDialogTitle.textContent = examTitle
+            ? "Hasil " + examTitle
+            : "Hasil Ujian";
+        }
+        if (resultDialogSummary) {
+          html(
+            resultDialogSummary,
+            "<strong>Status:</strong> " +
+              escapeHtml(s && s.status) +
+              " | <strong>Nilai Akhir:</strong> " +
+              escapeHtml(String(scoreLabel)),
+          );
+        }
+        if (resultDialogExamTitle)
+          resultDialogExamTitle.textContent = examTitle || "-";
+        if (resultDialogSubject)
+          resultDialogSubject.textContent = subjectLabel || "-";
+        if (resultDialogStatus)
+          resultDialogStatus.textContent = String((s && s.status) || "-");
+        if (resultDialogExamScore)
+          resultDialogExamScore.textContent = scoreLabel;
+      } catch (err) {
+        if (resultDialogSummary)
+          text(resultDialogSummary, "Gagal memuat hasil: " + err.message);
+      }
     }
 
     menuButtons.forEach(function (btn) {
@@ -3525,6 +3607,8 @@
       }
     }
 
+    const examMeta = {};
+
     if (resultExamSelect) {
       try {
         const list = await api("/api/v1/exams/me", "GET");
@@ -3536,8 +3620,15 @@
           resultExamSelect.innerHTML =
             '<option value="">Pilih ujian...</option>';
           items.forEach(function (it) {
+            const id = Number(it.id || 0);
+            if (id > 0) {
+              examMeta[id] = {
+                title: String(it.title || "").trim(),
+                subject: String(it.subject_name || "").trim(),
+              };
+            }
             const opt = document.createElement("option");
-            opt.value = String(it.id || 0);
+            opt.value = String(id || 0);
             opt.textContent = String(it.title || "-");
             resultExamSelect.appendChild(opt);
           });
@@ -3548,65 +3639,91 @@
       }
     }
 
-    if (resultForm && resultBody) {
-      resultForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const examID = Number(
-          (resultExamSelect && resultExamSelect.value) || 0,
+    async function loadResultTable() {
+      if (!resultBody) return;
+      const examID = Number((resultExamSelect && resultExamSelect.value) || 0);
+      if (!examID || examID <= 0) {
+        resultBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Pilih ujian untuk melihat daftar nilai.</td></tr>';
+        return;
+      }
+      resultBody.innerHTML =
+        '<tr><td colspan="5" class="muted">Memuat daftar nilai...</td></tr>';
+      try {
+        const out = await api(
+          "/api/v1/exams/" + examID + "/attempts/me",
+          "GET",
         );
-        if (!examID || examID <= 0) {
-          if (msg) text(msg, "Pilih ujian terlebih dahulu.");
+        const attempts = Array.isArray(out && out.attempts) ? out.attempts : [];
+        const totalWeight = Number((out && out.total_weight) || 0);
+        const totalQuestions = Number((out && out.total_questions) || 0);
+        const subjectLabel =
+          (examMeta[examID] && examMeta[examID].subject) || "-";
+        if (!attempts.length) {
+          resultBody.innerHTML =
+            '<tr><td colspan="5" class="muted">Belum ada attempt untuk ujian ini.</td></tr>';
           return;
         }
-        resultBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Memuat daftar nilai...</td></tr>';
-        try {
-          const out = await api(
-            "/api/v1/exams/" + examID + "/attempts/me",
-            "GET",
+        resultBody.innerHTML = "";
+        attempts.forEach(function (it) {
+          const scoreValue = normalizeScore(
+            it.score,
+            totalWeight,
+            totalQuestions,
           );
-          const attempts = Array.isArray(out && out.attempts)
-            ? out.attempts
-            : [];
-          const totalWeight = Number((out && out.total_weight) || 0);
-          const totalQuestions = Number((out && out.total_questions) || 0);
-          if (!attempts.length) {
-            resultBody.innerHTML =
-              '<tr><td colspan="5" class="muted">Belum ada attempt untuk ujian ini.</td></tr>';
-            return;
-          }
-          resultBody.innerHTML = "";
-          attempts.forEach(function (it) {
-            const scoreValue = normalizeScore(
-              it.score,
-              totalWeight,
-              totalQuestions,
-            );
-            const scoreLabel = Number.isFinite(scoreValue)
-              ? scoreValue.toLocaleString("id-ID", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })
-              : "0.00";
-            const timeLabel = it.submitted_at
-              ? fmtShortDate(it.submitted_at)
-              : fmtShortDate(it.started_at);
-            const tr = document.createElement("tr");
-            tr.innerHTML = [
-              "<td>Attempt " + escapeHtml(String(it.attempt_no || 0)) + "</td>",
-              "<td>" + escapeHtml(String(it.status || "-")) + "</td>",
-              "<td>" + escapeHtml(String(scoreLabel)) + "</td>",
-              "<td>" + escapeHtml(String(timeLabel || "-")) + "</td>",
-              '<td><a class="btn btn-secondary btn-inline" href="/hasil/' +
-                escapeHtml(String(it.attempt_id || 0)) +
-                '">Lihat</a></td>',
-            ].join("");
-            resultBody.appendChild(tr);
-          });
-        } catch (err) {
-          resultBody.innerHTML =
-            '<tr><td colspan="5" class="muted">Gagal memuat daftar nilai.</td></tr>';
-        }
+          const scoreLabel = Number.isFinite(scoreValue)
+            ? scoreValue.toLocaleString("id-ID", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : "0.00";
+          const timeLabel = it.submitted_at
+            ? fmtShortDate(it.submitted_at)
+            : fmtShortDate(it.started_at);
+          const tr = document.createElement("tr");
+          tr.innerHTML = [
+            "<td>Attempt " + escapeHtml(String(it.attempt_no || 0)) + "</td>",
+            "<td>" + escapeHtml(String(subjectLabel || "-")) + "</td>",
+            "<td>" + escapeHtml(String(scoreLabel)) + "</td>",
+            "<td>" + escapeHtml(String(timeLabel || "-")) + "</td>",
+            '<td><button class="btn btn-secondary btn-inline" type="button" data-result-attempt="' +
+              escapeHtml(String(it.attempt_id || 0)) +
+              '" data-result-subject="' +
+              escapeHtml(String(subjectLabel || "-")) +
+              '">Lihat</button></td>',
+          ].join("");
+          resultBody.appendChild(tr);
+        });
+      } catch (err) {
+        resultBody.innerHTML =
+          '<tr><td colspan="5" class="muted">Gagal memuat daftar nilai.</td></tr>';
+      }
+    }
+
+    if (resultExamSelect) {
+      resultExamSelect.addEventListener("change", function () {
+        loadResultTable();
+      });
+    }
+
+    if (resultForm) {
+      resultForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        loadResultTable();
+      });
+    }
+
+    if (resultBody) {
+      resultBody.addEventListener("click", function (e) {
+        const target = e.target;
+        const btn =
+          target && target.closest && target.closest("[data-result-attempt]");
+        if (!btn) return;
+        const attemptID = Number(btn.getAttribute("data-result-attempt") || 0);
+        const subjectLabel = String(
+          btn.getAttribute("data-result-subject") || "-",
+        );
+        if (attemptID > 0) showResultDialog(attemptID, subjectLabel);
       });
     }
 
