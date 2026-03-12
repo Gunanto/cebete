@@ -52,9 +52,6 @@
         '<div class="proktor-card-head">',
         "<h4>Kartu Peserta Ujian</h4>",
         "<p>" + deps.escapeHtml(schoolName) + "</p>",
-        '<div class="proktor-card-head-class">' +
-          deps.escapeHtml(formatClassLabel(className)) +
-          "</div>",
         "</div>",
         '<div class="proktor-card-body">',
         '<div class="proktor-card-photo">' +
