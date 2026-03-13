@@ -2964,6 +2964,213 @@ textarea:focus-visible {
     width: min(1960px, 98vw);
 }
 
+.exam-config-dialog {
+    border-color: #dbe5f6;
+    background: #ffffff;
+}
+
+.exam-config-form {
+    padding: 0;
+}
+
+.exam-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 22px;
+    border-bottom: 1px solid #e6edf8;
+    gap: 12px;
+}
+
+.exam-config-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.exam-config-title h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1d4ed8;
+}
+
+.exam-config-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: #eef2ff;
+    color: #3b5bfd;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.exam-config-icon svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.exam-config-link {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9aa7c2;
+    font-weight: 600;
+}
+
+.exam-config-body {
+    padding: 18px 22px 20px;
+    display: grid;
+    gap: 18px;
+}
+
+.exam-config-grid {
+    display: grid;
+    gap: 14px;
+}
+
+.exam-config-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exam-config-form label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2a44;
+    display: grid;
+    gap: 8px;
+}
+
+.exam-config-form input,
+.exam-config-form select {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #c7d2ea;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.exam-config-hint {
+    font-size: 11px;
+    font-weight: 500;
+    color: #8a97b6;
+    margin-left: 6px;
+}
+
+.exam-config-label-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.exam-config-section {
+    display: grid;
+    gap: 12px;
+}
+
+.exam-config-section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #7c8db5;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.exam-config-section-icon {
+    width: 18px;
+    height: 18px;
+    color: #7c8db5;
+}
+
+.exam-config-section-icon svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.exam-config-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #375dfb;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 0;
+    width: fit-content;
+}
+
+.exam-config-checks {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #e7effa;
+    background: #f8fbff;
+}
+
+.exam-config-checks .inline-checkbox-label {
+    font-weight: 600;
+    color: #1f2a44;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.exam-config-checks .inline-checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: #3b5bfd;
+}
+
+.exam-config-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #eef2f8;
+}
+
+.exam-config-footer .btn {
+    min-width: 140px;
+}
+
+@media (max-width: 980px) {
+    .exam-config-grid-2 {
+        grid-template-columns: 1fr;
+    }
+
+    .exam-config-checks {
+        grid-template-columns: 1fr;
+    }
+
+    .exam-config-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .exam-config-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
 .preview-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

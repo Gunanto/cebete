@@ -5134,6 +5134,12 @@
     const examAssignmentsBody = document.getElementById(
       "guru-exam-assignments-body",
     );
+    const examDialog = document.getElementById("guru-exam-dialog");
+    const examDialogOpenBtn = document.getElementById(
+      "guru-exam-dialog-open-btn",
+    );
+    const examDialogTitle = document.getElementById("guru-exam-dialog-title");
+    const examCancelBtn = document.getElementById("guru-exam-cancel-btn");
     const examForm = document.getElementById("guru-exam-form");
     const examRandomizeQuestionsInput =
       examForm && examForm.elements
@@ -5855,6 +5861,10 @@
         activateGuruMenu: activateGuruMenu,
         examsPanel: examsPanel,
         examsRefreshBtn: examsRefreshBtn,
+        examDialog: examDialog,
+        examDialogOpenBtn: examDialogOpenBtn,
+        examDialogTitle: examDialogTitle,
+        examCancelBtn: examCancelBtn,
         examForm: examForm,
         examRandomizeQuestionsInput: examRandomizeQuestionsInput,
         examRandomizeOptionsInput: examRandomizeOptionsInput,

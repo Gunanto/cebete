@@ -65,6 +65,33 @@
     return null;
   }
 
+  function setExamDialogTitle(isEdit) {
+    if (!deps || !deps.examDialogTitle) return;
+    deps.examDialogTitle.textContent = isEdit
+      ? "Perbaiki Nama Ujian"
+      : "Buat Nama Ujian";
+  }
+
+  function openExamDialog(isEdit) {
+    if (!deps || !deps.examDialog || !deps.examForm) return;
+    if (
+      deps.examSubjectSelect &&
+      deps.examSubjectSelect.options &&
+      deps.examSubjectSelect.options.length <= 1
+    ) {
+      loadExamSubjectOptions();
+    }
+    if (!isEdit) {
+      deps.examForm.reset();
+      const examIDInput = deps.examForm.elements.namedItem("exam_id");
+      if (examIDInput) examIDInput.value = "";
+    }
+    setExamDialogTitle(!!isEdit);
+    if (typeof deps.examDialog.showModal === "function") {
+      deps.examDialog.showModal();
+    }
+  }
+
   function fillExamQuestionCodeSelectByExam(examID) {
     if (
       !deps ||
@@ -578,6 +605,20 @@
       });
     }
 
+    if (deps.examDialogOpenBtn) {
+      deps.examDialogOpenBtn.addEventListener("click", function () {
+        openExamDialog(false);
+      });
+    }
+
+    if (deps.examCancelBtn) {
+      deps.examCancelBtn.addEventListener("click", function () {
+        if (deps.examDialog && typeof deps.examDialog.close === "function") {
+          deps.examDialog.close();
+        }
+      });
+    }
+
     if (deps.examForm) {
       deps.examForm.addEventListener("submit", async function (e) {
         e.preventDefault();
@@ -641,6 +682,9 @@
           const examIDInput = deps.examForm.elements.namedItem("exam_id");
           if (examIDInput) examIDInput.value = "";
           await loadExamManageTable();
+          if (deps.examDialog && typeof deps.examDialog.close === "function") {
+            deps.examDialog.close();
+          }
         } catch (err) {
           deps.setMsg("Gagal menyimpan ujian: " + err.message);
         } finally {
@@ -698,6 +742,7 @@
               setReviewPolicyField(policyField, examRow.review_policy);
             }
             resetRandomizeInputsToExam(examRow);
+            openExamDialog(true);
           }
           if (deps.questionExamIDInput) {
             deps.questionExamIDInput.value = String(examID);
