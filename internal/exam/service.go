@@ -255,6 +255,9 @@ type ExamAssignmentUser struct {
 	Role                string     `json:"role"`
 	SchoolID            *int64     `json:"school_id,omitempty"`
 	SchoolName          *string    `json:"school_name,omitempty"`
+	SchoolAddress       *string    `json:"school_address,omitempty"`
+	SchoolCity          *string    `json:"school_city,omitempty"`
+	SchoolProvince      *string    `json:"school_province,omitempty"`
 	ClassID             *int64     `json:"class_id,omitempty"`
 	ClassName           *string    `json:"class_name,omitempty"`
 	Status              string     `json:"status"`
@@ -1670,6 +1673,9 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			u.role,
 			en.school_id,
 			sch.name AS school_name,
+			sch.address AS school_address,
+			sch.city AS school_city,
+			sch.province AS school_province,
 			en.class_id,
 			cls.name AS class_name,
 			ea.status,
@@ -1713,6 +1719,9 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		var photoDataURL sql.NullString
 		var schoolID sql.NullInt64
 		var schoolName sql.NullString
+		var schoolAddress sql.NullString
+		var schoolCity sql.NullString
+		var schoolProvince sql.NullString
 		var classID sql.NullInt64
 		var className sql.NullString
 		var assignedBy sql.NullInt64
@@ -1732,6 +1741,9 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			&it.Role,
 			&schoolID,
 			&schoolName,
+			&schoolAddress,
+			&schoolCity,
+			&schoolProvince,
 			&classID,
 			&className,
 			&it.Status,
@@ -1765,6 +1777,24 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		}
 		if schoolName.Valid {
 			it.SchoolName = &schoolName.String
+		}
+		if schoolAddress.Valid {
+			v := strings.TrimSpace(schoolAddress.String)
+			if v != "" {
+				it.SchoolAddress = &v
+			}
+		}
+		if schoolCity.Valid {
+			v := strings.TrimSpace(schoolCity.String)
+			if v != "" {
+				it.SchoolCity = &v
+			}
+		}
+		if schoolProvince.Valid {
+			v := strings.TrimSpace(schoolProvince.String)
+			if v != "" {
+				it.SchoolProvince = &v
+			}
 		}
 		if schoolID.Valid {
 			v := schoolID.Int64

@@ -29,9 +29,11 @@ type apiResponse struct {
 }
 
 type createSchoolRequest struct {
-	Name    string `json:"name"`
-	Code    string `json:"code"`
-	Address string `json:"address"`
+	Name     string `json:"name"`
+	Code     string `json:"code"`
+	Address  string `json:"address"`
+	City     string `json:"city"`
+	Province string `json:"province"`
 }
 
 type createClassRequest struct {
@@ -65,9 +67,11 @@ type updateEducationLevelRequest struct {
 }
 
 type updateSchoolRequest struct {
-	Name    string `json:"name"`
-	Code    string `json:"code"`
-	Address string `json:"address"`
+	Name     string `json:"name"`
+	Code     string `json:"code"`
+	Address  string `json:"address"`
+	City     string `json:"city"`
+	Province string `json:"province"`
 }
 
 type updateClassRequest struct {
@@ -589,9 +593,11 @@ func (h *Handler) CreateSchool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	school, err := h.svc.CreateSchool(r.Context(), user.ID, CreateSchoolInput{
-		Name:    req.Name,
-		Code:    req.Code,
-		Address: req.Address,
+		Name:     req.Name,
+		Code:     req.Code,
+		Address:  req.Address,
+		City:     req.City,
+		Province: req.Province,
 	})
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
@@ -625,9 +631,11 @@ func (h *Handler) UpdateSchool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.svc.UpdateSchool(r.Context(), user.ID, id, UpdateSchoolInput{
-		Name:    req.Name,
-		Code:    req.Code,
-		Address: req.Address,
+		Name:     req.Name,
+		Code:     req.Code,
+		Address:  req.Address,
+		City:     req.City,
+		Province: req.Province,
 	})
 	if err != nil {
 		switch {

@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE schools
+  DROP COLUMN IF EXISTS province,
+  DROP COLUMN IF EXISTS city;
+
+COMMIT;

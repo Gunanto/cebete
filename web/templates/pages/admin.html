@@ -386,13 +386,15 @@
                                     <th>ID</th>
                                     <th>Nama Sekolah</th>
                                     <th>NPSN</th>
+                                    <th>Kab/Kota</th>
+                                    <th>Provinsi</th>
                                     <th>Alamat</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="admin-school-table-body">
                                 <tr>
-                                    <td colspan="5" class="muted">
+                                    <td colspan="7" class="muted">
                                         Belum ada data sekolah.
                                     </td>
                                 </tr>
@@ -728,8 +730,10 @@
                 >Nama Sekolah <input type="text" name="name" required
             /></label>
             <label>NPSN <input type="text" name="code" /></label>
-            <label
-                >Alamat
+            <label>Kab/Kota <input type="text" name="city" /></label>
+            <label>Provinsi <input type="text" name="province" /></label>
+            <label>
+                Alamat
                 <textarea name="address" rows="2"></textarea>
             </label>
             <div class="actions">

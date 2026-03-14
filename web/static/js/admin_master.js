@@ -88,7 +88,7 @@
     if (deps.schoolTableBody) {
       if (!schoolItems.length) {
         deps.schoolTableBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Belum ada data sekolah.</td></tr>';
+          '<tr><td colspan="7" class="muted">Belum ada data sekolah.</td></tr>';
       } else {
         deps.schoolTableBody.innerHTML = "";
         schoolItems.forEach(function (it) {
@@ -97,6 +97,8 @@
             "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.name || "")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.code || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.city || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.province || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.address || "-")) + "</td>",
             "<td>" +
               (canEditMaster
@@ -195,6 +197,12 @@
       : "";
     deps.schoolDialogForm.elements.namedItem("code").value = editItem
       ? String(editItem.code || "")
+      : "";
+    deps.schoolDialogForm.elements.namedItem("city").value = editItem
+      ? String(editItem.city || "")
+      : "";
+    deps.schoolDialogForm.elements.namedItem("province").value = editItem
+      ? String(editItem.province || "")
       : "";
     deps.schoolDialogForm.elements.namedItem("address").value = editItem
       ? String(editItem.address || "")
@@ -605,6 +613,8 @@
         const payload = {
           name: String(fd.get("name") || "").trim(),
           code: String(fd.get("code") || "").trim(),
+          city: String(fd.get("city") || "").trim(),
+          province: String(fd.get("province") || "").trim(),
           address: String(fd.get("address") || "").trim(),
         };
         const done = deps.beginBusy(

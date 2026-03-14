@@ -25,16 +25,20 @@ type Service struct {
 }
 
 type CreateSchoolInput struct {
-	Name    string
-	Code    string
-	Address string
+	Name     string
+	Code     string
+	Address  string
+	City     string
+	Province string
 }
 
 type School struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	Code    string `json:"code,omitempty"`
-	Address string `json:"address,omitempty"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Code     string `json:"code,omitempty"`
+	Address  string `json:"address,omitempty"`
+	City     string `json:"city,omitempty"`
+	Province string `json:"province,omitempty"`
 }
 
 type CreateClassInput struct {
@@ -44,9 +48,11 @@ type CreateClassInput struct {
 }
 
 type UpdateSchoolInput struct {
-	Name    string
-	Code    string
-	Address string
+	Name     string
+	Code     string
+	Address  string
+	City     string
+	Province string
 }
 
 type UpdateClassInput struct {
@@ -140,16 +146,34 @@ func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateScho
 	name := strings.TrimSpace(in.Name)
 	code := strings.TrimSpace(in.Code)
 	address := strings.TrimSpace(in.Address)
+	city := strings.TrimSpace(in.City)
+	province := strings.TrimSpace(in.Province)
 	if name == "" {
 		return nil, ErrInvalidInput
+	}
+	if address == "" && (city != "" || province != "") {
+		if city != "" && province != "" {
+			address = city + ", " + province
+		} else if city != "" {
+			address = city
+		} else {
+			address = province
+		}
 	}
 
 	var school School
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO schools (name, code, address, created_at, updated_at)
-		VALUES ($1, NULLIF($2,''), NULLIF($3,''), now(), now())
-		RETURNING id, name, COALESCE(code,''), COALESCE(address,'')
-	`, name, code, address).Scan(&school.ID, &school.Name, &school.Code, &school.Address)
+		INSERT INTO schools (name, code, address, city, province, created_at, updated_at)
+		VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), now(), now())
+		RETURNING id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,'')
+	`, name, code, address, city, province).Scan(
+		&school.ID,
+		&school.Name,
+		&school.Code,
+		&school.Address,
+		&school.City,
+		&school.Province,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create school: %w", err)
 	}
@@ -192,8 +216,19 @@ func (s *Service) UpdateSchool(ctx context.Context, actorID, id int64, in Update
 	name := strings.TrimSpace(in.Name)
 	code := strings.TrimSpace(in.Code)
 	address := strings.TrimSpace(in.Address)
+	city := strings.TrimSpace(in.City)
+	province := strings.TrimSpace(in.Province)
 	if id <= 0 || name == "" {
 		return nil, ErrInvalidInput
+	}
+	if address == "" && (city != "" || province != "") {
+		if city != "" && province != "" {
+			address = city + ", " + province
+		} else if city != "" {
+			address = city
+		} else {
+			address = province
+		}
 	}
 
 	var out School
@@ -202,10 +237,19 @@ func (s *Service) UpdateSchool(ctx context.Context, actorID, id int64, in Update
 		SET name = $2,
 			code = NULLIF($3,''),
 			address = NULLIF($4,''),
+			city = NULLIF($5,''),
+			province = NULLIF($6,''),
 			updated_at = now()
 		WHERE id = $1
-		RETURNING id, name, COALESCE(code,''), COALESCE(address,'')
-	`, id, name, code, address).Scan(&out.ID, &out.Name, &out.Code, &out.Address)
+		RETURNING id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,'')
+	`, id, name, code, address, city, province).Scan(
+		&out.ID,
+		&out.Name,
+		&out.Code,
+		&out.Address,
+		&out.City,
+		&out.Province,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
@@ -296,7 +340,7 @@ func (s *Service) DeleteClass(ctx context.Context, actorID, id int64) error {
 
 func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, error) {
 	query := `
-		SELECT id, name, COALESCE(code,''), COALESCE(address,'')
+		SELECT id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,'')
 		FROM schools
 	`
 	if activeOnly {
@@ -313,7 +357,7 @@ func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, e
 	out := make([]School, 0)
 	for rows.Next() {
 		var it School
-		if err := rows.Scan(&it.ID, &it.Name, &it.Code, &it.Address); err != nil {
+		if err := rows.Scan(&it.ID, &it.Name, &it.Code, &it.Address, &it.City, &it.Province); err != nil {
 			return nil, fmt.Errorf("scan school: %w", err)
 		}
 		out = append(out, it)

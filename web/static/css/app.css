@@ -2434,10 +2434,17 @@ textarea:focus-visible {
     margin-bottom: 8px;
 }
 
+.analysis-identity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px 24px;
+}
+
 .analysis-identity-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.92rem;
+    margin: 0;
 }
 
 .analysis-identity-table td {

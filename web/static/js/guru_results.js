@@ -9,7 +9,7 @@
   var latestItemAnalysisExamID = 0;
   var currentUserCache = null;
   var latestItemAnalysisIdentity = null;
-  var examSchoolNameCache = {};
+  var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
 
   function setDeps(opts) {
@@ -185,10 +185,11 @@
     };
   }
 
-  async function ensureExamSchoolName(examID) {
+  async function ensureExamSchoolInfo(examID) {
     const key = String(examID || 0);
-    if (examSchoolNameCache[key]) return examSchoolNameCache[key];
-    if (!deps || typeof deps.api !== "function") return "";
+    if (examSchoolInfoCache[key]) return examSchoolInfoCache[key];
+    if (!deps || typeof deps.api !== "function")
+      return { name: "", city: "", address: "" };
     try {
       const rows = await deps.api(
         "/api/v1/admin/exams/" + Number(examID) + "/assignments",
@@ -196,19 +197,35 @@
       );
       const list = Array.isArray(rows) ? rows : [];
       let name = "";
+      let city = "";
+      let address = "";
       for (let i = 0; i < list.length; i += 1) {
-        const it = list[i];
-        const raw = String((it && it.school_name) || "").trim();
-        if (raw) {
-          name = raw;
-          break;
+        const it = list[i] || {};
+        if (!name) {
+          const rawName = String(it.school_name || "").trim();
+          if (rawName) name = rawName;
         }
+        if (!city) {
+          const rawCity = String(it.school_city || "").trim();
+          if (rawCity) city = rawCity;
+        }
+        if (!address) {
+          const rawAddress = String(it.school_address || "").trim();
+          if (rawAddress) address = rawAddress;
+        }
+        if (name && city && address) break;
       }
-      examSchoolNameCache[key] = name || "";
-      return name || "";
+      const info = {
+        name: name || "",
+        city: city || "",
+        address: address || "",
+      };
+      examSchoolInfoCache[key] = info;
+      return info;
     } catch (_) {
-      examSchoolNameCache[key] = "";
-      return "";
+      const info = { name: "", city: "", address: "" };
+      examSchoolInfoCache[key] = info;
+      return info;
     }
   }
 
@@ -268,6 +285,17 @@
     return String(mins) + " Menit";
   }
 
+  function fmtDateOnly(raw) {
+    if (!raw) return "-";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
   function maxEndedAt(rows) {
     let maxTs = null;
     rows.forEach(function (row) {
@@ -286,6 +314,7 @@
     if (!identity) return "";
     return [
       '<div class="analysis-identity-title">ANALISIS BUTIR SOAL</div>',
+      '<div class="analysis-identity-grid">',
       '<table class="analysis-identity-table">',
       "<tr><td>Nama Sekolah</td><td>: " +
         deps.escapeHtml(identity.schoolName || "-") +
@@ -299,6 +328,8 @@
       "<tr><td>Mata Pelajaran</td><td>: " +
         deps.escapeHtml(identity.subjectName || "-") +
         "</td></tr>",
+      "</table>",
+      '<table class="analysis-identity-table">',
       "<tr><td>Pelaksanaan (Mulai)</td><td>: " +
         deps.escapeHtml(identity.startedAt || "-") +
         "</td></tr>",
@@ -312,6 +343,7 @@
         deps.escapeHtml(identity.teacherName || "-") +
         "</td></tr>",
       "</table>",
+      "</div>",
     ].join("");
   }
 
@@ -1176,9 +1208,16 @@
     }
     const maxEnd = maxEndedAt(filteredRows);
     const fallback = getExamSelectInfo(examID) || {};
-    const schoolName = await ensureExamSchoolName(examID);
+    const schoolInfo = await ensureExamSchoolInfo(examID);
+    const schoolName = schoolInfo.name || "";
+    const schoolPlace = schoolInfo.city || "";
+    const signatureRawDate =
+      maxEnd ||
+      (examSafe && examSafe.end_at) ||
+      (examSafe && examSafe.start_at);
     const identity = {
       schoolName: schoolName || "",
+      schoolPlace: schoolPlace || "",
       examTitle: String((examSafe && examSafe.title) || fallback.title || ""),
       examCode: String((examSafe && examSafe.code) || fallback.code || ""),
       subjectName: String((examSafe && examSafe.subject_name) || ""),
@@ -1186,6 +1225,7 @@
       endedAt: maxEnd ? deps.fmtDate(maxEnd) : "-",
       duration: fmtDuration(examSafe && examSafe.duration_minutes),
       teacherName: user && user.full_name ? user.full_name : "",
+      signatureDate: fmtDateOnly(signatureRawDate),
     };
     latestItemAnalysisIdentity = identity;
     setItemAnalysisIdentityHTML(renderIdentityHTML(identity));
@@ -1254,6 +1294,17 @@
       deps.setMsg("Tidak ada data analisis untuk diexport.");
       return;
     }
+    const identity = latestItemAnalysisIdentity || {};
+    const identityRows = [
+      ["Nama Sekolah", identity.schoolName || "-"],
+      ["Nama Ujian", identity.examTitle || "-"],
+      ["Kode Soal", identity.examCode || "-"],
+      ["Mata Pelajaran", identity.subjectName || "-"],
+      ["Pelaksanaan (Mulai)", identity.startedAt || "-"],
+      ["Diakhiri oleh Peserta", identity.endedAt || "-"],
+      ["Lama Pengerjaan", identity.duration || "-"],
+      ["Nama Guru", identity.teacherName || "-"],
+    ];
     const header = [
       "No",
       "Tipe",
@@ -1282,8 +1333,23 @@
         it.status,
       ];
     });
-    const lines = [header]
+    const lines = identityRows
+      .concat([[]])
+      .concat([header])
       .concat(rows)
+      .concat([[]])
+      .concat([
+        [
+          (function () {
+            const place = String(identity.schoolPlace || "-").trim() || "-";
+            const date = String(identity.signatureDate || "-").trim() || "-";
+            if (place === "-" && date === "-") return "-";
+            return place + ", " + date;
+          })(),
+        ],
+      ])
+      .concat([[]])
+      .concat([[String(identity.teacherName || "-")]])
       .map(function (row) {
         return row.map(csvEscape).join(",");
       })
@@ -1343,7 +1409,8 @@
       "<style>",
       "body{font-family:Arial, sans-serif; color:#111827; padding:24px;}",
       ".analysis-identity-title{font-weight:800;letter-spacing:.02em;margin-bottom:8px;}",
-      ".analysis-identity-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;}",
+      ".analysis-identity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 20px;margin-bottom:16px;}",
+      ".analysis-identity-table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}",
       ".analysis-identity-table td{padding:3px 0;vertical-align:top;}",
       ".analysis-identity-table td:first-child{width:180px;color:#4b5563;font-weight:600;}",
       "table{width:100%;border-collapse:collapse;font-size:12px;}",

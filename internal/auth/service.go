@@ -1217,10 +1217,10 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 	}
 
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
-		VALUES ($1, NULLIF($2,''), NULLIF($3,''), TRUE, now(), now())
+		INSERT INTO schools (name, code, address, city, province, is_active, created_at, updated_at)
+		VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), TRUE, now(), now())
 		RETURNING id
-	`, name, code, address).Scan(&id); err != nil {
+	`, name, code, address, kabupaten, provinsi).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert school: %w", err)
 	}
 	return id, nil
