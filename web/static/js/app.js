@@ -384,7 +384,6 @@
   async function initLoginPage() {
     const signinForm = document.getElementById("login-form");
     if (!signinForm) return;
-    const loginOTPForm = document.getElementById("login-otp-form");
     const signupForm = document.getElementById("signup-form");
     const msg = document.getElementById("login-message");
     const passwordInput = document.getElementById("login-password");
@@ -393,50 +392,19 @@
     const signupTabBtn = document.getElementById("login-tab-signup");
     const signinPanel = document.getElementById("login-signin-panel");
     const signupPanel = document.getElementById("login-signup-panel");
-    const signupRequestOTPBtn = document.getElementById(
-      "signup-request-otp-btn",
-    );
     const showSignupBtn = document.getElementById("login-show-signup-btn");
-    const showOTPBtn = document.getElementById("login-show-otp-btn");
-    const backToPasswordBtn = document.getElementById(
-      "login-back-to-password-btn",
-    );
-    const loginOTPBackBtn = document.getElementById("login-otp-back-btn");
     const signupBackToLoginBtn = document.getElementById(
       "signup-back-to-login-btn",
     );
     const signupBackToRequestBtn = document.getElementById(
       "signup-back-to-request-btn",
     );
-    const signupBackToVerifyBtn = document.getElementById(
-      "signup-back-to-verify-btn",
-    );
-    const signupVerifyOTPBtn = document.getElementById("signup-verify-otp-btn");
     const loginSubHeader = document.getElementById("login-sub-header");
-    const signupEmailInput = document.getElementById("signup-email");
-    const signupOTPCodeInput = document.getElementById("signup-otp-code");
-    const signupEmailFinalInput = document.getElementById("signup-email-final");
-    const signupOTPCodeFinalInput = document.getElementById(
-      "signup-otp-code-final",
+    const signupGoogleTokenInput = document.getElementById(
+      "signup-google-token",
     );
     const signupStepRequest = document.getElementById("signup-step-request");
-    const signupStepVerify = document.getElementById("signup-step-verify");
     const signupStepProfile = document.getElementById("signup-step-profile");
-    const loginOTPRequestBtn = document.getElementById("login-otp-request-btn");
-    const loginOTPEmailInput = document.getElementById("login-otp-email");
-    const loginOTPCodeInput = document.getElementById("login-otp-code");
-    const passwordMethodTabBtn = document.getElementById(
-      "login-auth-tab-password",
-    );
-    const otpMethodTabBtn = document.getElementById("login-auth-tab-otp");
-    const loginOTPStepRequest = document.getElementById(
-      "login-otp-step-request",
-    );
-    const loginOTPStepVerify = document.getElementById("login-otp-step-verify");
-    const loginOTPResetBtn = document.getElementById("login-otp-reset-btn");
-    const loginOTPDigitInputs = Array.from(
-      document.querySelectorAll(".login-otp-digit"),
-    );
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -482,120 +450,31 @@
       text(
         msg,
         showSignup
-          ? "Masukkan email, verifikasi OTP, lalu lengkapi data pendaftaran."
+          ? "Login dengan Google untuk memulai pendaftaran non-reguler."
           : "Masukkan username/email dan password untuk login.",
       );
       if (loginSubHeader) {
         loginSubHeader.textContent = showSignup
-          ? "Masukkan email aktif untuk menerima OTP."
+          ? "Gunakan Google untuk mendaftar non-reguler."
           : "Silakan masuk untuk melanjutkan.";
       }
       if (showSignup) resetSignupSteps();
     }
 
-    function resetLoginOTPSteps() {
-      if (loginOTPStepRequest) loginOTPStepRequest.hidden = false;
-      if (loginOTPStepVerify) loginOTPStepVerify.hidden = true;
-      if (loginOTPCodeInput) loginOTPCodeInput.value = "";
-      loginOTPDigitInputs.forEach(function (input) {
-        input.value = "";
-      });
-    }
-
     function activateSignupStep(step) {
       if (signupStepRequest) signupStepRequest.hidden = step !== "request";
-      if (signupStepVerify) signupStepVerify.hidden = step !== "verify";
       if (signupStepProfile) signupStepProfile.hidden = step !== "profile";
       if (loginSubHeader && showSignupPanel()) {
         loginSubHeader.textContent =
-          step === "verify"
-            ? "Verifikasi email OTP untuk lanjut."
-            : step === "profile"
-              ? "Lengkapi data siswa non-reguler."
-              : "Masukkan email aktif untuk menerima OTP.";
+          step === "profile"
+            ? "Lengkapi data siswa non-reguler."
+            : "Gunakan Google untuk mendaftar non-reguler.";
       }
     }
 
     function resetSignupSteps() {
       activateSignupStep("request");
-      if (signupOTPCodeInput) signupOTPCodeInput.value = "";
-      if (signupOTPCodeFinalInput) signupOTPCodeFinalInput.value = "";
-      if (signupEmailFinalInput) signupEmailFinalInput.value = "";
-    }
-
-    function syncLoginOTPCode() {
-      if (!loginOTPCodeInput || loginOTPDigitInputs.length === 0) return;
-      loginOTPCodeInput.value = loginOTPDigitInputs
-        .map(function (input) {
-          return String(input.value || "")
-            .replace(/\D/g, "")
-            .slice(0, 1);
-        })
-        .join("");
-    }
-
-    if (loginOTPDigitInputs.length > 0) {
-      loginOTPDigitInputs.forEach(function (input, idx) {
-        input.addEventListener("input", function () {
-          const cleaned = String(input.value || "").replace(/\D/g, "");
-          input.value = cleaned ? cleaned.charAt(cleaned.length - 1) : "";
-          syncLoginOTPCode();
-          if (input.value && idx < loginOTPDigitInputs.length - 1) {
-            loginOTPDigitInputs[idx + 1].focus();
-          }
-        });
-        input.addEventListener("keydown", function (ev) {
-          if (ev.key === "Backspace" && !input.value && idx > 0) {
-            loginOTPDigitInputs[idx - 1].focus();
-          }
-        });
-        input.addEventListener("paste", function (ev) {
-          const pasted = (ev.clipboardData || window.clipboardData || {})
-            .getData?.("text")
-            ?.replace(/\D/g, "")
-            .slice(0, loginOTPDigitInputs.length);
-          if (!pasted) return;
-          ev.preventDefault();
-          loginOTPDigitInputs.forEach(function (slot, slotIdx) {
-            slot.value = pasted.charAt(slotIdx) || "";
-          });
-          syncLoginOTPCode();
-          const nextIdx = Math.min(
-            pasted.length,
-            loginOTPDigitInputs.length - 1,
-          );
-          loginOTPDigitInputs[nextIdx].focus();
-        });
-      });
-    }
-
-    function activateAuthMethod(method) {
-      const useOTP = method === "otp";
-      if (signinForm) signinForm.hidden = useOTP;
-      if (loginOTPForm) loginOTPForm.hidden = !useOTP;
-      if (passwordMethodTabBtn) {
-        passwordMethodTabBtn.setAttribute(
-          "aria-pressed",
-          useOTP ? "false" : "true",
-        );
-        passwordMethodTabBtn.classList.toggle("is-active", !useOTP);
-      }
-      if (otpMethodTabBtn) {
-        otpMethodTabBtn.setAttribute("aria-pressed", useOTP ? "true" : "false");
-        otpMethodTabBtn.classList.toggle("is-active", useOTP);
-      }
-      if (useOTP) resetLoginOTPSteps();
-      text(
-        msg,
-        useOTP
-          ? "Masukkan email, kirim OTP, lalu verifikasi untuk login."
-          : "Masukkan username/email dan password untuk login.",
-      );
-      if (loginSubHeader && !showSignupPanel()) {
-        loginSubHeader.textContent = useOTP
-          ? "Masukkan email, terima OTP, lalu verifikasi untuk login."
-          : "Silakan masuk untuk melanjutkan.";
-      }
+      if (signupGoogleTokenInput) signupGoogleTokenInput.value = "";
     }
 
     function showSignupPanel() {
@@ -612,63 +491,71 @@
         activateLoginTab("signup");
       });
     }
-    if (passwordMethodTabBtn) {
-      passwordMethodTabBtn.addEventListener("click", function () {
-        activateAuthMethod("password");
-      });
-    }
-    if (otpMethodTabBtn) {
-      otpMethodTabBtn.addEventListener("click", function () {
-        activateAuthMethod("otp");
-      });
-    }
-    if (showOTPBtn) {
-      showOTPBtn.addEventListener("click", function () {
-        activateAuthMethod("otp");
-      });
-    }
     if (showSignupBtn) {
       showSignupBtn.addEventListener("click", function () {
         activateLoginTab("signup");
       });
     }
-    if (backToPasswordBtn) {
-      backToPasswordBtn.addEventListener("click", function () {
-        resetLoginOTPSteps();
-        activateAuthMethod("password");
-      });
-    }
-    if (loginOTPBackBtn) {
-      loginOTPBackBtn.addEventListener("click", function () {
-        resetLoginOTPSteps();
-        if (loginOTPEmailInput && loginOTPEmailInput.focus) {
-          loginOTPEmailInput.focus();
-        }
-      });
-    }
     if (signupBackToLoginBtn) {
       signupBackToLoginBtn.addEventListener("click", function () {
         activateLoginTab("signin");
-        activateAuthMethod("password");
       });
     }
     if (signupBackToRequestBtn) {
       signupBackToRequestBtn.addEventListener("click", function () {
         activateSignupStep("request");
-        if (signupEmailInput && signupEmailInput.focus)
-          signupEmailInput.focus();
       });
     }
-    if (signupBackToVerifyBtn) {
-      signupBackToVerifyBtn.addEventListener("click", function () {
-        activateSignupStep("verify");
-        if (signupOTPCodeInput && signupOTPCodeInput.focus)
-          signupOTPCodeInput.focus();
-      });
+    activateLoginTab("signin");
+
+    const params = new URLSearchParams(window.location.search || "");
+    const oauthStatus = params.get("oauth");
+    if (oauthStatus) {
+      const oauthText = {
+        success: "Login Google berhasil. Mengarahkan ke dashboard...",
+        not_registered:
+          "Akun Google belum terdaftar. Silakan daftar non-reguler terlebih dahulu.",
+        registered: "Email ini sudah terdaftar. Silakan login dengan Google.",
+        registration_pending:
+          "Pendaftaran masih diproses. Tunggu persetujuan admin/proktor.",
+        domain_denied:
+          "Email Google tidak diizinkan. Gunakan Gmail, sch.id, atau belajar.id.",
+        inactive: "Akun belum aktif. Hubungi admin/proktor.",
+        cancelled: "Login Google dibatalkan.",
+        invalid: "Sesi login Google tidak valid. Coba lagi.",
+        exchange_failed: "Gagal memproses login Google. Coba lagi.",
+        userinfo_failed: "Gagal membaca profil Google. Coba lagi.",
+        disabled: "Login Google belum dikonfigurasi.",
+        error: "Terjadi kesalahan pada login Google.",
+      }[oauthStatus];
+      if (oauthText) text(msg, oauthText);
     }
 
-    activateLoginTab("signin");
-    activateAuthMethod("password");
+    const googleSignupToken = params.get("token");
+    if (params.get("google_signup") === "1" && googleSignupToken) {
+      activateLoginTab("signup");
+      activateSignupStep("profile");
+      if (signupGoogleTokenInput)
+        signupGoogleTokenInput.value = googleSignupToken;
+      if (signupStepRequest) signupStepRequest.hidden = true;
+      if (signupBackToRequestBtn) signupBackToRequestBtn.hidden = true;
+      if (loginSubHeader)
+        loginSubHeader.textContent = "Lengkapi data siswa non-reguler.";
+      try {
+        const prefill = await api(
+          "/api/v1/auth/google/signup/prefill?token=" +
+            encodeURIComponent(googleSignupToken),
+          "GET",
+        );
+        const fullNameInput = document.getElementById("signup-full-name");
+        if (fullNameInput && prefill && prefill.full_name) {
+          fullNameInput.value = prefill.full_name;
+        }
+      } catch (err) {
+        text(msg, "Sesi pendaftaran Google kedaluwarsa. Silakan daftar ulang.");
+        if (signupGoogleTokenInput) signupGoogleTokenInput.value = "";
+      }
+    }
 
     const user = await meOrNull();
     if (user) {
@@ -696,152 +583,6 @@
       }
     });
 
-    if (loginOTPRequestBtn && loginOTPEmailInput) {
-      loginOTPRequestBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          loginOTPForm || loginOTPRequestBtn,
-          msg,
-          "Mengirim OTP login...",
-        );
-        try {
-          const email = normalizeCredential(loginOTPEmailInput.value);
-          await api("/api/v1/auth/otp/request", "POST", { email: email });
-          text(msg, "OTP login sudah dikirim jika akun memenuhi syarat.");
-          if (loginOTPStepRequest) loginOTPStepRequest.hidden = true;
-          if (loginOTPStepVerify) loginOTPStepVerify.hidden = false;
-          if (loginOTPDigitInputs.length > 0 && loginOTPDigitInputs[0].focus) {
-            loginOTPDigitInputs[0].focus();
-          } else if (loginOTPCodeInput && loginOTPCodeInput.focus) {
-            loginOTPCodeInput.focus();
-          }
-        } catch (err) {
-          text(msg, "Gagal kirim OTP login: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (loginOTPForm) {
-      loginOTPForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        syncLoginOTPCode();
-        const done = beginBusy(loginOTPForm, msg, "Memverifikasi OTP login...");
-        const fd = new FormData(loginOTPForm);
-        try {
-          const email = normalizeCredential(fd.get("email"));
-          const code = normalizeCredential(fd.get("code"));
-          await api("/api/v1/auth/otp/verify", "POST", {
-            email: email,
-            code: code,
-          });
-          const me = await meOrNull();
-          window.location.href = homeByRole(me);
-        } catch (err) {
-          text(msg, "Login OTP gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-    if (loginOTPResetBtn) {
-      loginOTPResetBtn.addEventListener("click", function () {
-        resetLoginOTPSteps();
-        if (loginOTPEmailInput && loginOTPEmailInput.focus) {
-          loginOTPEmailInput.focus();
-        }
-      });
-    }
-
-    if (signupRequestOTPBtn && signupEmailInput) {
-      signupRequestOTPBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          signupForm || signupRequestOTPBtn,
-          msg,
-          "Mengirim OTP verifikasi email...",
-        );
-        try {
-          const email = normalizeCredential(signupEmailInput.value);
-          await api("/api/v1/auth/signup/otp/request", "POST", {
-            email: email,
-          });
-          if (signupEmailFinalInput) signupEmailFinalInput.value = email;
-          text(
-            msg,
-            "OTP sudah dikirim jika email memenuhi syarat pendaftaran.",
-          );
-          activateSignupStep("verify");
-          if (signupOTPCodeInput && signupOTPCodeInput.focus)
-            signupOTPCodeInput.focus();
-        } catch (err) {
-          const errMsg = String((err && err.message) || "").toLowerCase();
-          const email = normalizeCredential(signupEmailInput.value);
-          if (errMsg.includes("email already registered")) {
-            activateLoginTab("signin");
-            activateAuthMethod("otp");
-            if (loginOTPEmailInput) {
-              loginOTPEmailInput.value = email;
-            }
-            try {
-              await api("/api/v1/auth/otp/request", "POST", { email: email });
-              text(
-                msg,
-                "Email ini sudah terdaftar. Kami kirim OTP login ke email tersebut. Masukkan 6 digit OTP untuk masuk.",
-              );
-              if (loginOTPStepRequest) loginOTPStepRequest.hidden = true;
-              if (loginOTPStepVerify) loginOTPStepVerify.hidden = false;
-              if (
-                loginOTPDigitInputs.length > 0 &&
-                loginOTPDigitInputs[0].focus
-              ) {
-                loginOTPDigitInputs[0].focus();
-              } else if (loginOTPCodeInput && loginOTPCodeInput.focus) {
-                loginOTPCodeInput.focus();
-              }
-            } catch (loginErr) {
-              text(
-                msg,
-                "Email ini sudah terdaftar. Silakan login via OTP Email. Gagal kirim OTP login: " +
-                  loginErr.message,
-              );
-            }
-            return;
-          }
-          text(msg, "Gagal kirim OTP: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
-    if (signupVerifyOTPBtn && signupEmailInput && signupOTPCodeInput) {
-      signupVerifyOTPBtn.addEventListener("click", async function () {
-        const done = beginBusy(
-          signupForm || signupVerifyOTPBtn,
-          msg,
-          "Memverifikasi OTP pendaftaran...",
-        );
-        try {
-          const email = normalizeCredential(signupEmailInput.value);
-          const code = normalizeCredential(signupOTPCodeInput.value);
-          await api("/api/v1/auth/signup/otp/check", "POST", {
-            email: email,
-            code: code,
-          });
-          if (signupEmailFinalInput) signupEmailFinalInput.value = email;
-          if (signupOTPCodeFinalInput) signupOTPCodeFinalInput.value = code;
-          activateSignupStep("profile");
-          text(msg, "OTP valid. Lanjut isi data pendaftaran.");
-          const fullNameInput = document.getElementById("signup-full-name");
-          if (fullNameInput && fullNameInput.focus) fullNameInput.focus();
-        } catch (err) {
-          text(msg, "Verifikasi OTP gagal: " + err.message);
-        } finally {
-          done();
-        }
-      });
-    }
-
     if (signupForm) {
       signupForm.addEventListener("submit", async function (e) {
         e.preventDefault();
@@ -858,19 +599,26 @@
             provinsi: normalizeCredential(fd.get("provinsi")),
             class_name: normalizeCredential(fd.get("class_name")),
           };
+          const googleToken =
+            (signupGoogleTokenInput && signupGoogleTokenInput.value) || "";
+          if (!googleToken) {
+            text(
+              msg,
+              "Silakan login dengan Google terlebih dahulu untuk pendaftaran non-reguler.",
+            );
+            return;
+          }
           const payload = {
             role_requested: "siswa",
             full_name: normalizeCredential(fd.get("full_name")),
-            email: normalizeCredential(fd.get("email")),
             phone: normalizeCredential(fd.get("phone")),
             institution_name: schoolName,
-            code: normalizeCredential(fd.get("code")),
             form_payload: payloadForm,
           };
           const data = await api(
-            "/api/v1/auth/signup/otp/verify",
+            "/api/v1/auth/google/signup/complete",
             "POST",
-            payload,
+            { token: googleToken, ...payload },
           );
           const regID =
             data && data.registration_id ? String(data.registration_id) : "-";
@@ -882,6 +630,7 @@
           );
           signupForm.reset();
           resetSignupSteps();
+          if (signupGoogleTokenInput) signupGoogleTokenInput.value = "";
         } catch (err) {
           text(msg, "Pendaftaran gagal: " + err.message);
         } finally {

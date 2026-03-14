@@ -241,6 +241,7 @@ Catatan:
 - Jika SMTP aktif, OTP dikirim via email.
 - Jika SMTP belum aktif, OTP tampil di log server (`[DEV-OTP]` untuk login, `[DEV-SIGNUP-OTP]` untuk signup non-reguler).
 - Jika SMTP dikonfigurasi tetapi pengiriman gagal, endpoint sekarang mengembalikan error agar kegagalan delivery tidak tersamarkan sebagai sukses.
+- Untuk pendaftaran/login non-reguler via Google OAuth, set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, dan `GOOGLE_OAUTH_REDIRECT_URL`. Domain yang diizinkan bisa diatur lewat `GOOGLE_OAUTH_ALLOWED_DOMAINS` (default: `gmail.com,sch.id,belajar.id`).
 
 ### Verify OTP
 

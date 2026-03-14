@@ -47,9 +47,13 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	})
 
 	authSvc := auth.NewService(db, auth.ServiceConfig{
-		BootstrapToken: cfg.BootstrapToken,
-		Mailer:         mailer,
-		AppBaseURL:     cfg.AppBaseURL,
+		BootstrapToken:     cfg.BootstrapToken,
+		Mailer:             mailer,
+		AppBaseURL:         cfg.AppBaseURL,
+		GoogleClientID:     cfg.GoogleOAuthClientID,
+		GoogleClientSecret: cfg.GoogleOAuthClientSecret,
+		GoogleRedirectURL:  cfg.GoogleOAuthRedirectURL,
+		GoogleDomains:      cfg.GoogleOAuthDomains,
 	})
 	authHandler := auth.NewHandler(authSvc)
 	auditSvc := audit.NewService(db)
@@ -118,6 +122,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		renderPage(w, "login_content", "Login CBT LMS", map[string]any{})
 	})
 	r.Get("/auth/first-login", authHandler.FirstLoginMagicLink)
+	r.Get("/auth/google/start", authHandler.GoogleStart)
+	r.Get("/auth/google/callback", authHandler.GoogleCallback)
 	r.Get("/ujian", func(w http.ResponseWriter, r *http.Request) {
 		renderPage(w, "ujian_content", "Ikuti Ujian", map[string]any{})
 	})
@@ -160,6 +166,8 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/request", authHandler.RequestSignupOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/check", authHandler.CheckSignupOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/verify", authHandler.VerifySignupOTP)
+		api.With(RateLimitMiddleware(authRateLimiter)).Get("/auth/google/signup/prefill", authHandler.GoogleSignupPrefill)
+		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/google/signup/complete", authHandler.GoogleSignupComplete)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/registrations", authHandler.CreateRegistration)
 		api.With(RateLimitMiddleware(aiRateLimiter)).Post("/assistant", assistantHandler.Reply)
 

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
 )
 
 var (
@@ -34,6 +35,10 @@ var (
 	ErrInvalidInput         = errors.New("invalid input")
 	ErrMagicLinkInvalid     = errors.New("invalid magic link")
 	ErrMagicLinkExpired     = errors.New("magic link expired")
+	ErrOAuthStateInvalid    = errors.New("invalid oauth state")
+	ErrOAuthEmailUnverified = errors.New("oauth email not verified")
+	ErrOAuthDomainDenied    = errors.New("oauth domain not allowed")
+	ErrOAuthSignupExpired   = errors.New("oauth signup expired")
 )
 
 type Service struct {
@@ -49,20 +54,30 @@ type Service struct {
 	mailer            OTPMailer
 	bootstrapToken    string
 	appBaseURL        string
+	googleOAuth       *oauth2.Config
+	googleDomains     []string
+	oauthStateTTL     time.Duration
+	oauthSignupTTL    time.Duration
 }
 
 type ServiceConfig struct {
-	SessionTTL        time.Duration
-	OTPTTL            time.Duration
-	OTPResendCooldown time.Duration
-	BcryptCost        int
-	LoginMaxFailures  int
-	LoginLockDuration time.Duration
-	OTPMaxFailures    int
-	OTPLockDuration   time.Duration
-	BootstrapToken    string
-	Mailer            OTPMailer
-	AppBaseURL        string
+	SessionTTL         time.Duration
+	OTPTTL             time.Duration
+	OTPResendCooldown  time.Duration
+	BcryptCost         int
+	LoginMaxFailures   int
+	LoginLockDuration  time.Duration
+	OTPMaxFailures     int
+	OTPLockDuration    time.Duration
+	BootstrapToken     string
+	Mailer             OTPMailer
+	AppBaseURL         string
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	GoogleDomains      string
+	OAuthStateTTL      time.Duration
+	OAuthSignupTTL     time.Duration
 }
 
 type User struct {
@@ -99,6 +114,18 @@ type SignupVerifyInput struct {
 type SignupOTPCheckInput struct {
 	Email string
 	Code  string
+}
+
+type GoogleUserInfo struct {
+	Email         string
+	EmailVerified bool
+	Sub           string
+	FullName      string
+}
+
+type GoogleSignupPrefill struct {
+	Email    string `json:"email"`
+	FullName string `json:"full_name"`
 }
 
 type RegistrationRecord struct {
@@ -229,6 +256,32 @@ func NewService(db *sql.DB, cfg ServiceConfig) *Service {
 	if cfg.OTPLockDuration <= 0 {
 		cfg.OTPLockDuration = 10 * time.Minute
 	}
+	if cfg.OAuthStateTTL <= 0 {
+		cfg.OAuthStateTTL = 10 * time.Minute
+	}
+	if cfg.OAuthSignupTTL <= 0 {
+		cfg.OAuthSignupTTL = 30 * time.Minute
+	}
+
+	appBase := strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/")
+	redirectURL := strings.TrimSpace(cfg.GoogleRedirectURL)
+	if redirectURL == "" && appBase != "" {
+		redirectURL = appBase + "/auth/google/callback"
+	}
+
+	var googleOAuth *oauth2.Config
+	if strings.TrimSpace(cfg.GoogleClientID) != "" && strings.TrimSpace(cfg.GoogleClientSecret) != "" && redirectURL != "" {
+		googleOAuth = &oauth2.Config{
+			ClientID:     strings.TrimSpace(cfg.GoogleClientID),
+			ClientSecret: strings.TrimSpace(cfg.GoogleClientSecret),
+			RedirectURL:  redirectURL,
+			Scopes:       []string{"openid", "email", "profile"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL: "https://oauth2.googleapis.com/token",
+			},
+		}
+	}
 
 	return &Service{
 		db:                db,
@@ -242,8 +295,26 @@ func NewService(db *sql.DB, cfg ServiceConfig) *Service {
 		otpLockDuration:   cfg.OTPLockDuration,
 		mailer:            cfg.Mailer,
 		bootstrapToken:    strings.TrimSpace(cfg.BootstrapToken),
-		appBaseURL:        strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
+		appBaseURL:        appBase,
+		googleOAuth:       googleOAuth,
+		googleDomains:     splitDomains(cfg.GoogleDomains),
+		oauthStateTTL:     cfg.OAuthStateTTL,
+		oauthSignupTTL:    cfg.OAuthSignupTTL,
 	}
+}
+
+func (s *Service) GoogleOAuthEnabled() bool {
+	return s.googleOAuth != nil
+}
+
+func (s *Service) GoogleOAuthConfig() *oauth2.Config {
+	return s.googleOAuth
+}
+
+func (s *Service) GoogleAllowedDomains() []string {
+	out := make([]string, len(s.googleDomains))
+	copy(out, s.googleDomains)
+	return out
 }
 
 func (s *Service) AuthenticatePassword(ctx context.Context, identifier, password string) (*User, error) {
@@ -573,21 +644,8 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
 		return 0, errors.New("form_payload tidak valid")
 	}
-	if payload.NonRegular {
-		if in.RoleRequested != "siswa" {
-			return 0, errors.New("role_requested untuk non-reguler wajib siswa")
-		}
-		status := strings.TrimSpace(strings.ToLower(payload.Status))
-		if status != "" && status != "siswa" {
-			return 0, errors.New("status non-reguler wajib siswa")
-		}
-		if strings.TrimSpace(payload.SchoolName) == "" ||
-			strings.TrimSpace(payload.NPSN) == "" ||
-			strings.TrimSpace(payload.Kabupaten) == "" ||
-			strings.TrimSpace(payload.Provinsi) == "" ||
-			strings.TrimSpace(payload.ClassName) == "" {
-			return 0, errors.New("data non-reguler belum lengkap")
-		}
+	if err := validateNonRegularPayload(in.RoleRequested, payload); err != nil {
+		return 0, err
 	}
 
 	guardKey := normalizeGuardKey(in.Email)
@@ -794,6 +852,354 @@ func (s *Service) CheckSignupOTP(ctx context.Context, in SignupOTPCheckInput) er
 
 	_ = s.clearGuard(ctx, "otp_verify", guardKey)
 	return nil
+}
+
+func (s *Service) CreateOAuthState(ctx context.Context, flow string) (string, error) {
+	flow = strings.ToLower(strings.TrimSpace(flow))
+	if flow != "login" && flow != "signup" {
+		return "", ErrInvalidInput
+	}
+	token, err := generateToken(32)
+	if err != nil {
+		return "", fmt.Errorf("generate oauth state: %w", err)
+	}
+	expiresAt := time.Now().Add(s.oauthStateTTL)
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO auth_oauth_states (state_hash, flow, expires_at, created_at)
+		VALUES ($1, $2, $3, now())
+	`, hashToken(token), flow, expiresAt); err != nil {
+		return "", fmt.Errorf("insert oauth state: %w", err)
+	}
+	return token, nil
+}
+
+func (s *Service) ConsumeOAuthState(ctx context.Context, token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", ErrOAuthStateInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin oauth state tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, flow, expires_at, used_at
+		FROM auth_oauth_states
+		WHERE state_hash = $1
+		FOR UPDATE
+	`, hashToken(token))
+
+	var id int64
+	var flow string
+	var expiresAt time.Time
+	var usedAt sql.NullTime
+	if err := row.Scan(&id, &flow, &expiresAt, &usedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrOAuthStateInvalid
+		}
+		return "", fmt.Errorf("load oauth state: %w", err)
+	}
+	if usedAt.Valid || time.Now().After(expiresAt) {
+		return "", ErrOAuthStateInvalid
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_oauth_states SET used_at = now() WHERE id = $1`, id); err != nil {
+		return "", fmt.Errorf("consume oauth state: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit oauth state: %w", err)
+	}
+	return flow, nil
+}
+
+func (s *Service) LoginWithGoogle(ctx context.Context, info GoogleUserInfo) (*User, error) {
+	email := strings.ToLower(strings.TrimSpace(info.Email))
+	if email == "" || info.Sub == "" {
+		return nil, ErrInvalidInput
+	}
+	if !info.EmailVerified {
+		return nil, ErrOAuthEmailUnverified
+	}
+	if err := ensureAllowedDomain(email, s.googleDomains); err != nil {
+		return nil, err
+	}
+
+	row := s.db.QueryRowContext(ctx, `
+		SELECT u.id, u.username, u.email, u.full_name, u.role, u.account_status, u.approved_at, u.is_non_regular
+		FROM auth_identities ai
+		JOIN users u ON u.id = ai.user_id
+		WHERE ai.provider = 'google'
+		  AND ai.provider_key = $1
+		LIMIT 1
+	`, info.Sub)
+
+	var u User
+	var emailVal sql.NullString
+	var approvedAt sql.NullTime
+	if err := row.Scan(&u.ID, &u.Username, &emailVal, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("query google identity: %w", err)
+		}
+	} else {
+		if emailVal.Valid {
+			u.Email = &emailVal.String
+		}
+		if approvedAt.Valid {
+			u.ApprovedAt = &approvedAt.Time
+		}
+		if u.AccountStatus != "active" {
+			return nil, ErrForbidden
+		}
+		return &u, nil
+	}
+
+	row = s.db.QueryRowContext(ctx, `
+		SELECT id, username, email, full_name, role, account_status, approved_at, is_non_regular
+		FROM users
+		WHERE email = $1
+		LIMIT 1
+	`, email)
+	if err := row.Scan(&u.ID, &u.Username, &emailVal, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("query user by email: %w", err)
+	}
+	if emailVal.Valid {
+		u.Email = &emailVal.String
+	}
+	if approvedAt.Valid {
+		u.ApprovedAt = &approvedAt.Time
+	}
+	if u.AccountStatus != "active" {
+		return nil, ErrForbidden
+	}
+
+	_, _ = s.db.ExecContext(ctx, `
+		INSERT INTO auth_identities (user_id, provider, provider_key, created_at)
+		VALUES ($1, 'google', $2, now())
+		ON CONFLICT (provider, provider_key) DO NOTHING
+	`, u.ID, info.Sub)
+
+	return &u, nil
+}
+
+func (s *Service) CreateGoogleSignup(ctx context.Context, info GoogleUserInfo) (string, error) {
+	email := strings.ToLower(strings.TrimSpace(info.Email))
+	if email == "" || info.Sub == "" {
+		return "", ErrInvalidInput
+	}
+	if !info.EmailVerified {
+		return "", ErrOAuthEmailUnverified
+	}
+	if err := ensureAllowedDomain(email, s.googleDomains); err != nil {
+		return "", err
+	}
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE email = $1
+			  AND account_status = 'active'
+		)
+	`, email).Scan(&exists); err != nil {
+		return "", fmt.Errorf("check active user by email: %w", err)
+	}
+	if exists {
+		return "", ErrEmailAlreadyUsed
+	}
+
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM registration_requests
+			WHERE email = $1
+			  AND status = 'pending'
+		)
+	`, email).Scan(&exists); err != nil {
+		return "", fmt.Errorf("check pending registration by email: %w", err)
+	}
+	if exists {
+		return "", ErrRegistrationState
+	}
+
+	token, err := generateToken(32)
+	if err != nil {
+		return "", fmt.Errorf("generate oauth signup: %w", err)
+	}
+	expiresAt := time.Now().Add(s.oauthSignupTTL)
+	fullName := strings.TrimSpace(info.FullName)
+	if fullName == "" {
+		fullName = strings.Split(email, "@")[0]
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO auth_oauth_signups (
+			token_hash, email, full_name, provider, provider_subject, expires_at, created_at
+		) VALUES (
+			$1, $2, $3, 'google', $4, $5, now()
+		)
+	`, hashToken(token), email, fullName, info.Sub, expiresAt); err != nil {
+		return "", fmt.Errorf("insert oauth signup: %w", err)
+	}
+	return token, nil
+}
+
+func (s *Service) PeekGoogleSignup(ctx context.Context, token string) (*GoogleSignupPrefill, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrOAuthSignupExpired
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT email, full_name, expires_at, used_at
+		FROM auth_oauth_signups
+		WHERE token_hash = $1
+		LIMIT 1
+	`, hashToken(token))
+	var email string
+	var fullName string
+	var expiresAt time.Time
+	var usedAt sql.NullTime
+	if err := row.Scan(&email, &fullName, &expiresAt, &usedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrOAuthSignupExpired
+		}
+		return nil, fmt.Errorf("load oauth signup: %w", err)
+	}
+	if usedAt.Valid || time.Now().After(expiresAt) {
+		return nil, ErrOAuthSignupExpired
+	}
+	return &GoogleSignupPrefill{Email: email, FullName: fullName}, nil
+}
+
+func (s *Service) CompleteGoogleSignup(ctx context.Context, token string, in RegistrationInput) (int64, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, ErrOAuthSignupExpired
+	}
+	in.RoleRequested = strings.TrimSpace(in.RoleRequested)
+	in.FullName = strings.TrimSpace(in.FullName)
+	in.Phone = strings.TrimSpace(in.Phone)
+	in.InstitutionName = strings.TrimSpace(in.InstitutionName)
+	if strings.TrimSpace(in.FormPayload) == "" {
+		in.FormPayload = "{}"
+	}
+	if in.RoleRequested != "siswa" && in.RoleRequested != "guru" {
+		return 0, errors.New("role_requested must be siswa or guru")
+	}
+	if in.FullName == "" {
+		return 0, errors.New("full_name is required")
+	}
+
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
+		return 0, errors.New("form_payload tidak valid")
+	}
+	if err := validateNonRegularPayload(in.RoleRequested, payload); err != nil {
+		return 0, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin oauth signup tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx, `
+		SELECT email, full_name, provider_subject, expires_at, used_at
+		FROM auth_oauth_signups
+		WHERE token_hash = $1
+		FOR UPDATE
+	`, hashToken(token))
+
+	var email string
+	var fullName string
+	var providerSubject string
+	var expiresAt time.Time
+	var usedAt sql.NullTime
+	if err := row.Scan(&email, &fullName, &providerSubject, &expiresAt, &usedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrOAuthSignupExpired
+		}
+		return 0, fmt.Errorf("load oauth signup: %w", err)
+	}
+	if usedAt.Valid || time.Now().After(expiresAt) {
+		return 0, ErrOAuthSignupExpired
+	}
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM users
+			WHERE email = $1
+			  AND account_status = 'active'
+		)
+	`, email).Scan(&exists); err != nil {
+		return 0, fmt.Errorf("check active user by email: %w", err)
+	}
+	if exists {
+		return 0, ErrEmailAlreadyUsed
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM registration_requests
+			WHERE email = $1
+			  AND status = 'pending'
+		)
+	`, email).Scan(&exists); err != nil {
+		return 0, fmt.Errorf("check pending registration by email: %w", err)
+	}
+	if exists {
+		return 0, ErrRegistrationState
+	}
+
+	randomPassword, err := generateToken(24)
+	if err != nil {
+		return 0, fmt.Errorf("generate random signup password: %w", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(randomPassword), s.bcryptCost)
+	if err != nil {
+		return 0, fmt.Errorf("hash random signup password: %w", err)
+	}
+
+	var registrationID int64
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO registration_requests (
+			role_requested,
+			email,
+			password_hash,
+			full_name,
+			phone,
+			institution_name,
+			form_payload,
+			oauth_provider,
+			oauth_subject,
+			status,
+			created_at,
+			updated_at
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7::jsonb,'google',$8,'pending',now(),now()
+		)
+		RETURNING id
+	`, in.RoleRequested, email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload, providerSubject).Scan(&registrationID)
+	if err != nil {
+		return 0, fmt.Errorf("insert oauth registration: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_oauth_signups SET used_at = now() WHERE token_hash = $1`, hashToken(token)); err != nil {
+		return 0, fmt.Errorf("consume oauth signup: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit oauth signup: %w", err)
+	}
+
+	return registrationID, nil
 }
 
 func (s *Service) BootstrapAccounts(ctx context.Context, in BootstrapInput) error {
@@ -1036,7 +1442,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, role_requested, email, password_hash, full_name, form_payload, status
+		SELECT id, role_requested, email, password_hash, full_name, form_payload, status, oauth_provider, oauth_subject
 		FROM registration_requests
 		WHERE id = $1
 		FOR UPDATE
@@ -1044,7 +1450,9 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 
 	var id int64
 	var role, email, passwordHash, fullName, formPayloadRaw, status string
-	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &formPayloadRaw, &status); err != nil {
+	var oauthProvider sql.NullString
+	var oauthSubject sql.NullString
+	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &formPayloadRaw, &status, &oauthProvider, &oauthSubject); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false, ErrRegistrationNotFound
 		}
@@ -1061,7 +1469,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		return 0, false, fmt.Errorf("parse form payload: %w", err)
 	}
 	isNonRegular := payload.NonRegular
-	shouldSendFirstLoginLink := isNonRegular && role == "siswa"
+	shouldSendFirstLoginLink := false
 
 	var userID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 LIMIT 1`, email).Scan(&userID)
@@ -1107,6 +1515,17 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		`, fullName, passwordHash, role, reviewerID, isNonRegular, userID)
 		if err != nil {
 			return 0, false, fmt.Errorf("update approved user: %w", err)
+		}
+	}
+
+	if oauthProvider.Valid && oauthSubject.Valid {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO auth_identities (user_id, provider, provider_key, created_at)
+			VALUES ($1, $2, $3, now())
+			ON CONFLICT (provider, provider_key) DO NOTHING
+		`, userID, strings.ToLower(strings.TrimSpace(oauthProvider.String)), strings.TrimSpace(oauthSubject.String))
+		if err != nil {
+			return 0, false, fmt.Errorf("insert oauth identity: %w", err)
 		}
 	}
 
@@ -2225,6 +2644,60 @@ func nullableString(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+func splitDomains(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.ToLower(strings.TrimSpace(part))
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func ensureAllowedDomain(email string, domains []string) error {
+	if len(domains) == 0 {
+		return nil
+	}
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return ErrOAuthDomainDenied
+	}
+	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	for _, allowed := range domains {
+		if domain == allowed {
+			return nil
+		}
+	}
+	return ErrOAuthDomainDenied
+}
+
+func validateNonRegularPayload(role string, payload RegistrationFormPayload) error {
+	if !payload.NonRegular {
+		return nil
+	}
+	if role != "siswa" {
+		return errors.New("role_requested untuk non-reguler wajib siswa")
+	}
+	status := strings.TrimSpace(strings.ToLower(payload.Status))
+	if status != "" && status != "siswa" {
+		return errors.New("status non-reguler wajib siswa")
+	}
+	if strings.TrimSpace(payload.SchoolName) == "" ||
+		strings.TrimSpace(payload.NPSN) == "" ||
+		strings.TrimSpace(payload.Kabupaten) == "" ||
+		strings.TrimSpace(payload.Provinsi) == "" ||
+		strings.TrimSpace(payload.ClassName) == "" {
+		return errors.New("data non-reguler belum lengkap")
+	}
+	return nil
 }
 
 func generateToken(n int) (string, error) {

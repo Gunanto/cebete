@@ -474,6 +474,22 @@ body[data-page="login_content"] .landing-footer small {
     border-color: #bec8da;
 }
 
+.login-google-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid #e5e7eb;
+}
+
+.login-google-btn:hover {
+    background: #f8fafc;
+    border-color: #d1d5db;
+}
+
 .login-secondary-btn-icon {
     display: inline-flex;
     align-items: center;

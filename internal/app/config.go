@@ -31,6 +31,11 @@ type Config struct {
 	GeminiAPIKey   string
 	GeminiModel    string
 
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+	GoogleOAuthRedirectURL  string
+	GoogleOAuthDomains      string
+
 	MinIOEndpoint  string
 	MinIOAccessKey string
 	MinIOSecretKey string
@@ -74,12 +79,22 @@ func LoadConfig() Config {
 		BootstrapToken:      os.Getenv("BOOTSTRAP_TOKEN"),
 		GeminiAPIKey:        os.Getenv("GEMINI_API_KEY"),
 		GeminiModel:         envOrDefault("GEMINI_MODEL", "gemini-2.5-flash"),
-		MinIOEndpoint:       strings.TrimSpace(os.Getenv("MINIO_ENDPOINT")),
-		MinIOAccessKey:      strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY")),
-		MinIOSecretKey:      strings.TrimSpace(os.Getenv("MINIO_SECRET_KEY")),
-		MinIOUseSSL:         boolOrDefault("MINIO_USE_SSL", false),
-		MinIOBucket:         envOrDefault("MINIO_BUCKET", "cbtlms-question-media"),
-		MinIORegion:         envOrDefault("MINIO_REGION", "us-east-1"),
+		GoogleOAuthClientID: strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")),
+		GoogleOAuthClientSecret: strings.TrimSpace(
+			os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		),
+		GoogleOAuthRedirectURL: strings.TrimSpace(
+			os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+		),
+		GoogleOAuthDomains: strings.TrimSpace(
+			envOrDefault("GOOGLE_OAUTH_ALLOWED_DOMAINS", "gmail.com,sch.id,belajar.id"),
+		),
+		MinIOEndpoint:  strings.TrimSpace(os.Getenv("MINIO_ENDPOINT")),
+		MinIOAccessKey: strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY")),
+		MinIOSecretKey: strings.TrimSpace(os.Getenv("MINIO_SECRET_KEY")),
+		MinIOUseSSL:    boolOrDefault("MINIO_USE_SSL", false),
+		MinIOBucket:    envOrDefault("MINIO_BUCKET", "cbtlms-question-media"),
+		MinIORegion:    envOrDefault("MINIO_REGION", "us-east-1"),
 	}
 }
 

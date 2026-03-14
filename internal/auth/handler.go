@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"cbtlms/internal/app/apiresp"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/oauth2"
 )
 
 type contextKey string
@@ -66,6 +69,15 @@ type signupVerifyOTPRequest struct {
 type signupCheckOTPRequest struct {
 	Email string `json:"email"`
 	Code  string `json:"code"`
+}
+
+type googleSignupCompleteRequest struct {
+	Token           string          `json:"token"`
+	RoleRequested   string          `json:"role_requested"`
+	FullName        string          `json:"full_name"`
+	Phone           string          `json:"phone"`
+	InstitutionName string          `json:"institution_name"`
+	FormPayload     json.RawMessage `json:"form_payload"`
 }
 
 type createRegistrationRequest struct {
@@ -122,6 +134,166 @@ type bootstrapInitRequest struct {
 
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
+	if !h.svc.GoogleOAuthEnabled() {
+		http.Redirect(w, r, "/login?oauth=disabled", http.StatusFound)
+		return
+	}
+	flow := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("flow")))
+	if flow == "" {
+		flow = "login"
+	}
+	state, err := h.svc.CreateOAuthState(r.Context(), flow)
+	if err != nil {
+		http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+		return
+	}
+	authURL := h.svc.GoogleOAuthConfig().AuthCodeURL(
+		state,
+		oauth2.AccessTypeOnline,
+		oauth2.SetAuthURLParam("prompt", "select_account"),
+	)
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
+	if !h.svc.GoogleOAuthEnabled() {
+		http.Redirect(w, r, "/login?oauth=disabled", http.StatusFound)
+		return
+	}
+	if errMsg := strings.TrimSpace(r.URL.Query().Get("error")); errMsg != "" {
+		http.Redirect(w, r, "/login?oauth=cancelled", http.StatusFound)
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if state == "" || code == "" {
+		http.Redirect(w, r, "/login?oauth=invalid", http.StatusFound)
+		return
+	}
+	flow, err := h.svc.ConsumeOAuthState(r.Context(), state)
+	if err != nil {
+		http.Redirect(w, r, "/login?oauth=invalid", http.StatusFound)
+		return
+	}
+
+	token, err := h.svc.GoogleOAuthConfig().Exchange(r.Context(), code)
+	if err != nil {
+		http.Redirect(w, r, "/login?oauth=exchange_failed", http.StatusFound)
+		return
+	}
+
+	info, err := fetchGoogleUserInfo(r.Context(), token.AccessToken)
+	if err != nil {
+		http.Redirect(w, r, "/login?oauth=userinfo_failed", http.StatusFound)
+		return
+	}
+
+	switch flow {
+	case "signup":
+		signupToken, err := h.svc.CreateGoogleSignup(r.Context(), info)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrEmailAlreadyUsed):
+				http.Redirect(w, r, "/login?oauth=registered", http.StatusFound)
+			case errors.Is(err, ErrRegistrationState):
+				http.Redirect(w, r, "/login?oauth=registration_pending", http.StatusFound)
+			case errors.Is(err, ErrOAuthEmailUnverified), errors.Is(err, ErrOAuthDomainDenied):
+				http.Redirect(w, r, "/login?oauth=domain_denied", http.StatusFound)
+			default:
+				http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+			}
+			return
+		}
+		redirectWithParams(w, r, map[string]string{
+			"google_signup": "1",
+			"token":         signupToken,
+		})
+		return
+	default:
+		user, err := h.svc.LoginWithGoogle(r.Context(), info)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrUserNotFound):
+				http.Redirect(w, r, "/login?oauth=not_registered", http.StatusFound)
+			case errors.Is(err, ErrForbidden):
+				http.Redirect(w, r, "/login?oauth=inactive", http.StatusFound)
+			case errors.Is(err, ErrOAuthEmailUnverified), errors.Is(err, ErrOAuthDomainDenied):
+				http.Redirect(w, r, "/login?oauth=domain_denied", http.StatusFound)
+			default:
+				http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+			}
+			return
+		}
+		if err := h.establishSession(w, r, user); err != nil {
+			http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/login?oauth=success", http.StatusFound)
+		return
+	}
+}
+
+func (h *Handler) GoogleSignupPrefill(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	prefill, err := h.svc.PeekGoogleSignup(r.Context(), token)
+	if err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid or expired signup token"})
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: prefill})
+}
+
+func (h *Handler) GoogleSignupComplete(w http.ResponseWriter, r *http.Request) {
+	var req googleSignupCompleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	formPayload := strings.TrimSpace(string(req.FormPayload))
+	if formPayload == "" || formPayload == "null" {
+		formPayload = "{}"
+	} else if strings.HasPrefix(formPayload, "\"") {
+		if unq, err := strconv.Unquote(formPayload); err == nil {
+			if strings.TrimSpace(unq) == "" {
+				formPayload = "{}"
+			} else {
+				formPayload = unq
+			}
+		}
+	}
+
+	registrationID, err := h.svc.CompleteGoogleSignup(r.Context(), req.Token, RegistrationInput{
+		RoleRequested:   req.RoleRequested,
+		FullName:        req.FullName,
+		Phone:           req.Phone,
+		InstitutionName: req.InstitutionName,
+		FormPayload:     formPayload,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyUsed):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "email already registered"})
+		case errors.Is(err, ErrRegistrationState):
+			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: "registration already pending"})
+		case errors.Is(err, ErrOAuthSignupExpired):
+			writeJSON(w, r, http.StatusGone, apiResponse{OK: false, Error: "signup token expired"})
+		default:
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusCreated, apiResponse{
+		OK: true,
+		Data: map[string]interface{}{
+			"registration_id": registrationID,
+			"status":          "pending",
+		},
+	})
 }
 
 func (h *Handler) LoginPassword(w http.ResponseWriter, r *http.Request) {
@@ -920,6 +1092,50 @@ func readIP(r *http.Request) string {
 		}
 	}
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+type googleUserInfoResponse struct {
+	Sub           string `json:"sub"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+}
+
+func fetchGoogleUserInfo(ctx context.Context, accessToken string) (GoogleUserInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openidconnect.googleapis.com/v1/userinfo", nil)
+	if err != nil {
+		return GoogleUserInfo{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return GoogleUserInfo{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		_, _ = io.ReadAll(res.Body)
+		return GoogleUserInfo{}, errors.New("google userinfo failed")
+	}
+	var out googleUserInfoResponse
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return GoogleUserInfo{}, err
+	}
+	return GoogleUserInfo{
+		Email:         out.Email,
+		EmailVerified: out.EmailVerified,
+		Sub:           out.Sub,
+		FullName:      out.Name,
+	}, nil
+}
+
+func redirectWithParams(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	u := url.URL{Path: "/login"}
+	q := u.Query()
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 func writeJSON(w http.ResponseWriter, r *http.Request, code int, payload apiResponse) {
