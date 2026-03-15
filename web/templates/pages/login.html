@@ -296,13 +296,29 @@
                     </div>
 
                     <div class="login-input-group">
+                        <label for="signup-npsn">NPSN</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-npsn"
+                                type="text"
+                                name="npsn"
+                                placeholder="Nomor pokok sekolah nasional"
+                                required
+                            />
+                        </div>
+                        <p class="login-hint">
+                            Isi NPSN dulu agar data sekolah terisi otomatis.
+                        </p>
+                    </div>
+
+                    <div class="login-input-group">
                         <label for="signup-school-name">Nama Sekolah</label>
                         <div class="login-input-wrap login-input-wrap-plain">
                             <input
                                 id="signup-school-name"
                                 type="text"
                                 name="institution_name"
-                                placeholder="Nama sekolah"
+                                placeholder="Terisi otomatis dari NPSN (bisa diubah)"
                                 autocomplete="off"
                                 required
                             />
@@ -326,19 +342,6 @@
                                     hidden
                                 ></div>
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="login-input-group">
-                        <label for="signup-npsn">NPSN</label>
-                        <div class="login-input-wrap login-input-wrap-plain">
-                            <input
-                                id="signup-npsn"
-                                type="text"
-                                name="npsn"
-                                placeholder="Nomor pokok sekolah nasional"
-                                required
-                            />
                         </div>
                     </div>
 
@@ -439,7 +442,7 @@
                                 id="signup-class-name"
                                 type="text"
                                 name="class_name"
-                                placeholder="Contoh: X IPA 1"
+                                placeholder="Contoh: Kelas 9.1"
                                 required
                             />
                         </div>
