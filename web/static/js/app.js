@@ -5247,6 +5247,9 @@
     const manuscriptAddOptionBtn = document.getElementById(
       "guru-manuscript-add-option-btn",
     );
+    const manuscriptAddOptionBtnBottom = document.getElementById(
+      "guru-manuscript-add-option-btn-bottom",
+    );
     const manuscriptKeyMC = document.getElementById("guru-manuscript-key-mc");
     const manuscriptKeyMR = document.getElementById("guru-manuscript-key-mr");
     const manuscriptKeyMCOptions = document.getElementById(
@@ -5261,6 +5264,9 @@
     );
     const manuscriptAddStatementBtn = document.getElementById(
       "guru-manuscript-add-statement-btn",
+    );
+    const manuscriptAddStatementBtnBottom = document.getElementById(
+      "guru-manuscript-add-statement-btn-bottom",
     );
     const manuscriptAnswerKeyRaw = document.getElementById(
       "guru-manuscript-answer-key-raw",
@@ -6938,6 +6944,7 @@
         manuscriptOptionsPanel: manuscriptOptionsPanel,
         manuscriptOptionsWrap: manuscriptOptionsWrap,
         manuscriptAddOptionBtn: manuscriptAddOptionBtn,
+        manuscriptAddOptionBtnBottom: manuscriptAddOptionBtnBottom,
         manuscriptKeyMC: manuscriptKeyMC,
         manuscriptKeyMR: manuscriptKeyMR,
         manuscriptKeyMCOptions: manuscriptKeyMCOptions,
@@ -6945,6 +6952,7 @@
         manuscriptKeyTF: manuscriptKeyTF,
         manuscriptStatementsWrap: manuscriptStatementsWrap,
         manuscriptAddStatementBtn: manuscriptAddStatementBtn,
+        manuscriptAddStatementBtnBottom: manuscriptAddStatementBtnBottom,
         manuscriptAnswerKeyRaw: manuscriptAnswerKeyRaw,
         manuscriptEditingVersionNoInput: manuscriptEditingVersionNoInput,
         manuscriptSubmitBtn: manuscriptSubmitBtn,

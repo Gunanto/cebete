@@ -1199,19 +1199,25 @@
       deps.manuscriptForm.addEventListener("change", onFormChangeOrInput);
       deps.manuscriptForm.addEventListener("input", onFormChangeOrInput);
     }
-    if (deps.manuscriptAddOptionBtn) {
-      deps.manuscriptAddOptionBtn.addEventListener("click", function () {
-        if (!deps.manuscriptOptionsWrap) return;
-        const idx =
-          deps.manuscriptOptionsWrap.querySelectorAll("[data-option-row]")
-            .length || 0;
-        deps.manuscriptOptionsWrap.insertAdjacentHTML(
-          "beforeend",
-          createOptionRow({ option_key: "", option_html: "" }, idx),
-        );
-        bindOptionEditors();
-        renderKeyChoices();
-        syncAnswerKeyPreview();
+    const optionButtons = [
+      deps.manuscriptAddOptionBtn,
+      deps.manuscriptAddOptionBtnBottom,
+    ].filter(Boolean);
+    if (optionButtons.length) {
+      optionButtons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (!deps.manuscriptOptionsWrap) return;
+          const idx =
+            deps.manuscriptOptionsWrap.querySelectorAll("[data-option-row]")
+              .length || 0;
+          deps.manuscriptOptionsWrap.insertAdjacentHTML(
+            "beforeend",
+            createOptionRow({ option_key: "", option_html: "" }, idx),
+          );
+          bindOptionEditors();
+          renderKeyChoices();
+          syncAnswerKeyPreview();
+        });
       });
     }
     if (deps.manuscriptOptionsWrap) {
@@ -1225,20 +1231,27 @@
         syncAnswerKeyPreview();
       });
     }
-    if (deps.manuscriptAddStatementBtn) {
-      deps.manuscriptAddStatementBtn.addEventListener("click", function () {
-        if (!deps.manuscriptStatementsWrap) return;
-        const idx =
-          deps.manuscriptStatementsWrap.querySelectorAll("[data-statement-row]")
-            .length || 0;
-        deps.manuscriptStatementsWrap.insertAdjacentHTML(
-          "beforeend",
-          createTFStatementRow(
-            { id: "S" + String(idx + 1), statement: "", correct: true },
-            idx,
-          ),
-        );
-        syncAnswerKeyPreview();
+    const statementButtons = [
+      deps.manuscriptAddStatementBtn,
+      deps.manuscriptAddStatementBtnBottom,
+    ].filter(Boolean);
+    if (statementButtons.length) {
+      statementButtons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (!deps.manuscriptStatementsWrap) return;
+          const idx =
+            deps.manuscriptStatementsWrap.querySelectorAll(
+              "[data-statement-row]",
+            ).length || 0;
+          deps.manuscriptStatementsWrap.insertAdjacentHTML(
+            "beforeend",
+            createTFStatementRow(
+              { id: "S" + String(idx + 1), statement: "", correct: true },
+              idx,
+            ),
+          );
+          syncAnswerKeyPreview();
+        });
       });
     }
     if (deps.manuscriptStatementsWrap) {
