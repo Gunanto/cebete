@@ -13,6 +13,7 @@ import (
 	"log"
 	"math/big"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -136,6 +137,16 @@ type RegistrationRecord struct {
 	Phone         *string    `json:"phone,omitempty"`
 	Institution   *string    `json:"institution_name,omitempty"`
 	FormPayload   *string    `json:"form_payload,omitempty"`
+	SchoolName    *string    `json:"school_name,omitempty"`
+	NPSN          *string    `json:"npsn,omitempty"`
+	Kabupaten     *string    `json:"kabupaten,omitempty"`
+	Provinsi      *string    `json:"provinsi,omitempty"`
+	Kecamatan     *string    `json:"kecamatan,omitempty"`
+	Alamat        *string    `json:"alamat,omitempty"`
+	SchoolEmail   *string    `json:"school_email,omitempty"`
+	Jenjang       *string    `json:"jenjang,omitempty"`
+	StatusSekolah *string    `json:"status_sekolah,omitempty"`
+	ClassName     *string    `json:"class_name,omitempty"`
 	Status        string     `json:"status"`
 	ReviewNote    *string    `json:"review_note,omitempty"`
 	ReviewedBy    *int64     `json:"reviewed_by,omitempty"`
@@ -144,34 +155,46 @@ type RegistrationRecord struct {
 }
 
 type RegistrationFormPayload struct {
-	NonRegular  bool   `json:"non_regular"`
-	Status      string `json:"status"`
-	SchoolName  string `json:"school_name"`
-	NPSN        string `json:"npsn"`
-	Kabupaten   string `json:"kabupaten"`
-	Provinsi    string `json:"provinsi"`
-	ClassName   string `json:"class_name"`
-	SubjectName string `json:"subject_name"`
+	NonRegular    bool   `json:"non_regular"`
+	Status        string `json:"status"`
+	SchoolName    string `json:"school_name"`
+	NPSN          string `json:"npsn"`
+	Kabupaten     string `json:"kabupaten"`
+	Provinsi      string `json:"provinsi"`
+	Kecamatan     string `json:"kecamatan"`
+	Alamat        string `json:"alamat"`
+	SchoolEmail   string `json:"school_email"`
+	Jenjang       string `json:"jenjang"`
+	StatusSekolah string `json:"status_sekolah"`
+	ClassName     string `json:"class_name"`
+	SubjectName   string `json:"subject_name"`
 }
 
 type AdminUserRecord struct {
-	ID            int64      `json:"id"`
-	Username      string     `json:"username"`
-	Email         *string    `json:"email,omitempty"`
-	FullName      string     `json:"full_name"`
-	Role          string     `json:"role"`
-	ParticipantNo *string    `json:"participant_no,omitempty"`
-	NISN          *string    `json:"nisn,omitempty"`
-	SchoolID      *int64     `json:"school_id,omitempty"`
-	SchoolName    *string    `json:"school_name,omitempty"`
-	SchoolCode    *string    `json:"school_code,omitempty"`
-	ClassID       *int64     `json:"class_id,omitempty"`
-	ClassGrade    *string    `json:"class_grade_level,omitempty"`
-	ClassName     *string    `json:"class_name,omitempty"`
-	IsActive      bool       `json:"is_active"`
-	AccountStatus string     `json:"account_status"`
-	ApprovedAt    *time.Time `json:"approved_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              int64      `json:"id"`
+	Username        string     `json:"username"`
+	Email           *string    `json:"email,omitempty"`
+	FullName        string     `json:"full_name"`
+	Role            string     `json:"role"`
+	ParticipantNo   *string    `json:"participant_no,omitempty"`
+	NISN            *string    `json:"nisn,omitempty"`
+	SchoolID        *int64     `json:"school_id,omitempty"`
+	SchoolName      *string    `json:"school_name,omitempty"`
+	SchoolCode      *string    `json:"school_code,omitempty"`
+	SchoolCity      *string    `json:"school_city,omitempty"`
+	SchoolProvince  *string    `json:"school_province,omitempty"`
+	SchoolAddress   *string    `json:"school_address,omitempty"`
+	SchoolKecamatan *string    `json:"school_kecamatan,omitempty"`
+	SchoolJenjang   *string    `json:"school_jenjang,omitempty"`
+	SchoolStatus    *string    `json:"school_status,omitempty"`
+	SchoolEmail     *string    `json:"school_email,omitempty"`
+	ClassID         *int64     `json:"class_id,omitempty"`
+	ClassGrade      *string    `json:"class_grade_level,omitempty"`
+	ClassName       *string    `json:"class_name,omitempty"`
+	IsActive        bool       `json:"is_active"`
+	AccountStatus   string     `json:"account_status"`
+	ApprovedAt      *time.Time `json:"approved_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type AdminDashboardStats struct {
@@ -629,6 +652,10 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 	if strings.TrimSpace(in.FormPayload) == "" {
 		in.FormPayload = "{}"
 	}
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
+		payload = RegistrationFormPayload{}
+	}
 
 	if in.Email == "" || in.Code == "" {
 		return 0, ErrInvalidOTP
@@ -755,14 +782,28 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 			phone,
 			institution_name,
 			form_payload,
+			school_name,
+			npsn,
+			kabupaten,
+			provinsi,
+			kecamatan,
+			alamat,
+			school_email,
+			jenjang,
+			status_sekolah,
+			class_name,
 			status,
 			created_at,
 			updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7::jsonb,'pending',now(),now()
+			$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pending',now(),now()
 		)
 		RETURNING id
-	`, in.RoleRequested, in.Email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload).Scan(&registrationID)
+	`, in.RoleRequested, in.Email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload,
+		nullableString(payload.SchoolName), nullableString(payload.NPSN), nullableString(payload.Kabupaten), nullableString(payload.Provinsi),
+		nullableString(payload.Kecamatan), nullableString(payload.Alamat), nullableString(payload.SchoolEmail), nullableString(payload.Jenjang),
+		nullableString(payload.StatusSekolah), nullableString(payload.ClassName),
+	).Scan(&registrationID)
 	if err != nil {
 		return 0, fmt.Errorf("insert signup registration: %w", err)
 	}
@@ -1191,16 +1232,31 @@ func (s *Service) CompleteGoogleSignup(ctx context.Context, token string, in Reg
 			phone,
 			institution_name,
 			form_payload,
+			school_name,
+			npsn,
+			kabupaten,
+			provinsi,
+			kecamatan,
+			alamat,
+			school_email,
+			jenjang,
+			status_sekolah,
+			class_name,
 			oauth_provider,
 			oauth_subject,
 			status,
 			created_at,
 			updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7::jsonb,'google',$8,'pending',now(),now()
+			$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'google',$18,'pending',now(),now()
 		)
 		RETURNING id
-	`, in.RoleRequested, email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload, providerSubject).Scan(&registrationID)
+	`, in.RoleRequested, email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload,
+		nullableString(payload.SchoolName), nullableString(payload.NPSN), nullableString(payload.Kabupaten), nullableString(payload.Provinsi),
+		nullableString(payload.Kecamatan), nullableString(payload.Alamat), nullableString(payload.SchoolEmail), nullableString(payload.Jenjang),
+		nullableString(payload.StatusSekolah), nullableString(payload.ClassName),
+		providerSubject,
+	).Scan(&registrationID)
 	if err != nil {
 		return 0, fmt.Errorf("insert oauth registration: %w", err)
 	}
@@ -1365,14 +1421,28 @@ func (s *Service) CreateRegistration(ctx context.Context, in RegistrationInput) 
 			phone,
 			institution_name,
 			form_payload,
+			school_name,
+			npsn,
+			kabupaten,
+			provinsi,
+			kecamatan,
+			alamat,
+			school_email,
+			jenjang,
+			status_sekolah,
+			class_name,
 			status,
 			created_at,
 			updated_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7::jsonb,'pending',now(),now()
+			$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pending',now(),now()
 		)
 		RETURNING id
-	`, in.RoleRequested, in.Email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload).Scan(&id)
+	`, in.RoleRequested, in.Email, string(passwordHash), in.FullName, nullableString(in.Phone), nullableString(in.InstitutionName), in.FormPayload,
+		nullableString(payload.SchoolName), nullableString(payload.NPSN), nullableString(payload.Kabupaten), nullableString(payload.Provinsi),
+		nullableString(payload.Kecamatan), nullableString(payload.Alamat), nullableString(payload.SchoolEmail), nullableString(payload.Jenjang),
+		nullableString(payload.StatusSekolah), nullableString(payload.ClassName),
+	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert registration: %w", err)
 	}
@@ -1394,7 +1464,9 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, role_requested, email, full_name, phone, institution_name, form_payload, status, review_note, reviewed_by, reviewed_at, created_at
+		SELECT id, role_requested, email, full_name, phone, institution_name, form_payload,
+		       school_name, npsn, kabupaten, provinsi, kecamatan, alamat, school_email, jenjang, status_sekolah, class_name,
+		       status, review_note, reviewed_by, reviewed_at, created_at
 		FROM registration_requests
 		WHERE ($1 = '' OR status = $1)
 		ORDER BY created_at DESC, id DESC
@@ -1412,10 +1484,22 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		var phone sql.NullString
 		var institution sql.NullString
 		var formPayload sql.NullString
+		var schoolName sql.NullString
+		var npsn sql.NullString
+		var kabupaten sql.NullString
+		var provinsi sql.NullString
+		var kecamatan sql.NullString
+		var alamat sql.NullString
+		var schoolEmail sql.NullString
+		var jenjang sql.NullString
+		var statusSekolah sql.NullString
+		var className sql.NullString
 		var reviewNote sql.NullString
 		var reviewedBy sql.NullInt64
 		var reviewedAt sql.NullTime
-		if err := rows.Scan(&r.ID, &r.RoleRequested, &r.Email, &r.FullName, &phone, &institution, &formPayload, &r.Status, &reviewNote, &reviewedBy, &reviewedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.RoleRequested, &r.Email, &r.FullName, &phone, &institution, &formPayload,
+			&schoolName, &npsn, &kabupaten, &provinsi, &kecamatan, &alamat, &schoolEmail, &jenjang, &statusSekolah, &className,
+			&r.Status, &reviewNote, &reviewedBy, &reviewedAt, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan registration: %w", err)
 		}
 		if phone.Valid {
@@ -1426,6 +1510,36 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		}
 		if formPayload.Valid {
 			r.FormPayload = &formPayload.String
+		}
+		if schoolName.Valid {
+			r.SchoolName = &schoolName.String
+		}
+		if npsn.Valid {
+			r.NPSN = &npsn.String
+		}
+		if kabupaten.Valid {
+			r.Kabupaten = &kabupaten.String
+		}
+		if provinsi.Valid {
+			r.Provinsi = &provinsi.String
+		}
+		if kecamatan.Valid {
+			r.Kecamatan = &kecamatan.String
+		}
+		if alamat.Valid {
+			r.Alamat = &alamat.String
+		}
+		if schoolEmail.Valid {
+			r.SchoolEmail = &schoolEmail.String
+		}
+		if jenjang.Valid {
+			r.Jenjang = &jenjang.String
+		}
+		if statusSekolah.Valid {
+			r.StatusSekolah = &statusSekolah.String
+		}
+		if className.Valid {
+			r.ClassName = &className.String
 		}
 		if reviewNote.Valid {
 			r.ReviewNote = &reviewNote.String
@@ -1563,7 +1677,19 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	}
 
 	if isNonRegular && role == "siswa" {
-		schoolID, err := upsertSchoolTx(ctx, tx, payload.SchoolName, payload.NPSN, payload.Kabupaten, payload.Provinsi)
+		schoolID, err := upsertSchoolTx(
+			ctx,
+			tx,
+			payload.SchoolName,
+			payload.NPSN,
+			payload.Kabupaten,
+			payload.Provinsi,
+			payload.Kecamatan,
+			payload.Alamat,
+			payload.Jenjang,
+			payload.StatusSekolah,
+			payload.SchoolEmail,
+		)
 		if err != nil {
 			return 0, false, err
 		}
@@ -1626,11 +1752,16 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	return userID, firstLoginLinkSent, nil
 }
 
-func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, provinsi string) (int64, error) {
+func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, provinsi, kecamatan, alamat, jenjang, statusSekolah, schoolEmail string) (int64, error) {
 	name = strings.TrimSpace(name)
 	code = strings.TrimSpace(code)
 	kabupaten = strings.TrimSpace(kabupaten)
 	provinsi = strings.TrimSpace(provinsi)
+	kecamatan = strings.TrimSpace(kecamatan)
+	alamat = strings.TrimSpace(alamat)
+	jenjang = strings.TrimSpace(jenjang)
+	statusSekolah = strings.TrimSpace(statusSekolah)
+	schoolEmail = strings.TrimSpace(schoolEmail)
 	if name == "" {
 		return 0, errors.New("school_name is required")
 	}
@@ -1665,20 +1796,48 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 		}
 	}
 
-	address := ""
-	if kabupaten != "" && provinsi != "" {
-		address = kabupaten + ", " + provinsi
-	} else if kabupaten != "" {
-		address = kabupaten
-	} else if provinsi != "" {
-		address = provinsi
+	address := alamat
+	if address == "" {
+		if kabupaten != "" && provinsi != "" {
+			address = kabupaten + ", " + provinsi
+		} else if kabupaten != "" {
+			address = kabupaten
+		} else if provinsi != "" {
+			address = provinsi
+		}
+	}
+
+	if id > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE schools
+			SET address = COALESCE(NULLIF($1,''), address),
+				city = COALESCE(NULLIF($2,''), city),
+				province = COALESCE(NULLIF($3,''), province),
+				kecamatan = COALESCE(NULLIF($4,''), kecamatan),
+				jenjang = COALESCE(NULLIF($5,''), jenjang),
+				status_sekolah = COALESCE(NULLIF($6,''), status_sekolah),
+				school_email = COALESCE(NULLIF($7,''), school_email),
+				updated_at = now()
+			WHERE id = $8
+		`, address, kabupaten, provinsi, kecamatan, jenjang, statusSekolah, schoolEmail, id); err != nil {
+			return 0, fmt.Errorf("update school: %w", err)
+		}
+		return id, nil
 	}
 
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO schools (name, code, address, city, province, is_active, created_at, updated_at)
-		VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), TRUE, now(), now())
+		INSERT INTO schools (
+			name, code, address, city, province, kecamatan,
+			jenjang, status_sekolah, school_email,
+			is_active, created_at, updated_at
+		)
+		VALUES (
+			$1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''),
+			NULLIF($7,''), NULLIF($8,''), NULLIF($9,''),
+			TRUE, now(), now()
+		)
 		RETURNING id
-	`, name, code, address, kabupaten, provinsi).Scan(&id); err != nil {
+	`, name, code, address, kabupaten, provinsi, kecamatan, jenjang, statusSekolah, schoolEmail).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert school: %w", err)
 	}
 	return id, nil
@@ -1998,6 +2157,13 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 			sch.school_id,
 			sch.name AS school_name,
 			sch.code AS school_code,
+			sch.city AS school_city,
+			sch.province AS school_province,
+			sch.address AS school_address,
+			sch.kecamatan AS school_kecamatan,
+			sch.jenjang AS school_jenjang,
+			sch.status_sekolah AS school_status,
+			sch.school_email AS school_email,
 			sch.class_id,
 			sch.grade_level,
 			sch.class_name,
@@ -2010,6 +2176,13 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 			SELECT
 				s.name,
 				s.code,
+				s.city,
+				s.province,
+				s.address,
+				s.kecamatan,
+				s.jenjang,
+				s.status_sekolah,
+				s.school_email,
 				e.school_id,
 				e.class_id,
 				c.grade_level,
@@ -2050,11 +2223,43 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		var schoolID sql.NullInt64
 		var schoolName sql.NullString
 		var schoolCode sql.NullString
+		var schoolCity sql.NullString
+		var schoolProvince sql.NullString
+		var schoolAddress sql.NullString
+		var schoolKecamatan sql.NullString
+		var schoolJenjang sql.NullString
+		var schoolStatus sql.NullString
+		var schoolEmail sql.NullString
 		var classID sql.NullInt64
 		var classGrade sql.NullString
 		var className sql.NullString
 		var approvedAt sql.NullTime
-		if err := rows.Scan(&it.ID, &it.Username, &email, &it.FullName, &it.Role, &participantNo, &nisn, &schoolID, &schoolName, &schoolCode, &classID, &classGrade, &className, &it.IsActive, &it.AccountStatus, &approvedAt, &it.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&it.ID,
+			&it.Username,
+			&email,
+			&it.FullName,
+			&it.Role,
+			&participantNo,
+			&nisn,
+			&schoolID,
+			&schoolName,
+			&schoolCode,
+			&schoolCity,
+			&schoolProvince,
+			&schoolAddress,
+			&schoolKecamatan,
+			&schoolJenjang,
+			&schoolStatus,
+			&schoolEmail,
+			&classID,
+			&classGrade,
+			&className,
+			&it.IsActive,
+			&it.AccountStatus,
+			&approvedAt,
+			&it.CreatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		if email.Valid {
@@ -2074,6 +2279,27 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		}
 		if schoolCode.Valid {
 			it.SchoolCode = &schoolCode.String
+		}
+		if schoolCity.Valid {
+			it.SchoolCity = &schoolCity.String
+		}
+		if schoolProvince.Valid {
+			it.SchoolProvince = &schoolProvince.String
+		}
+		if schoolAddress.Valid {
+			it.SchoolAddress = &schoolAddress.String
+		}
+		if schoolKecamatan.Valid {
+			it.SchoolKecamatan = &schoolKecamatan.String
+		}
+		if schoolJenjang.Valid {
+			it.SchoolJenjang = &schoolJenjang.String
+		}
+		if schoolStatus.Valid {
+			it.SchoolStatus = &schoolStatus.String
+		}
+		if schoolEmail.Valid {
+			it.SchoolEmail = &schoolEmail.String
 		}
 		if classID.Valid {
 			it.ClassID = &classID.Int64
@@ -2735,6 +2961,9 @@ func validateNonRegularPayload(role string, payload RegistrationFormPayload) err
 		strings.TrimSpace(payload.Provinsi) == "" ||
 		strings.TrimSpace(payload.ClassName) == "" {
 		return errors.New("data non-reguler belum lengkap")
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9]{8}$`).MatchString(strings.TrimSpace(payload.NPSN)) {
+		return errors.New("format NPSN tidak valid")
 	}
 	return nil
 }

@@ -406,6 +406,31 @@
     const signupStepRequest = document.getElementById("signup-step-request");
     const signupStepProfile = document.getElementById("signup-step-profile");
     const signupGoogleBtn = document.getElementById("signup-google-btn");
+    const signupSchoolInput = document.getElementById("signup-school-name");
+    const signupNpsnInput = document.getElementById("signup-npsn");
+    const signupJenjangInput = document.getElementById("signup-jenjang");
+    const signupStatusSekolahInput = document.getElementById(
+      "signup-status-sekolah",
+    );
+    const signupKabupatenInput = document.getElementById("signup-kabupaten");
+    const signupProvinsiInput = document.getElementById("signup-provinsi");
+    const signupKecamatanInput = document.getElementById("signup-kecamatan");
+    const signupAlamatInput = document.getElementById("signup-alamat");
+    const signupSchoolEmailInput = document.getElementById(
+      "signup-school-email",
+    );
+    const signupSchoolSuggest = document.getElementById(
+      "signup-school-suggest",
+    );
+    const signupSchoolSuggestList = document.getElementById(
+      "signup-school-suggest-list",
+    );
+    const signupSchoolSuggestEmpty = document.getElementById(
+      "signup-school-suggest-empty",
+    );
+    const signupSchoolSuggestStatus = document.getElementById(
+      "signup-school-suggest-status",
+    );
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -481,6 +506,250 @@
     function showSignupPanel() {
       return Boolean(signupPanel && !signupPanel.hidden);
     }
+
+    function showSchoolSuggest(items, query) {
+      if (!signupSchoolSuggest || !signupSchoolSuggestList) return;
+      signupSchoolSuggestList.innerHTML = "";
+      if (signupSchoolSuggestStatus) signupSchoolSuggestStatus.hidden = true;
+      if (!items || items.length === 0) {
+        if (signupSchoolSuggestEmpty) {
+          signupSchoolSuggestEmpty.textContent = query
+            ? 'Sekolah tidak ditemukan untuk "' + query + '".'
+            : "Sekolah tidak ditemukan.";
+          signupSchoolSuggestEmpty.hidden = false;
+        }
+      } else if (signupSchoolSuggestEmpty) {
+        signupSchoolSuggestEmpty.hidden = true;
+      }
+
+      (items || []).forEach(function (item) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "login-suggest-item";
+        const title = document.createElement("div");
+        title.className = "login-suggest-title";
+        title.textContent = item.nama || "-";
+        const meta = document.createElement("div");
+        meta.className = "login-suggest-meta";
+        const parts = [];
+        if (item.kota_kab) parts.push(item.kota_kab);
+        if (item.provinsi) parts.push(item.provinsi);
+        if (item.npsn) parts.push("NPSN " + item.npsn);
+        meta.textContent = parts.join(" • ");
+        btn.appendChild(title);
+        btn.appendChild(meta);
+        btn.addEventListener("mousedown", function (e) {
+          e.preventDefault();
+          if (signupSchoolInput && item.nama)
+            signupSchoolInput.value = item.nama;
+          if (signupNpsnInput && item.npsn) signupNpsnInput.value = item.npsn;
+          if (signupKabupatenInput && item.kota_kab)
+            signupKabupatenInput.value = item.kota_kab;
+          if (signupProvinsiInput && item.provinsi)
+            signupProvinsiInput.value = item.provinsi;
+          if (signupKecamatanInput && item.kecamatan)
+            signupKecamatanInput.value = item.kecamatan;
+          if (signupJenjangInput) {
+            const jenjang = item.nama_jenjang || "";
+            signupJenjangInput.value = jenjang;
+          }
+          hideSchoolSuggest();
+          if (item.npsn) {
+            fetchSchoolDetail(item.npsn);
+          }
+        });
+        signupSchoolSuggestList.appendChild(btn);
+      });
+      signupSchoolSuggest.hidden = false;
+    }
+
+    function hideSchoolSuggest() {
+      if (!signupSchoolSuggest || !signupSchoolSuggestList) return;
+      signupSchoolSuggest.hidden = true;
+      signupSchoolSuggestList.innerHTML = "";
+      if (signupSchoolSuggestEmpty) signupSchoolSuggestEmpty.hidden = true;
+      if (signupSchoolSuggestStatus) signupSchoolSuggestStatus.hidden = true;
+    }
+
+    function setSchoolSuggestStatus(message) {
+      if (!signupSchoolSuggestStatus || !signupSchoolSuggest) return;
+      signupSchoolSuggestStatus.textContent = message;
+      signupSchoolSuggestStatus.hidden = false;
+      signupSchoolSuggest.hidden = false;
+    }
+
+    let schoolSuggestTimer = null;
+    let schoolSuggestAbort = null;
+    let lastSchoolQuery = "";
+    let schoolDetailAbort = null;
+    let lastDetailNpsn = "";
+    const schoolSearchCache = new Map();
+    const schoolDetailCache = new Map();
+    const schoolCacheTTL = 10 * 60 * 1000;
+
+    async function fetchSchoolSuggestions(query) {
+      const q = String(query || "").trim();
+      if (!q || q.length < 3) {
+        lastSchoolQuery = "";
+        hideSchoolSuggest();
+        return;
+      }
+      if (q === lastSchoolQuery) return;
+      lastSchoolQuery = q;
+      if (schoolSuggestAbort) schoolSuggestAbort.abort();
+      schoolSuggestAbort = new AbortController();
+      try {
+        const cached = schoolSearchCache.get(q.toLowerCase());
+        if (cached && Date.now() - cached.ts < schoolCacheTTL) {
+          showSchoolSuggest(cached.items, q);
+          return;
+        }
+        setSchoolSuggestStatus("Memuat data sekolah...");
+        const url =
+          "https://jaga.id/api/v5/sekolah/search?limit=8&offset=0&keyword=" +
+          encodeURIComponent(q);
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: schoolSuggestAbort.signal,
+        });
+        const json = await res.json().catch(function () {
+          return null;
+        });
+        if (!res.ok || !json || json.success !== true) {
+          throw new Error("fetch failed");
+        }
+        const items =
+          json && json.data && Array.isArray(json.data.result)
+            ? json.data.result
+            : [];
+        schoolSearchCache.set(q.toLowerCase(), {
+          ts: Date.now(),
+          items: items,
+        });
+        showSchoolSuggest(items, q);
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        if (q) {
+          setSchoolSuggestStatus(
+            "Gagal memuat data sekolah. Anda bisa isi manual.",
+          );
+        } else {
+          showSchoolSuggest([], q);
+        }
+      }
+    }
+
+    async function fetchSchoolDetail(npsn) {
+      const value = String(npsn || "").trim();
+      if (!value) return;
+      if (value === lastDetailNpsn) return;
+      lastDetailNpsn = value;
+      if (schoolDetailAbort) schoolDetailAbort.abort();
+      schoolDetailAbort = new AbortController();
+      try {
+        const cached = schoolDetailCache.get(value);
+        if (cached && Date.now() - cached.ts < schoolCacheTTL) {
+          applySchoolDetail(cached.item);
+          hideSchoolSuggest();
+          return;
+        }
+        setSchoolSuggestStatus("Memuat detail sekolah...");
+        const url =
+          "https://jaga.id/api/v5/sekolah/detail?npsn=" +
+          encodeURIComponent(value);
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: schoolDetailAbort.signal,
+        });
+        const json = await res.json().catch(function () {
+          return null;
+        });
+        if (!res.ok || !json || json.success !== true) {
+          throw new Error("detail failed");
+        }
+        const list = json && json.data && json.data.result;
+        const item = Array.isArray(list) && list.length ? list[0] : null;
+        if (!item) throw new Error("detail empty");
+        schoolDetailCache.set(value, { ts: Date.now(), item: item });
+        applySchoolDetail(item);
+        hideSchoolSuggest();
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        setSchoolSuggestStatus(
+          "Detail sekolah gagal dimuat. Anda bisa isi manual.",
+        );
+      }
+    }
+
+    function applySchoolDetail(item) {
+      if (!item) return;
+      if (signupSchoolInput && item.nama) signupSchoolInput.value = item.nama;
+      if (signupNpsnInput && item.npsn) signupNpsnInput.value = item.npsn;
+      if (signupKabupatenInput && item.kota_kab)
+        signupKabupatenInput.value = item.kota_kab;
+      if (signupProvinsiInput && item.provinsi)
+        signupProvinsiInput.value = item.provinsi;
+      if (signupKecamatanInput && item.kecamatan)
+        signupKecamatanInput.value = item.kecamatan;
+      if (signupAlamatInput && item.alamat)
+        signupAlamatInput.value = item.alamat;
+      if (signupSchoolEmailInput && item.email)
+        signupSchoolEmailInput.value = item.email;
+      if (signupJenjangInput) {
+        const jenjang =
+          item.jenjang && item.jenjang.nama_jenjang
+            ? item.jenjang.nama_jenjang
+            : item.nama_jenjang || "";
+        signupJenjangInput.value = jenjang;
+      }
+      if (signupStatusSekolahInput && item.status_sekolah)
+        signupStatusSekolahInput.value = item.status_sekolah;
+    }
+
+    if (signupSchoolInput) {
+      signupSchoolInput.addEventListener("input", function (e) {
+        const value = e.target ? e.target.value : "";
+        if (schoolSuggestTimer) clearTimeout(schoolSuggestTimer);
+        schoolSuggestTimer = setTimeout(function () {
+          fetchSchoolSuggestions(value);
+        }, 280);
+      });
+
+      signupSchoolInput.addEventListener("blur", function () {
+        setTimeout(function () {
+          hideSchoolSuggest();
+        }, 200);
+      });
+
+      signupSchoolInput.addEventListener("focus", function () {
+        if (
+          signupSchoolSuggestList &&
+          signupSchoolSuggestList.childElementCount > 0
+        ) {
+          signupSchoolSuggest.hidden = false;
+        }
+      });
+    }
+
+    if (signupNpsnInput) {
+      signupNpsnInput.addEventListener("input", function (e) {
+        const value = e.target ? e.target.value : "";
+        if (schoolSuggestTimer) clearTimeout(schoolSuggestTimer);
+        schoolSuggestTimer = setTimeout(function () {
+          const v = String(value || "").trim();
+          if (v.length >= 6) fetchSchoolDetail(v);
+        }, 350);
+      });
+    }
+
+    document.addEventListener("click", function (e) {
+      if (!signupSchoolSuggest || signupSchoolSuggest.hidden) return;
+      if (e.target === signupSchoolInput) return;
+      if (signupSchoolSuggest.contains(e.target)) return;
+      hideSchoolSuggest();
+    });
 
     const registrationStorageKey = "non_regular_registration_id";
     let registrationPollingStop = null;
@@ -684,13 +953,26 @@
         const fd = new FormData(signupForm);
         try {
           const schoolName = normalizeCredential(fd.get("institution_name"));
+          const npsn = normalizeCredential(fd.get("npsn"));
+          if (npsn && !/^[A-Za-z0-9]{8}$/.test(npsn)) {
+            text(
+              msg,
+              "Format NPSN tidak valid. Gunakan 8 karakter (angka/huruf).",
+            );
+            return;
+          }
           const payloadForm = {
             non_regular: true,
             status: "siswa",
             school_name: schoolName,
-            npsn: normalizeCredential(fd.get("npsn")),
+            npsn: npsn,
             kabupaten: normalizeCredential(fd.get("kabupaten")),
             provinsi: normalizeCredential(fd.get("provinsi")),
+            kecamatan: normalizeCredential(fd.get("kecamatan")),
+            alamat: normalizeCredential(fd.get("alamat")),
+            school_email: normalizeCredential(fd.get("school_email")),
+            jenjang: normalizeCredential(fd.get("jenjang")),
+            status_sekolah: normalizeCredential(fd.get("status_sekolah")),
             class_name: normalizeCredential(fd.get("class_name")),
           };
           const googleToken =
@@ -2770,6 +3052,15 @@
     const regSummary = document.getElementById("admin-registration-summary");
     const regBody = document.getElementById("admin-registration-body");
     const regOut = document.getElementById("admin-registration-output");
+    const adminRegistrationsPanel = document.getElementById(
+      "admin-registrations-panel",
+    );
+    const adminRegistrationsRefreshBtn = document.getElementById(
+      "admin-registrations-refresh-btn",
+    );
+    const adminRegistrationsBody = document.getElementById(
+      "admin-registrations-body",
+    );
     const masterOut = document.getElementById("admin-master-output");
     const prevPageBtn = document.getElementById("admin-prev-page-btn");
     const nextPageBtn = document.getElementById("admin-next-page-btn");
@@ -3103,6 +3394,8 @@
       if (dashboardPanel) dashboardPanel.hidden = target !== "dashboard";
       if (usersPanel) usersPanel.hidden = target !== "users";
       if (masterPanel) masterPanel.hidden = target !== "master";
+      if (adminRegistrationsPanel)
+        adminRegistrationsPanel.hidden = target !== "registrations";
       menuButtons.forEach(function (btn) {
         const isActive = btn.getAttribute("data-admin-menu") === target;
         btn.classList.toggle("active", isActive);
@@ -3111,6 +3404,10 @@
         dashboard: {
           title: "Dasbor Admin",
           desc: "Ringkasan sistem dan akses cepat ke data utama.",
+        },
+        registrations: {
+          title: "Verifikasi Pendaftaran",
+          desc: "Tinjau dan setujui pendaftaran non-reguler yang pending.",
         },
         master: {
           title: "Data Master",
@@ -3126,6 +3423,25 @@
       if (adminPageDesc) adminPageDesc.textContent = info.desc;
     }
 
+    function initAdminRegistrationsModule() {
+      if (
+        !ProktorRegistrations ||
+        typeof ProktorRegistrations.init !== "function"
+      ) {
+        return;
+      }
+      ProktorRegistrations.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: message,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        regRefreshBtn: adminRegistrationsRefreshBtn,
+        regBody: adminRegistrationsBody,
+      });
+    }
+
     async function loadDashboardStats() {
       const out = await api("/api/v1/admin/dashboard/stats", "GET");
       if (statAdmin) statAdmin.textContent = String(out.admin_count || 0);
@@ -3137,6 +3453,7 @@
 
     initAdminUsersModule();
     initAdminMasterModule();
+    initAdminRegistrationsModule();
 
     menuButtons.forEach(function (btn) {
       btn.addEventListener("click", function () {

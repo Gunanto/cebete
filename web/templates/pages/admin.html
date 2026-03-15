@@ -61,6 +61,20 @@
                         <button
                             class="btn btn-secondary admin-menu-btn"
                             type="button"
+                            data-admin-menu="registrations"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M4 7h16M7 4v6m10-6v6M6 11h12v9H6z"
+                                    />
+                                </svg>
+                            </span>
+                            Verifikasi Pendaftaran
+                        </button>
+                        <button
+                            class="btn btn-secondary admin-menu-btn"
+                            type="button"
                             data-admin-menu="users"
                         >
                             <span class="admin-menu-icon" aria-hidden="true">
@@ -152,6 +166,40 @@
                         <div class="stat-label">Sekolah</div>
                         <div id="admin-stat-sekolah" class="stat-value">0</div>
                     </article>
+                </div>
+            </section>
+
+            <section id="admin-registrations-panel" class="panel" hidden>
+                <div class="admin-section-head">
+                    <h3>Verifikasi Pendaftaran</h3>
+                    <button
+                        id="admin-registrations-refresh-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        Muat Pendaftaran Pending
+                    </button>
+                </div>
+                <div class="table-wrap mt">
+                    <table class="bs-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nama</th>
+                                <th>Email</th>
+                                <th>Peran</th>
+                                <th>Dibuat</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-registrations-body">
+                            <tr>
+                                <td colspan="6" class="muted">
+                                    Belum ada data pendaftaran pending.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
@@ -388,13 +436,17 @@
                                     <th>NPSN</th>
                                     <th>Kab/Kota</th>
                                     <th>Provinsi</th>
+                                    <th>Kecamatan</th>
+                                    <th>Jenjang</th>
+                                    <th>Status</th>
+                                    <th>Email</th>
                                     <th>Alamat</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="admin-school-table-body">
                                 <tr>
-                                    <td colspan="7" class="muted">
+                                    <td colspan="11" class="muted">
                                         Belum ada data sekolah.
                                     </td>
                                 </tr>
@@ -732,6 +784,14 @@
             <label>NPSN <input type="text" name="code" /></label>
             <label>Kab/Kota <input type="text" name="city" /></label>
             <label>Provinsi <input type="text" name="province" /></label>
+            <label>Kecamatan <input type="text" name="kecamatan" /></label>
+            <label>Jenjang <input type="text" name="jenjang" /></label>
+            <label
+                >Status Sekolah <input type="text" name="status_sekolah"
+            /></label>
+            <label
+                >Email Sekolah <input type="email" name="school_email"
+            /></label>
             <label>
                 Alamat
                 <textarea name="address" rows="2"></textarea>

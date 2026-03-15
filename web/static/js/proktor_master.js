@@ -44,7 +44,7 @@
     if (deps.schoolsBody) {
       if (!schoolItems.length) {
         deps.schoolsBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Tidak ada data sekolah.</td></tr>';
+          '<tr><td colspan="10" class="muted">Tidak ada data sekolah.</td></tr>';
       } else {
         deps.schoolsBody.innerHTML = "";
         schoolItems.forEach(function (it) {
@@ -55,6 +55,12 @@
             "<td>" + deps.escapeHtml(String(it.code || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.city || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.province || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.kecamatan || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.jenjang || "-")) + "</td>",
+            "<td>" +
+              deps.escapeHtml(String(it.status_sekolah || "-")) +
+              "</td>",
+            "<td>" + deps.escapeHtml(String(it.school_email || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.address || "-")) + "</td>",
           ].join("");
           deps.schoolsBody.appendChild(tr);

@@ -1,0 +1,15 @@
+BEGIN;
+
+ALTER TABLE registration_requests
+  DROP COLUMN IF EXISTS school_name,
+  DROP COLUMN IF EXISTS npsn,
+  DROP COLUMN IF EXISTS kabupaten,
+  DROP COLUMN IF EXISTS provinsi,
+  DROP COLUMN IF EXISTS kecamatan,
+  DROP COLUMN IF EXISTS alamat,
+  DROP COLUMN IF EXISTS school_email,
+  DROP COLUMN IF EXISTS jenjang,
+  DROP COLUMN IF EXISTS status_sekolah,
+  DROP COLUMN IF EXISTS class_name;
+
+COMMIT;

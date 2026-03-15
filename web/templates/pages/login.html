@@ -303,8 +303,29 @@
                                 type="text"
                                 name="institution_name"
                                 placeholder="Nama sekolah"
+                                autocomplete="off"
                                 required
                             />
+                            <div
+                                id="signup-school-suggest"
+                                class="login-suggest"
+                                hidden
+                            >
+                                <div
+                                    id="signup-school-suggest-list"
+                                    class="login-suggest-list"
+                                ></div>
+                                <div
+                                    id="signup-school-suggest-empty"
+                                    class="login-suggest-empty"
+                                    hidden
+                                ></div>
+                                <div
+                                    id="signup-school-suggest-status"
+                                    class="login-suggest-status"
+                                    hidden
+                                ></div>
+                            </div>
                         </div>
                     </div>
 
@@ -322,6 +343,34 @@
                     </div>
 
                     <div class="login-input-group">
+                        <label for="signup-jenjang">Jenjang</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-jenjang"
+                                type="text"
+                                name="jenjang"
+                                placeholder="Jenjang sekolah"
+                                readonly
+                            />
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-status-sekolah"
+                            >Status Sekolah</label
+                        >
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-status-sekolah"
+                                type="text"
+                                name="status_sekolah"
+                                placeholder="Status sekolah"
+                                readonly
+                            />
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
                         <label for="signup-kabupaten">Kabupaten</label>
                         <div class="login-input-wrap login-input-wrap-plain">
                             <input
@@ -330,6 +379,42 @@
                                 name="kabupaten"
                                 placeholder="Kabupaten/Kota"
                                 required
+                            />
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-kecamatan">Kecamatan</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-kecamatan"
+                                type="text"
+                                name="kecamatan"
+                                placeholder="Kecamatan (opsional)"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-alamat">Alamat Sekolah</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-alamat"
+                                type="text"
+                                name="alamat"
+                                placeholder="Alamat sekolah (opsional)"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="login-input-group">
+                        <label for="signup-school-email">Email Sekolah</label>
+                        <div class="login-input-wrap login-input-wrap-plain">
+                            <input
+                                id="signup-school-email"
+                                type="email"
+                                name="school_email"
+                                placeholder="Email sekolah (opsional)"
                             />
                         </div>
                     </div>

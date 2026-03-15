@@ -28,12 +28,31 @@
           return {};
         }
       })();
+      const schoolName =
+        it.school_name ||
+        payload.school_name ||
+        it.institution_name ||
+        payload.institution_name;
+      const npsn = it.npsn || payload.npsn;
+      const kabupaten = it.kabupaten || payload.kabupaten;
+      const provinsi = it.provinsi || payload.provinsi;
+      const kecamatan = it.kecamatan || payload.kecamatan;
+      const alamat = it.alamat || payload.alamat;
+      const schoolEmail = it.school_email || payload.school_email;
+      const jenjang = it.jenjang || payload.jenjang;
+      const statusSekolah = it.status_sekolah || payload.status_sekolah;
+      const className = it.class_name || payload.class_name;
       const detailLines = [
-        "Sekolah: " + String(payload.school_name || "-"),
-        "NPSN: " + String(payload.npsn || "-"),
-        "Kabupaten: " + String(payload.kabupaten || "-"),
-        "Provinsi: " + String(payload.provinsi || "-"),
-        "Kelas: " + String(payload.class_name || "-"),
+        "Sekolah: " + String(schoolName || "-"),
+        "NPSN: " + String(npsn || "-"),
+        "Jenjang: " + String(jenjang || "-"),
+        "Status Sekolah: " + String(statusSekolah || "-"),
+        "Kabupaten: " + String(kabupaten || "-"),
+        "Kecamatan: " + String(kecamatan || "-"),
+        "Provinsi: " + String(provinsi || "-"),
+        "Alamat: " + String(alamat || "-"),
+        "Email Sekolah: " + String(schoolEmail || "-"),
+        "Kelas: " + String(className || "-"),
       ];
       const detailPayload = encodeURIComponent(detailLines.join("\n"));
       const tr = document.createElement("tr");

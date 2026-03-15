@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 )
 
 const defaultImportedSiswaPassword = "Punggur1Jaya"
+
+var npsnImportPattern = regexp.MustCompile(`^[A-Za-z0-9]{8}$`)
 
 type UserImportRowError struct {
 	Row      int    `json:"row"`
@@ -52,6 +55,14 @@ func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte,
 		"participant_no",
 		"nisn",
 		"school_name",
+		"school_npsn",
+		"school_city",
+		"school_province",
+		"school_kecamatan",
+		"school_address",
+		"school_jenjang",
+		"school_status",
+		"school_email",
 		"class_name",
 		"grade_level",
 		"is_active",
@@ -80,6 +91,38 @@ func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte,
 		if it.ClassGrade != nil {
 			gradeLevel = strings.TrimSpace(*it.ClassGrade)
 		}
+		schoolNPSN := ""
+		if it.SchoolCode != nil {
+			schoolNPSN = strings.TrimSpace(*it.SchoolCode)
+		}
+		schoolCity := ""
+		if it.SchoolCity != nil {
+			schoolCity = strings.TrimSpace(*it.SchoolCity)
+		}
+		schoolProvince := ""
+		if it.SchoolProvince != nil {
+			schoolProvince = strings.TrimSpace(*it.SchoolProvince)
+		}
+		schoolKecamatan := ""
+		if it.SchoolKecamatan != nil {
+			schoolKecamatan = strings.TrimSpace(*it.SchoolKecamatan)
+		}
+		schoolAddress := ""
+		if it.SchoolAddress != nil {
+			schoolAddress = strings.TrimSpace(*it.SchoolAddress)
+		}
+		schoolJenjang := ""
+		if it.SchoolJenjang != nil {
+			schoolJenjang = strings.TrimSpace(*it.SchoolJenjang)
+		}
+		schoolStatus := ""
+		if it.SchoolStatus != nil {
+			schoolStatus = strings.TrimSpace(*it.SchoolStatus)
+		}
+		schoolEmail := ""
+		if it.SchoolEmail != nil {
+			schoolEmail = strings.TrimSpace(*it.SchoolEmail)
+		}
 		values := []any{
 			it.Username,
 			email,
@@ -88,6 +131,14 @@ func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte,
 			strOrEmpty(it.ParticipantNo),
 			strOrEmpty(it.NISN),
 			schoolName,
+			schoolNPSN,
+			schoolCity,
+			schoolProvince,
+			schoolKecamatan,
+			schoolAddress,
+			schoolJenjang,
+			schoolStatus,
+			schoolEmail,
 			className,
 			gradeLevel,
 			it.IsActive,
@@ -99,7 +150,7 @@ func (s *Service) ExportUsersExcel(ctx context.Context, role, q string) ([]byte,
 			_ = f.SetCellValue(sheet, cell, v)
 		}
 	}
-	_ = f.SetColWidth(sheet, "A", "L", 22)
+	_ = f.SetColWidth(sheet, "A", "T", 22)
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
@@ -120,6 +171,14 @@ func (s *Service) ExportUserImportTemplateExcel() ([]byte, error) {
 		"nisn",
 		"password",
 		"school_name",
+		"school_npsn",
+		"school_city",
+		"school_province",
+		"school_kecamatan",
+		"school_address",
+		"school_jenjang",
+		"school_status",
+		"school_email",
 		"class_name",
 		"grade_level",
 		"is_active",
@@ -130,8 +189,8 @@ func (s *Service) ExportUserImportTemplateExcel() ([]byte, error) {
 	}
 
 	exampleRows := [][]any{
-		{"siswa_demo_001", "siswa001@example.com", "Siswa Demo 001", "siswa", "PST-2026-0001", "0123456789", "password123", "SMPN 1 Punggur", "TKA Matematika", "Kelas 9", "true"},
-		{"guru_demo_001", "guru001@example.com", "Guru Demo 001", "guru", "", "", "password123", "", "", "", "true"},
+		{"siswa_demo_001", "siswa001@example.com", "Siswa Demo 001", "siswa", "PST-2026-0001", "0123456789", "password123", "SMPN 1 Punggur", "12345678", "Lampung Tengah", "Lampung", "Punggur", "Jl. Ahmad Yani No. 1", "SMP", "NEGERI", "smpn1@example.sch.id", "TKA Matematika", "Kelas 9", "true"},
+		{"guru_demo_001", "guru001@example.com", "Guru Demo 001", "guru", "", "", "password123", "", "", "", "", "", "", "", "", "", "", "", "true"},
 	}
 	for i, row := range exampleRows {
 		rowNo := i + 2
@@ -147,7 +206,7 @@ func (s *Service) ExportUserImportTemplateExcel() ([]byte, error) {
 	_ = f.SetCellValue(sheet, "A"+strconv.Itoa(noteRow+2), "- school_name dan class_name+grade_level harus sudah ada di Data Master.")
 	_ = f.SetCellValue(sheet, "A"+strconv.Itoa(noteRow+3), "- role admin/proktor/guru boleh kosongkan kolom kelas.")
 
-	_ = f.SetColWidth(sheet, "A", "K", 24)
+	_ = f.SetColWidth(sheet, "A", "S", 24)
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
@@ -216,6 +275,14 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 		nisn := get("nisn")
 		activeRaw := strings.ToLower(get("is_active"))
 		schoolName := get("school_name")
+		schoolNpsn := get("school_npsn")
+		schoolCity := get("school_city")
+		schoolProvince := get("school_province")
+		schoolKecamatan := get("school_kecamatan")
+		schoolAddress := get("school_address")
+		schoolJenjang := get("school_jenjang")
+		schoolStatus := get("school_status")
+		schoolEmail := get("school_email")
 		className := get("class_name")
 		gradeLevel := get("grade_level")
 
@@ -245,6 +312,26 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 				})
 				continue
 			}
+		}
+		if schoolEmail != "" {
+			if _, err := mail.ParseAddress(schoolEmail); err != nil {
+				report.FailedRows++
+				report.Errors = append(report.Errors, UserImportRowError{
+					Row:      rowNo,
+					Username: username,
+					Error:    "email sekolah tidak valid",
+				})
+				continue
+			}
+		}
+		if schoolNpsn != "" && !npsnImportPattern.MatchString(schoolNpsn) {
+			report.FailedRows++
+			report.Errors = append(report.Errors, UserImportRowError{
+				Row:      rowNo,
+				Username: username,
+				Error:    "format NPSN tidak valid",
+			})
+			continue
 		}
 		originalUsername := username
 		resolvedUsername, err := s.resolveImportUsername(ctx, username, reservedUsernames)
@@ -287,6 +374,23 @@ func (s *Service) ImportUsersExcel(ctx context.Context, actorID int64, r io.Read
 				Row:      rowNo,
 				Username: username,
 				Error:    "untuk role siswa, participant_no dan nisn wajib diisi",
+			})
+			continue
+		}
+		extraSchoolFields := strings.TrimSpace(schoolNpsn) != "" ||
+			strings.TrimSpace(schoolCity) != "" ||
+			strings.TrimSpace(schoolProvince) != "" ||
+			strings.TrimSpace(schoolKecamatan) != "" ||
+			strings.TrimSpace(schoolAddress) != "" ||
+			strings.TrimSpace(schoolJenjang) != "" ||
+			strings.TrimSpace(schoolStatus) != "" ||
+			strings.TrimSpace(schoolEmail) != ""
+		if extraSchoolFields && strings.TrimSpace(schoolName) == "" {
+			report.FailedRows++
+			report.Errors = append(report.Errors, UserImportRowError{
+				Row:      rowNo,
+				Username: username,
+				Error:    "school_name wajib diisi jika kolom sekolah lainnya diisi",
 			})
 			continue
 		}

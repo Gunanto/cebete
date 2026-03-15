@@ -1,6 +1,12 @@
 # Langkah eksekusi
 
-1. Update image dan restart web
+1. Update source code untuk migration
+```bash
+cd ~/cebete-src
+git pull
+```
+
+2. Update image dan restart web
 Masuk ke VPS
 ```bash
 cd Gio
@@ -20,21 +26,21 @@ Atau dalam 1 baris:
 docker compose pull cebete_web && docker compose stop cebete_web && docker compose up -d cebete_web
 ```
 
-2. Jalankan migration
+3. Jalankan migration
 ```bash
 cd ~/cebete-src
 DB_CONTAINER=cebete_postgres DB_USER=cebete DB_NAME=cebete \
 MIGRATIONS_DIR=internal/db/migrations ./scripts/migrate.sh up
 ```
 
-3. Opsional: cek status migration
+4. Opsional: cek status migration
 ```bash
 cd ~/cebete-src
 DB_CONTAINER=cebete_postgres DB_USER=cebete DB_NAME=cebete \
 MIGRATIONS_DIR=internal/db/migrations ./scripts/migrate.sh status
 ```
 
-4. Restart web setelah migration
+5. Restart web setelah migration
 ```bash
 cd ~/cebete
 docker compose stop cebete_web
@@ -43,7 +49,7 @@ docker compose ps
 docker logs --tail=120 cebete_web
 ```
 
-5. Validasi hasil
+6. Validasi hasil
 ```bash
 curl -fsS https://cbt.pakgun.my.id/ >/dev/null && echo "WEB OK" || echo "WEB FAIL"
 ```

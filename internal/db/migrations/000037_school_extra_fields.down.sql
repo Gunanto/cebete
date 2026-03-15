@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE schools
+  DROP COLUMN IF EXISTS kecamatan,
+  DROP COLUMN IF EXISTS jenjang,
+  DROP COLUMN IF EXISTS status_sekolah,
+  DROP COLUMN IF EXISTS school_email;
+
+COMMIT;

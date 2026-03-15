@@ -28,13 +28,15 @@ Setelah Anda mengirim form:
 - Anda harus menunggu sampai pendaftaran disetujui.
 
 Jika sudah disetujui, akun Anda akan aktif.
+Pada halaman login, status akan diperbarui otomatis. Jika disetujui, sistem akan mengarahkan Anda ke login Google.
 
 ## 4. Cara Login Setelah Disetujui (OAuth Google)
 
 Setelah akun Anda disetujui:
-1. Buka halaman `Login`.
-2. Klik `Masuk dengan Google` dan pilih akun yang sama seperti saat pendaftaran.
-3. Sistem langsung membawa Anda ke dashboard tanpa mengisi data lagi.
+1. Buka halaman `Login` (jika belum di sana).
+2. Saat status disetujui, sistem otomatis membuka login Google.
+3. Pilih akun Google yang sama seperti saat pendaftaran.
+4. Sistem langsung membawa Anda ke dashboard tanpa mengisi data lagi.
 
 Pada login berikutnya, Anda hanya perlu verifikasi email melalui Google, tanpa mengisi data pengguna ulang.
 

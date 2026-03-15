@@ -88,7 +88,7 @@
     if (deps.schoolTableBody) {
       if (!schoolItems.length) {
         deps.schoolTableBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Belum ada data sekolah.</td></tr>';
+          '<tr><td colspan="11" class="muted">Belum ada data sekolah.</td></tr>';
       } else {
         deps.schoolTableBody.innerHTML = "";
         schoolItems.forEach(function (it) {
@@ -99,6 +99,12 @@
             "<td>" + deps.escapeHtml(String(it.code || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.city || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.province || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.kecamatan || "-")) + "</td>",
+            "<td>" + deps.escapeHtml(String(it.jenjang || "-")) + "</td>",
+            "<td>" +
+              deps.escapeHtml(String(it.status_sekolah || "-")) +
+              "</td>",
+            "<td>" + deps.escapeHtml(String(it.school_email || "-")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.address || "-")) + "</td>",
             "<td>" +
               (canEditMaster
@@ -204,6 +210,25 @@
     deps.schoolDialogForm.elements.namedItem("province").value = editItem
       ? String(editItem.province || "")
       : "";
+    if (deps.schoolDialogForm.elements.namedItem("kecamatan")) {
+      deps.schoolDialogForm.elements.namedItem("kecamatan").value = editItem
+        ? String(editItem.kecamatan || "")
+        : "";
+    }
+    if (deps.schoolDialogForm.elements.namedItem("jenjang")) {
+      deps.schoolDialogForm.elements.namedItem("jenjang").value = editItem
+        ? String(editItem.jenjang || "")
+        : "";
+    }
+    if (deps.schoolDialogForm.elements.namedItem("status_sekolah")) {
+      deps.schoolDialogForm.elements.namedItem("status_sekolah").value =
+        editItem ? String(editItem.status_sekolah || "") : "";
+    }
+    if (deps.schoolDialogForm.elements.namedItem("school_email")) {
+      deps.schoolDialogForm.elements.namedItem("school_email").value = editItem
+        ? String(editItem.school_email || "")
+        : "";
+    }
     deps.schoolDialogForm.elements.namedItem("address").value = editItem
       ? String(editItem.address || "")
       : "";
@@ -615,6 +640,10 @@
           code: String(fd.get("code") || "").trim(),
           city: String(fd.get("city") || "").trim(),
           province: String(fd.get("province") || "").trim(),
+          kecamatan: String(fd.get("kecamatan") || "").trim(),
+          jenjang: String(fd.get("jenjang") || "").trim(),
+          status_sekolah: String(fd.get("status_sekolah") || "").trim(),
+          school_email: String(fd.get("school_email") || "").trim(),
           address: String(fd.get("address") || "").trim(),
         };
         const done = deps.beginBusy(
