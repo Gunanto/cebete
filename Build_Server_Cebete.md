@@ -29,6 +29,7 @@ MIGRATIONS_DIR=internal/db/migrations ./scripts/migrate.sh up
 
 3. Opsional: cek status migration
 ```bash
+cd ~/cebete-src
 DB_CONTAINER=cebete_postgres DB_USER=cebete DB_NAME=cebete \
 MIGRATIONS_DIR=internal/db/migrations ./scripts/migrate.sh status
 ```

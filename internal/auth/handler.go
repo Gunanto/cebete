@@ -218,6 +218,8 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case errors.Is(err, ErrUserNotFound):
 				http.Redirect(w, r, "/login?oauth=not_registered", http.StatusFound)
+			case errors.Is(err, ErrRegistrationState):
+				http.Redirect(w, r, "/login?oauth=registration_pending", http.StatusFound)
 			case errors.Is(err, ErrForbidden):
 				http.Redirect(w, r, "/login?oauth=inactive", http.StatusFound)
 			case errors.Is(err, ErrOAuthEmailUnverified), errors.Is(err, ErrOAuthDomainDenied):
@@ -231,7 +233,7 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/login?oauth=success", http.StatusFound)
+		http.Redirect(w, r, homeByRole(user), http.StatusFound)
 		return
 	}
 }
@@ -1126,6 +1128,24 @@ func fetchGoogleUserInfo(ctx context.Context, accessToken string) (GoogleUserInf
 		Sub:           out.Sub,
 		FullName:      out.Name,
 	}, nil
+}
+
+func homeByRole(user *User) string {
+	if user == nil {
+		return "/ujian"
+	}
+	switch strings.ToLower(strings.TrimSpace(user.Role)) {
+	case "admin":
+		return "/admin"
+	case "proktor":
+		return "/proktor"
+	case "guru":
+		return "/guru"
+	case "siswa":
+		return "/peserta"
+	default:
+		return "/ujian"
+	}
 }
 
 func redirectWithParams(w http.ResponseWriter, r *http.Request, params map[string]string) {

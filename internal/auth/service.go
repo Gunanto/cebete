@@ -962,6 +962,20 @@ func (s *Service) LoginWithGoogle(ctx context.Context, info GoogleUserInfo) (*Us
 	`, email)
 	if err := row.Scan(&u.ID, &u.Username, &emailVal, &u.FullName, &u.Role, &u.AccountStatus, &approvedAt, &u.IsNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			var pending bool
+			if err := s.db.QueryRowContext(ctx, `
+				SELECT EXISTS(
+					SELECT 1
+					FROM registration_requests
+					WHERE email = $1
+					  AND status = 'pending'
+				)
+			`, email).Scan(&pending); err != nil {
+				return nil, fmt.Errorf("check pending registration by email: %w", err)
+			}
+			if pending {
+				return nil, ErrRegistrationState
+			}
 			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("query user by email: %w", err)

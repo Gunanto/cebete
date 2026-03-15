@@ -20,12 +20,10 @@ Memastikan peserta non-reguler:
 ### A. Tahap Pendaftaran Peserta
 
 1. Arahkan peserta membuka halaman `Login`.
-2. Minta peserta memilih `Daftar via OTP Email`.
-3. Pastikan peserta memasukkan email aktif yang benar.
-4. Peserta klik `Kirim OTP ke Email`.
-5. Pastikan peserta menerima OTP pendaftaran di email.
-6. Minta peserta memasukkan 6 digit OTP pendaftaran.
-7. Setelah OTP valid, peserta melanjutkan ke form data.
+2. Minta peserta memilih tab `Daftar Non-Reguler`.
+3. Minta peserta klik `Daftar dengan Google`.
+4. Pastikan peserta memilih akun Google yang benar (Gmail, sch.id, atau belajar.id).
+5. Setelah login Google berhasil, peserta melanjutkan ke form data.
 8. Pastikan peserta mengisi data dengan lengkap:
    - nama lengkap,
    - email,
@@ -50,19 +48,17 @@ Memastikan peserta non-reguler:
    - membuat data sekolah/kelas/enrollment bila peserta adalah siswa non-reguler.
 5. Sampaikan ke peserta bahwa akun sudah aktif.
 
-### C. Tahap Login Pertama Setelah Disetujui
+### C. Tahap Login Setelah Disetujui (OAuth Google)
 
-1. Setelah approve, sistem mengirim email persetujuan ke peserta.
-2. Email itu berisi tautan `login pertama`.
-3. Minta peserta membuka email persetujuan tersebut.
-4. Peserta klik tautan login pertama.
-5. Sistem membuat session login otomatis.
-6. Peserta langsung diarahkan ke halaman `Ujian`.
+1. Setelah approve, minta peserta membuka halaman `Login`.
+2. Peserta klik `Masuk dengan Google`.
+3. Peserta memilih akun Google yang sama seperti saat pendaftaran.
+4. Sistem membuat session login otomatis.
+5. Peserta langsung diarahkan ke halaman `Ujian`.
 
 Catatan operator:
-- OTP pendaftaran hanya dipakai satu kali saat verifikasi email pendaftaran.
-- Setelah approve, peserta tidak perlu memasukkan OTP kedua untuk login pertama.
-- Tautan login pertama hanya berlaku sekali dan memiliki batas waktu.
+- Peserta wajib memakai akun Google yang sama saat daftar dan login.
+- Jika login dilakukan sebelum approve, status akun akan tetap `pending`.
 
 ### D. Tahap Memilih Ujian
 
@@ -91,12 +87,9 @@ Catatan operator:
 ### A. Flow Pendaftaran Sampai Approve
 
 `Login`  
--> `Daftar via OTP Email`  
--> `Masukkan email aktif`  
--> `Kirim OTP ke Email`  
--> `Buka email peserta`  
--> `Masukkan OTP pendaftaran`  
--> `Verifikasi OTP pendaftaran`  
+-> `Daftar Non-Reguler`  
+-> `Daftar dengan Google`  
+-> `Login Google berhasil`  
 -> `Isi form data siswa non-reguler`  
 -> `Kirim pendaftaran`  
 -> `Status pending`  
@@ -107,9 +100,7 @@ Catatan operator:
 ### B. Flow Login Setelah Approve
 
 `Akun sudah aktif`  
--> `Sistem kirim email persetujuan`  
--> `Peserta buka email persetujuan`  
--> `Klik tautan login pertama`  
+-> `Masuk dengan Google`  
 -> `Session login dibuat otomatis`  
 -> `Masuk ke halaman Ujian`
 
