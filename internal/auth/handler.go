@@ -937,6 +937,27 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{"status": "approved", "user_id": userID, "first_login_link_sent": firstLoginLinkSent}})
 }
 
+func (h *Handler) RegistrationStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid registration id"})
+		return
+	}
+	status, err := h.svc.RegistrationStatus(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrRegistrationNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"status": status}})
+}
+
 func (h *Handler) FirstLoginMagicLink(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
 	user, err := h.svc.ConsumeFirstLoginMagicLink(r.Context(), token)

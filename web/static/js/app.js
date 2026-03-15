@@ -405,6 +405,7 @@
     );
     const signupStepRequest = document.getElementById("signup-step-request");
     const signupStepProfile = document.getElementById("signup-step-profile");
+    const signupGoogleBtn = document.getElementById("signup-google-btn");
 
     if (passwordInput && togglePasswordBtn) {
       togglePasswordBtn.addEventListener("click", function () {
@@ -479,6 +480,94 @@
 
     function showSignupPanel() {
       return Boolean(signupPanel && !signupPanel.hidden);
+    }
+
+    const registrationStorageKey = "non_regular_registration_id";
+    let registrationPollingStop = null;
+
+    function safeStorageGet(key) {
+      try {
+        return window.localStorage ? localStorage.getItem(key) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function safeStorageSet(key, value) {
+      try {
+        if (window.localStorage) localStorage.setItem(key, value);
+      } catch (err) {}
+    }
+
+    function safeStorageRemove(key) {
+      try {
+        if (window.localStorage) localStorage.removeItem(key);
+      } catch (err) {}
+    }
+
+    function startRegistrationPolling(regID) {
+      const id = String(regID || "").trim();
+      if (!id) return;
+      if (registrationPollingStop) registrationPollingStop();
+      let tries = 0;
+      let lastStatus = "";
+      const maxTries = 180;
+      const intervalMs = 10000;
+
+      async function checkOnce() {
+        tries += 1;
+        try {
+          const data = await api(
+            "/api/v1/auth/registrations/" + encodeURIComponent(id) + "/status",
+            "GET",
+          );
+          const status = String((data && data.status) || "")
+            .trim()
+            .toLowerCase();
+          if (status && status !== lastStatus) {
+            lastStatus = status;
+          }
+          if (status === "approved") {
+            text(msg, "Pendaftaran disetujui. Mengarahkan ke login Google...");
+            activateLoginTab("signin");
+            safeStorageRemove(registrationStorageKey);
+            if (signupGoogleBtn) signupGoogleBtn.blur();
+            registrationPollingStop();
+            setTimeout(function () {
+              window.location.href = "/auth/google/start?flow=login";
+            }, 800);
+            return;
+          }
+          if (status === "rejected") {
+            text(
+              msg,
+              "Pendaftaran ditolak. Hubungi proktor/admin untuk informasi lanjut.",
+            );
+            safeStorageRemove(registrationStorageKey);
+            registrationPollingStop();
+            return;
+          }
+          if (status === "pending" && lastStatus !== "pending") {
+            text(msg, "Pendaftaran masih diproses. Menunggu persetujuan...");
+          }
+        } catch (err) {
+          if (err && err.message && err.message.includes("not found")) {
+            safeStorageRemove(registrationStorageKey);
+            registrationPollingStop();
+            return;
+          }
+        }
+        if (tries >= maxTries) {
+          registrationPollingStop();
+        }
+      }
+
+      const timer = setInterval(checkOnce, intervalMs);
+      registrationPollingStop = function () {
+        clearInterval(timer);
+        registrationPollingStop = null;
+      };
+      checkOnce();
     }
 
     if (signinTabBtn) {
@@ -563,6 +652,11 @@
       return;
     }
 
+    const storedRegID = safeStorageGet(registrationStorageKey);
+    if (storedRegID) {
+      startRegistrationPolling(storedRegID);
+    }
+
     signinForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       const done = beginBusy(signinForm, msg, "Memproses login...");
@@ -628,6 +722,10 @@
               regID +
               "). Tunggu verifikasi proktor/admin sebelum bisa login.",
           );
+          if (regID && regID !== "-") {
+            safeStorageSet(registrationStorageKey, regID);
+            startRegistrationPolling(regID);
+          }
           signupForm.reset();
           resetSignupSteps();
           if (signupGoogleTokenInput) signupGoogleTokenInput.value = "";

@@ -1448,6 +1448,25 @@ func (s *Service) ListRegistrationPending(ctx context.Context, limit int) ([]Reg
 	return s.ListRegistrations(ctx, "pending", limit, 0)
 }
 
+func (s *Service) RegistrationStatus(ctx context.Context, registrationID int64) (string, error) {
+	if registrationID <= 0 {
+		return "", ErrInvalidInput
+	}
+	var status string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM registration_requests
+		WHERE id = $1
+		LIMIT 1
+	`, registrationID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrRegistrationNotFound
+		}
+		return "", fmt.Errorf("load registration status: %w", err)
+	}
+	return status, nil
+}
+
 func (s *Service) ApproveRegistration(ctx context.Context, registrationID, reviewerID int64) (int64, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1625,6 +1644,12 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			WHERE code = $1
 			LIMIT 1
 		`, code).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("lookup school by code: %w", err)
+		}
 	} else {
 		err = tx.QueryRowContext(ctx, `
 			SELECT id
@@ -1632,12 +1657,12 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			WHERE LOWER(name) = LOWER($1)
 			LIMIT 1
 		`, name).Scan(&id)
-	}
-	if err == nil {
-		return id, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("lookup school: %w", err)
+		if err == nil {
+			return id, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("lookup school by name: %w", err)
+		}
 	}
 
 	address := ""

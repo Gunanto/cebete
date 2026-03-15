@@ -168,6 +168,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/signup/otp/verify", authHandler.VerifySignupOTP)
 		api.With(RateLimitMiddleware(authRateLimiter)).Get("/auth/google/signup/prefill", authHandler.GoogleSignupPrefill)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/auth/google/signup/complete", authHandler.GoogleSignupComplete)
+		api.With(RateLimitMiddleware(authRateLimiter)).Get("/auth/registrations/{id}/status", authHandler.RegistrationStatus)
 		api.With(RateLimitMiddleware(authRateLimiter)).Post("/registrations", authHandler.CreateRegistration)
 		api.With(RateLimitMiddleware(aiRateLimiter)).Post("/assistant", assistantHandler.Reply)
 

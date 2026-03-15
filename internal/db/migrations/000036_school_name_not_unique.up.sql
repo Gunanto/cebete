@@ -1,0 +1,5 @@
+BEGIN;
+
+DROP INDEX IF EXISTS ux_schools_name;
+
+COMMIT;
