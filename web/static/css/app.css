@@ -2413,6 +2413,17 @@ textarea:focus-visible {
     white-space: nowrap;
 }
 
+body[data-page="attempt_content"] .bs-table tbody tr {
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease;
+}
+
+body[data-page="attempt_content"] .bs-table tbody tr:hover,
+body[data-page="attempt_content"] .bs-table tbody tr:focus-within {
+    background: #eaf4ff;
+}
+
 .exam-pick-table th.cell-weight,
 .exam-pick-table td.cell-weight {
     width: 40px;
