@@ -69,8 +69,10 @@
     (Array.isArray(classesCache) ? classesCache : []).forEach(function (it) {
       const classID = Number((it && it.id) || 0);
       const itemSchoolID = Number((it && it.school_id) || 0);
+      const studentCount = Number((it && it.student_count) || 0);
       if (classID <= 0) return;
       if (id > 0 && itemSchoolID !== id) return;
+      if (studentCount <= 0) return;
       const o = document.createElement("option");
       o.value = String(classID);
       o.textContent = classLabel(it);
@@ -136,7 +138,23 @@
     ]);
     schoolsCache = Array.isArray(rows[0]) ? rows[0] : [];
     classesCache = Array.isArray(rows[1]) ? rows[1] : [];
-    fillSchoolOptions(schoolsCache);
+    const activeSchoolIDs = new Set(
+      classesCache
+        .filter(function (it) {
+          return Number((it && it.student_count) || 0) > 0;
+        })
+        .map(function (it) {
+          return Number((it && it.school_id) || 0);
+        })
+        .filter(function (id) {
+          return id > 0;
+        }),
+    );
+    const filteredSchools = schoolsCache.filter(function (it) {
+      const id = Number((it && it.id) || 0);
+      return id > 0 && activeSchoolIDs.has(id);
+    });
+    fillSchoolOptions(filteredSchools);
     fillClassOptionsBySchool(
       (deps.assignSchoolSelect && deps.assignSchoolSelect.value) || "",
     );
@@ -151,7 +169,10 @@
       }
       return [];
     }
-    const rows = await deps.api("/api/v1/admin/exams/" + id + "/assignments", "GET");
+    const rows = await deps.api(
+      "/api/v1/admin/exams/" + id + "/assignments",
+      "GET",
+    );
     renderExamAssignments(rows, true);
     return Array.isArray(rows) ? rows : [];
   }
@@ -167,7 +188,11 @@
 
     if (deps.refreshBtn) {
       deps.refreshBtn.addEventListener("click", async function () {
-        const done = deps.beginBusy(deps.refreshBtn, deps.msg, "Memuat data enroll...");
+        const done = deps.beginBusy(
+          deps.refreshBtn,
+          deps.msg,
+          "Memuat data enroll...",
+        );
         try {
           await Promise.all([loadExamManageTable(), loadSchoolsAndClasses()]);
           deps.setMsg("Data enroll berhasil dimuat.");
@@ -182,18 +207,28 @@
     if (deps.examAssignForm) {
       deps.examAssignForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const examID = Number((deps.assignExamIDInput && deps.assignExamIDInput.value) || 0);
+        const examID = Number(
+          (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
+        );
         if (examID <= 0) {
           deps.setMsg("Pilih ujian untuk enroll peserta.");
           return;
         }
-        const schoolID = Number((deps.assignSchoolSelect && deps.assignSchoolSelect.value) || 0);
-        const classID = Number((deps.assignClassSelect && deps.assignClassSelect.value) || 0);
+        const schoolID = Number(
+          (deps.assignSchoolSelect && deps.assignSchoolSelect.value) || 0,
+        );
+        const classID = Number(
+          (deps.assignClassSelect && deps.assignClassSelect.value) || 0,
+        );
         if (schoolID <= 0 || classID <= 0) {
           deps.setMsg("Pilih sekolah dan kelas untuk enroll peserta.");
           return;
         }
-        const done = deps.beginBusy(deps.examAssignForm, deps.msg, "Menyimpan enroll peserta...");
+        const done = deps.beginBusy(
+          deps.examAssignForm,
+          deps.msg,
+          "Menyimpan enroll peserta...",
+        );
         try {
           const items = await deps.api(
             "/api/v1/admin/exams/" + examID + "/assignments/by-class/append",
@@ -213,8 +248,14 @@
 
     if (deps.examAssignmentsLoadBtn) {
       deps.examAssignmentsLoadBtn.addEventListener("click", async function () {
-        const examID = Number((deps.assignExamIDInput && deps.assignExamIDInput.value) || 0);
-        const done = deps.beginBusy(deps.examAssignmentsLoadBtn, deps.msg, "Memuat peserta ujian...");
+        const examID = Number(
+          (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
+        );
+        const done = deps.beginBusy(
+          deps.examAssignmentsLoadBtn,
+          deps.msg,
+          "Memuat peserta ujian...",
+        );
         try {
           await loadExamAssignments(examID);
           deps.setMsg("Peserta ujian berhasil dimuat.");
@@ -228,10 +269,15 @@
 
     if (deps.examAssignmentsBody) {
       deps.examAssignmentsBody.addEventListener("click", async function (e) {
-        const btn = e.target && e.target.closest("button[data-exam-assignment-del]");
+        const btn =
+          e.target && e.target.closest("button[data-exam-assignment-del]");
         if (!btn) return;
-        const examID = Number((deps.assignExamIDInput && deps.assignExamIDInput.value) || 0);
-        const userID = Number(btn.getAttribute("data-exam-assignment-del") || 0);
+        const examID = Number(
+          (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
+        );
+        const userID = Number(
+          btn.getAttribute("data-exam-assignment-del") || 0,
+        );
         if (examID <= 0 || userID <= 0) return;
         if (!window.confirm("Keluarkan peserta ini dari ujian?")) return;
         const done = deps.beginBusy(btn, deps.msg, "Mengeluarkan peserta...");
