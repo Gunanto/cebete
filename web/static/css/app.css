@@ -2032,6 +2032,10 @@ textarea:focus-visible {
     margin: 0;
 }
 
+.option-row > div {
+    padding-left: 4px;
+}
+
 .editor-toolbar {
     display: flex;
     flex-wrap: wrap;
