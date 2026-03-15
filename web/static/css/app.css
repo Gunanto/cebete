@@ -2103,6 +2103,28 @@ textarea:focus-visible {
     font-size: 12pt;
 }
 
+#guru-manuscript-form label {
+    min-width: 0;
+}
+
+#guru-manuscript-form select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+    height: auto;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#guru-manuscript-form select option {
+    white-space: normal;
+    word-break: break-word;
+}
+
 .field-error {
     border-color: #ef9a9a;
     color: #8b1d1d;

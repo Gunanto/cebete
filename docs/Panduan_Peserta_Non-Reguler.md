@@ -17,6 +17,9 @@ Siapkan:
    ![Halaman Login](pics/login1.jpeg)
 3. Klik `Daftar dengan Google` dan pilih akun Google (Gmail, sch.id, atau belajar.id).
 4. Isi data pendaftaran sampai lengkap, lalu klik `Kirim Pendaftaran`.
+   - Isi **NPSN** dulu agar data sekolah terisi otomatis.
+   - Jika otomatis tidak terisi, Anda tetap bisa mengetik manual.
+   - Contoh nama kelas: **Kelas 9.1**.
 
 Setelah itu status Anda masih menunggu persetujuan proktor/admin.
 
