@@ -2686,7 +2686,7 @@ func ensureAllowedDomain(email string, domains []string) error {
 	}
 	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
 	for _, allowed := range domains {
-		if domain == allowed {
+		if domain == allowed || strings.HasSuffix(domain, "."+allowed) {
 			return nil
 		}
 	}

@@ -87,7 +87,7 @@ func LoadConfig() Config {
 			os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
 		),
 		GoogleOAuthDomains: strings.TrimSpace(
-			envOrDefault("GOOGLE_OAUTH_ALLOWED_DOMAINS", "gmail.com,sch.id,belajar.id"),
+			envOrDefault("GOOGLE_OAUTH_ALLOWED_DOMAINS", "gmail.com,sch.id,belajar.id,guru.smp.belajar.id,guru.sd.belajar.id,guru.sma.belajar.id,guru.smk.belajar.id,admin.smp.belajar.id,admin.sd.belajar.id,admin.sma.belajar.id,admin.smk.belajar.id,admin.paud.belajar.id,guru.paud.belajar.id"),
 		),
 		MinIOEndpoint:  strings.TrimSpace(os.Getenv("MINIO_ENDPOINT")),
 		MinIOAccessKey: strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY")),
