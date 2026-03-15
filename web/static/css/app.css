@@ -2018,6 +2018,14 @@ textarea:focus-visible {
 .option-row input[type="radio"],
 .option-row input[type="checkbox"] {
     margin: 0;
+    transform: scale(1.75);
+    transform-origin: left center;
+}
+
+.bs-choice input[type="radio"],
+.bs-choice input[type="checkbox"] {
+    transform: scale(1.75);
+    transform-origin: center;
 }
 
 .option-row > div p {
