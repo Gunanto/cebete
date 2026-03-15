@@ -652,10 +652,6 @@ func (s *Service) VerifySignupOTP(ctx context.Context, in SignupVerifyInput) (in
 	if strings.TrimSpace(in.FormPayload) == "" {
 		in.FormPayload = "{}"
 	}
-	var payload RegistrationFormPayload
-	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
-		payload = RegistrationFormPayload{}
-	}
 
 	if in.Email == "" || in.Code == "" {
 		return 0, ErrInvalidOTP
@@ -1395,6 +1391,10 @@ func (s *Service) CreateRegistration(ctx context.Context, in RegistrationInput) 
 	}
 	if strings.TrimSpace(in.FormPayload) == "" {
 		in.FormPayload = "{}"
+	}
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(in.FormPayload), &payload); err != nil {
+		payload = RegistrationFormPayload{}
 	}
 
 	password := strings.TrimSpace(in.Password)
