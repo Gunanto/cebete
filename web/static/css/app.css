@@ -2013,6 +2013,23 @@ textarea:focus-visible {
     gap: 8px;
     align-items: center;
     margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease;
+}
+
+.option-row:hover,
+.option-row:focus-within {
+    background: #eaf4ff;
+    border-color: #b5d9ff;
+}
+
+.option-row.is-selected {
+    background: #d6ecff;
+    border-color: #9fcaff;
 }
 
 .option-row input[type="radio"],
@@ -2344,6 +2361,21 @@ textarea:focus-visible {
     .result-scoreonly-actions .btn {
         width: 100%;
     }
+}
+
+.result-item-stimulus,
+.result-item-stem,
+.result-item-explanation {
+    margin-bottom: 8px;
+}
+
+.result-item-options {
+    margin: 6px 0 8px 18px;
+    padding: 0;
+}
+
+.result-item-options li {
+    margin-bottom: 4px;
 }
 
 .event-note {

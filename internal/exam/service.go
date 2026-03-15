@@ -395,14 +395,18 @@ type RegradeExamResult struct {
 }
 
 type AttemptResultItem struct {
-	QuestionID   int64            `json:"question_id"`
-	QuestionType string           `json:"question_type"`
-	Selected     []string         `json:"selected"`
-	Correct      []string         `json:"correct"`
-	IsCorrect    *bool            `json:"is_correct,omitempty"`
-	EarnedScore  float64          `json:"earned_score"`
-	Reason       string           `json:"reason,omitempty"`
-	Breakdown    []StatementScore `json:"breakdown,omitempty"`
+	QuestionID      int64            `json:"question_id"`
+	QuestionType    string           `json:"question_type"`
+	StemHTML        string           `json:"stem_html,omitempty"`
+	StimulusHTML    *string          `json:"stimulus_html,omitempty"`
+	ExplanationHTML *string          `json:"explanation_html,omitempty"`
+	Options         []QuestionOption `json:"options,omitempty"`
+	Selected        []string         `json:"selected"`
+	Correct         []string         `json:"correct"`
+	IsCorrect       *bool            `json:"is_correct,omitempty"`
+	EarnedScore     float64          `json:"earned_score"`
+	Reason          string           `json:"reason,omitempty"`
+	Breakdown       []StatementScore `json:"breakdown,omitempty"`
 }
 
 type AttemptQuestion struct {
@@ -4534,9 +4538,47 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 			q.question_type,
 			s.earned_score,
 			s.is_correct,
-			s.feedback
+			s.feedback,
+			COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
+			COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
+			q.stimulus_html AS legacy_stimulus_html,
+			COALESCE(NULLIF(qv.explanation_html, ''), NULLIF(qv_fallback.explanation_html, ''), NULL) AS explanation_html,
+			q.metadata
 		FROM attempt_scores s
 		JOIN questions q ON q.id = s.question_id
+		LEFT JOIN LATERAL (
+			SELECT qv.stimulus_html, qv.stem_html, qv.explanation_html
+			FROM question_versions qv
+			WHERE qv.question_id = q.id
+			ORDER BY CASE
+				WHEN qv.version_no = q.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT qv2.stimulus_html, qv2.stem_html, qv2.explanation_html
+			FROM questions q2
+			JOIN question_versions qv2 ON qv2.question_id = q2.id
+			WHERE q.question_code_id IS NOT NULL
+			  AND q2.question_code_id = q.question_code_id
+			  AND q2.id <> q.id
+			  AND q2.question_type = q.question_type
+			  AND (
+				NULLIF(btrim(q.metadata->>'title'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(q.metadata->>'title'), '')
+			  )
+			  AND (
+				NULLIF(btrim(q.metadata->>'material'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(q.metadata->>'material'), '')
+			  )
+			ORDER BY CASE
+				WHEN qv2.status = 'final' THEN 0
+				ELSE 1
+			END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
 		WHERE s.attempt_id = $1
 		ORDER BY s.question_id ASC
 	`, attemptID)
@@ -4546,18 +4588,41 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 	defer rows.Close()
 
 	items := make([]AttemptResultItem, 0)
+	questionIDs := make([]int64, 0)
 	for rows.Next() {
 		var (
 			item        AttemptResultItem
 			isCorrect   sql.NullBool
 			feedbackRaw []byte
+			versionStim sql.NullString
+			legacyStim  sql.NullString
+			explanation sql.NullString
+			metadata    json.RawMessage
 		)
-		if err := rows.Scan(&item.QuestionID, &item.QuestionType, &item.EarnedScore, &isCorrect, &feedbackRaw); err != nil {
+		if err := rows.Scan(
+			&item.QuestionID,
+			&item.QuestionType,
+			&item.EarnedScore,
+			&isCorrect,
+			&feedbackRaw,
+			&item.StemHTML,
+			&versionStim,
+			&legacyStim,
+			&explanation,
+			&metadata,
+		); err != nil {
 			return nil, fmt.Errorf("scan result item: %w", err)
 		}
 		if isCorrect.Valid {
 			v := isCorrect.Bool
 			item.IsCorrect = &v
+		}
+		item.StimulusHTML = resolveAttemptStimulusHTML(versionStim, legacyStim, metadata)
+		if explanation.Valid {
+			text := strings.TrimSpace(explanation.String)
+			if text != "" {
+				item.ExplanationHTML = &text
+			}
 		}
 		if len(feedbackRaw) > 0 {
 			var f map[string]interface{}
@@ -4571,9 +4636,52 @@ func (s *Service) loadAttemptResultItems(ctx context.Context, attemptID int64) (
 			}
 		}
 		items = append(items, item)
+		questionIDs = append(questionIDs, item.QuestionID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate result items: %w", err)
+	}
+
+	if len(questionIDs) == 0 {
+		return items, nil
+	}
+
+	placeholders := make([]string, 0, len(questionIDs))
+	args := make([]any, 0, len(questionIDs))
+	for i, id := range questionIDs {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, id)
+	}
+	optRows, err := s.db.QueryContext(ctx, `
+		SELECT question_id, option_key, option_html
+		FROM question_options
+		WHERE question_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY question_id ASC, option_key ASC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query result options: %w", err)
+	}
+	defer optRows.Close()
+
+	optionsByQuestion := make(map[int64][]QuestionOption)
+	for optRows.Next() {
+		var (
+			qid int64
+			opt QuestionOption
+		)
+		if err := optRows.Scan(&qid, &opt.OptionKey, &opt.OptionHTML); err != nil {
+			return nil, fmt.Errorf("scan result option: %w", err)
+		}
+		optionsByQuestion[qid] = append(optionsByQuestion[qid], opt)
+	}
+	if err := optRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate result options: %w", err)
+	}
+
+	for i := range items {
+		if opts, ok := optionsByQuestion[items[i].QuestionID]; ok {
+			items[i].Options = opts
+		}
 	}
 	return items, nil
 }

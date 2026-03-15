@@ -2217,9 +2217,11 @@
       const multiple = qType === "multi_jawaban";
       const inputType = multiple ? "checkbox" : "radio";
       const rows = (q.options || []).map(function (opt) {
-        const checked = selected.has(opt.option_key) ? "checked" : "";
+        const isChecked = selected.has(opt.option_key);
+        const checked = isChecked ? "checked" : "";
+        const labelClass = isChecked ? "option-row is-selected" : "option-row";
         return [
-          '<label class="option-row">',
+          '<label class="' + labelClass + '">',
           '<input type="' +
             inputType +
             '" name="option" value="' +
@@ -2232,6 +2234,16 @@
         ].join("");
       });
       html(optionsBox, rows.join(""));
+    }
+
+    function syncOptionRowSelection() {
+      if (!optionsBox) return;
+      const rows = optionsBox.querySelectorAll("label.option-row");
+      rows.forEach(function (row) {
+        const input = row.querySelector('input[name="option"]');
+        const isChecked = !!(input && input.checked);
+        row.classList.toggle("is-selected", isChecked);
+      });
     }
 
     function readTFStatements(q) {
@@ -2523,6 +2535,7 @@
       html(stimulusBox, stimulusHTML);
       doubtCheckbox.checked = !!q.is_doubt;
       renderOptions(q);
+      syncOptionRowSelection();
       renderAttemptMath();
       if (!attemptEditable) {
         applyAttemptReadonlyState("final");
@@ -2749,6 +2762,7 @@
 
     optionsBox.addEventListener("change", async function () {
       if (!attemptEditable) return;
+      syncOptionRowSelection();
       text(message, "Menyimpan jawaban...");
       try {
         await saveCurrent();
@@ -2874,6 +2888,7 @@
     const summaryBox = document.getElementById("result-summary");
     const examTitleCell = document.getElementById("result-exam-title");
     const examScoreCell = document.getElementById("result-exam-score");
+    const resultItemsBox = document.getElementById("result-items");
 
     function normalizeScore(score, totalWeight, totalQuestions) {
       const raw = Number(score || 0);
@@ -2882,6 +2897,123 @@
       const total = Number(totalQuestions || 0);
       if (total > 0) return (raw / total) * 100;
       return raw;
+    }
+
+    function formatItemStatus(item) {
+      if (!item) return "-";
+      if (item.is_correct === true) return "Benar";
+      if (item.is_correct === false) return "Salah";
+      if (String(item.reason || "").toLowerCase() === "unanswered") {
+        return "Tidak dijawab";
+      }
+      if (item.reason) return "Tidak dinilai";
+      return "-";
+    }
+
+    function formatItemScore(raw) {
+      const v = Number(raw || 0);
+      if (!Number.isFinite(v)) return "0";
+      return v.toLocaleString("id-ID", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function formatItemList(list) {
+      const items = Array.isArray(list) ? list : [];
+      if (!items.length) return "-";
+      return items
+        .map(function (it) {
+          return escapeHtml(String(it));
+        })
+        .join(", ");
+    }
+
+    function renderResultItems(out) {
+      if (!resultItemsBox) return;
+      if (!out || out.score_only) {
+        resultItemsBox.classList.add("muted");
+        html(
+          resultItemsBox,
+          "Detail jawaban tidak ditampilkan sesuai pengaturan ujian.",
+        );
+        return;
+      }
+      const items = Array.isArray(out.items) ? out.items : [];
+      if (!items.length) {
+        resultItemsBox.classList.add("muted");
+        html(resultItemsBox, "Detail jawaban belum tersedia.");
+        return;
+      }
+      resultItemsBox.classList.remove("muted");
+      const questionHTML = function (it) {
+        const parts = [];
+        if (it && it.stimulus_html) {
+          parts.push(
+            '<div class="result-item-stimulus">' +
+              String(it.stimulus_html) +
+              "</div>",
+          );
+        }
+        if (it && it.stem_html) {
+          parts.push(
+            '<div class="result-item-stem">' + String(it.stem_html) + "</div>",
+          );
+        }
+        if (Array.isArray(it && it.options) && it.options.length) {
+          const opts = it.options
+            .map(function (opt) {
+              return (
+                "<li><strong>" +
+                escapeHtml(String(opt.option_key || "")) +
+                ".</strong> " +
+                String(opt.option_html || "") +
+                "</li>"
+              );
+            })
+            .join("");
+          parts.push('<ul class="result-item-options">' + opts + "</ul>");
+        }
+        if (it && it.explanation_html) {
+          parts.push(
+            '<div class="result-item-explanation"><strong>Penjelasan:</strong> ' +
+              String(it.explanation_html) +
+              "</div>",
+          );
+        }
+        return parts.join("");
+      };
+      const rows = items
+        .map(function (it, idx) {
+          return [
+            "<tr>",
+            "<td>" + escapeHtml(String(idx + 1)) + "</td>",
+            "<td>" + escapeHtml(String(it.question_id || "-")) + "</td>",
+            "<td>" + escapeHtml(String(it.question_type || "-")) + "</td>",
+            "<td>" + questionHTML(it) + "</td>",
+            "<td>" + escapeHtml(formatItemStatus(it)) + "</td>",
+            "<td>" + escapeHtml(formatItemScore(it.earned_score)) + "</td>",
+            "<td>" + formatItemList(it.selected) + "</td>",
+            "<td>" + formatItemList(it.correct) + "</td>",
+            "</tr>",
+          ].join("");
+        })
+        .join("");
+      html(
+        resultItemsBox,
+        '<div class="table-wrap"><table class="bs-table"><thead><tr>' +
+          "<th>No</th>" +
+          "<th>ID Soal</th>" +
+          "<th>Tipe</th>" +
+          "<th>Soal</th>" +
+          "<th>Status</th>" +
+          "<th>Skor</th>" +
+          "<th>Jawaban Anda</th>" +
+          "<th>Kunci</th>" +
+          "</tr></thead><tbody>" +
+          rows +
+          "</tbody></table></div>",
+      );
     }
 
     try {
@@ -2915,8 +3047,13 @@
       }
       if (examTitleCell) examTitleCell.textContent = examTitle || "-";
       if (examScoreCell) examScoreCell.textContent = scoreLabel;
+      renderResultItems(out);
     } catch (err) {
       text(summaryBox, "Gagal memuat hasil: " + err.message);
+      if (resultItemsBox) {
+        resultItemsBox.classList.add("muted");
+        text(resultItemsBox, "Gagal memuat detail jawaban.");
+      }
     }
   }
 
@@ -3561,6 +3698,9 @@
     const resultDialogExamScore = document.getElementById(
       "peserta-result-dialog-exam-score",
     );
+    const resultDialogItems = document.getElementById(
+      "peserta-result-dialog-items",
+    );
     const menuButtons = Array.from(
       document.querySelectorAll("[data-peserta-menu]"),
     );
@@ -3620,6 +3760,123 @@
       return raw;
     }
 
+    function formatItemStatus(item) {
+      if (!item) return "-";
+      if (item.is_correct === true) return "Benar";
+      if (item.is_correct === false) return "Salah";
+      if (String(item.reason || "").toLowerCase() === "unanswered") {
+        return "Tidak dijawab";
+      }
+      if (item.reason) return "Tidak dinilai";
+      return "-";
+    }
+
+    function formatItemScore(raw) {
+      const v = Number(raw || 0);
+      if (!Number.isFinite(v)) return "0";
+      return v.toLocaleString("id-ID", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function formatItemList(list) {
+      const items = Array.isArray(list) ? list : [];
+      if (!items.length) return "-";
+      return items
+        .map(function (it) {
+          return escapeHtml(String(it));
+        })
+        .join(", ");
+    }
+
+    function renderResultItems(out) {
+      if (!resultDialogItems) return;
+      if (!out || out.score_only) {
+        resultDialogItems.classList.add("muted");
+        html(
+          resultDialogItems,
+          "Detail jawaban tidak ditampilkan sesuai pengaturan ujian.",
+        );
+        return;
+      }
+      const items = Array.isArray(out.items) ? out.items : [];
+      if (!items.length) {
+        resultDialogItems.classList.add("muted");
+        html(resultDialogItems, "Detail jawaban belum tersedia.");
+        return;
+      }
+      resultDialogItems.classList.remove("muted");
+      const questionHTML = function (it) {
+        const parts = [];
+        if (it && it.stimulus_html) {
+          parts.push(
+            '<div class="result-item-stimulus">' +
+              String(it.stimulus_html) +
+              "</div>",
+          );
+        }
+        if (it && it.stem_html) {
+          parts.push(
+            '<div class="result-item-stem">' + String(it.stem_html) + "</div>",
+          );
+        }
+        if (Array.isArray(it && it.options) && it.options.length) {
+          const opts = it.options
+            .map(function (opt) {
+              return (
+                "<li><strong>" +
+                escapeHtml(String(opt.option_key || "")) +
+                ".</strong> " +
+                String(opt.option_html || "") +
+                "</li>"
+              );
+            })
+            .join("");
+          parts.push('<ul class="result-item-options">' + opts + "</ul>");
+        }
+        if (it && it.explanation_html) {
+          parts.push(
+            '<div class="result-item-explanation"><strong>Penjelasan:</strong> ' +
+              String(it.explanation_html) +
+              "</div>",
+          );
+        }
+        return parts.join("");
+      };
+      const rows = items
+        .map(function (it, idx) {
+          return [
+            "<tr>",
+            "<td>" + escapeHtml(String(idx + 1)) + "</td>",
+            "<td>" + escapeHtml(String(it.question_id || "-")) + "</td>",
+            "<td>" + escapeHtml(String(it.question_type || "-")) + "</td>",
+            "<td>" + questionHTML(it) + "</td>",
+            "<td>" + escapeHtml(formatItemStatus(it)) + "</td>",
+            "<td>" + escapeHtml(formatItemScore(it.earned_score)) + "</td>",
+            "<td>" + formatItemList(it.selected) + "</td>",
+            "<td>" + formatItemList(it.correct) + "</td>",
+            "</tr>",
+          ].join("");
+        })
+        .join("");
+      html(
+        resultDialogItems,
+        '<div class="table-wrap"><table class="bs-table"><thead><tr>' +
+          "<th>No</th>" +
+          "<th>ID Soal</th>" +
+          "<th>Tipe</th>" +
+          "<th>Soal</th>" +
+          "<th>Status</th>" +
+          "<th>Skor</th>" +
+          "<th>Jawaban Anda</th>" +
+          "<th>Kunci</th>" +
+          "</tr></thead><tbody>" +
+          rows +
+          "</tbody></table></div>",
+      );
+    }
+
     const resultCache = new Map();
 
     async function showResultDialog(attemptID, subjectLabel) {
@@ -3631,6 +3888,10 @@
         resultDialogSubject.textContent = subjectLabel || "-";
       if (resultDialogStatus) resultDialogStatus.textContent = "-";
       if (resultDialogExamScore) resultDialogExamScore.textContent = "0.00";
+      if (resultDialogItems) {
+        resultDialogItems.classList.add("muted");
+        text(resultDialogItems, "Memuat detail jawaban...");
+      }
       if (typeof resultDialog.showModal === "function") {
         resultDialog.showModal();
       } else {
@@ -3677,9 +3938,14 @@
           resultDialogStatus.textContent = String((s && s.status) || "-");
         if (resultDialogExamScore)
           resultDialogExamScore.textContent = scoreLabel;
+        renderResultItems(out);
       } catch (err) {
         if (resultDialogSummary)
           text(resultDialogSummary, "Gagal memuat hasil: " + err.message);
+        if (resultDialogItems) {
+          resultDialogItems.classList.add("muted");
+          text(resultDialogItems, "Gagal memuat detail jawaban.");
+        }
       }
     }
 
