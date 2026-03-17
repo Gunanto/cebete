@@ -48,6 +48,7 @@ type examService interface {
 	AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	RemoveExamAssignment(ctx context.Context, examID, userID, actorID int64) error
 	ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
+	GetExamQuestionDetail(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error)
 	ListExamQuestionCodeRules(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
 	UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
 	DeleteExamQuestionCodeRule(ctx context.Context, examID, questionCodeID int64) error
@@ -1252,6 +1253,48 @@ func (h *Handler) ListExamQuestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) GetExamQuestionDetail(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	questionID, err := strconv.ParseInt(chi.URLParam(r, "questionID"), 10, 64)
+	if err != nil || questionID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid question id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	item, err := h.svc.GetExamQuestionDetail(r.Context(), examID, questionID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrQuestionNotInExam):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "question not in exam"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
 }
 
 func (h *Handler) UpsertExamQuestion(w http.ResponseWriter, r *http.Request) {

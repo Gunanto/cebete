@@ -43,6 +43,156 @@
     );
   }
 
+  function parseJSONLoose(raw, fallback) {
+    if (raw === null || raw === undefined) return fallback;
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(String(raw || ""));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function readTFStatements(item) {
+    const key = parseJSONLoose(item && item.answer_key, {});
+    if (Array.isArray(key.statements) && key.statements.length) {
+      return key.statements;
+    }
+    const options = Array.isArray(item && item.options) ? item.options : [];
+    return options.map(function (opt, idx) {
+      return {
+        id: String((opt && opt.option_key) || "S" + (idx + 1)),
+        statement_html: String((opt && opt.option_html) || ""),
+      };
+    });
+  }
+
+  function renderStatementLabel(statement) {
+    const htmlLabel = String((statement && statement.statement_html) || "");
+    if (htmlLabel && htmlLabel.trim() !== "") return htmlLabel;
+    const rawLabel =
+      (statement &&
+        (statement.text || statement.statement || statement.label)) ||
+      "";
+    return deps.escapeHtml(String(rawLabel || ""));
+  }
+
+  function renderExamQuestionViewOptions(item) {
+    if (!deps) return "";
+    const qType = String((item && item.question_type) || "")
+      .trim()
+      .toLowerCase();
+    if (qType === "benar_salah_pernyataan") {
+      const statements = readTFStatements(item);
+      if (!statements.length) {
+        return '<div class="muted">Pernyataan tidak tersedia.</div>';
+      }
+      const rows = statements
+        .map(function (s) {
+          return (
+            "<tr>" +
+            "<td>" +
+            renderStatementLabel(s) +
+            "</td>" +
+            "<td>Benar / Salah</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+      return (
+        '<table class="bs-table"><thead><tr><th>Pernyataan</th><th>Opsi</th></tr></thead><tbody>' +
+        rows +
+        "</tbody></table>"
+      );
+    }
+    const options = Array.isArray(item && item.options) ? item.options : [];
+    if (!options.length) {
+      return '<div class="muted">Opsi tidak tersedia.</div>';
+    }
+    return (
+      "<ol>" +
+      options
+        .map(function (opt) {
+          const key = deps.escapeHtml(String((opt && opt.option_key) || ""));
+          const html = String((opt && opt.option_html) || "");
+          return "<li><strong>" + key + "</strong> " + html + "</li>";
+        })
+        .join("") +
+      "</ol>"
+    );
+  }
+
+  function renderExamQuestionView(item) {
+    if (!deps) return;
+    if (deps.examQuestionViewTitle) {
+      deps.examQuestionViewTitle.textContent =
+        "Detail Soal #" + String((item && item.question_id) || "-");
+    }
+    if (deps.examQuestionViewStimulus) {
+      const stimulus = String((item && item.stimulus_html) || "").trim();
+      deps.examQuestionViewStimulus.innerHTML =
+        stimulus || '<div class="muted">(tanpa stimulus)</div>';
+    }
+    if (deps.examQuestionViewStem) {
+      const stem = String((item && item.stem_html) || "").trim();
+      deps.examQuestionViewStem.innerHTML =
+        stem || '<div class="muted">(rumusan butir soal kosong)</div>';
+    }
+    if (deps.examQuestionViewOptions) {
+      deps.examQuestionViewOptions.innerHTML =
+        renderExamQuestionViewOptions(item);
+    }
+  }
+
+  async function openExamQuestionView(examID, questionID) {
+    if (!deps || !deps.examQuestionViewDialog || !deps.api) return;
+    if (deps.examQuestionViewTitle) {
+      deps.examQuestionViewTitle.textContent =
+        "Detail Soal #" + String(questionID || "-");
+    }
+    if (deps.examQuestionViewStimulus) {
+      deps.examQuestionViewStimulus.innerHTML =
+        '<div class="muted">Memuat stimulus...</div>';
+    }
+    if (deps.examQuestionViewStem) {
+      deps.examQuestionViewStem.innerHTML =
+        '<div class="muted">Memuat rumusan soal...</div>';
+    }
+    if (deps.examQuestionViewOptions) {
+      deps.examQuestionViewOptions.innerHTML =
+        '<div class="muted">Memuat opsi jawaban...</div>';
+    }
+    if (typeof deps.examQuestionViewDialog.showModal === "function") {
+      deps.examQuestionViewDialog.showModal();
+    } else {
+      deps.examQuestionViewDialog.setAttribute("open", "open");
+    }
+    try {
+      const item = await deps.api(
+        "/api/v1/admin/exams/" +
+          Number(examID) +
+          "/questions/" +
+          Number(questionID) +
+          "/detail",
+        "GET",
+      );
+      renderExamQuestionView(item);
+    } catch (err) {
+      if (deps.examQuestionViewStem) {
+        deps.examQuestionViewStem.innerHTML =
+          '<div class="muted">Gagal memuat soal: ' +
+          deps.escapeHtml(err.message || "") +
+          "</div>";
+      }
+      if (deps.examQuestionViewStimulus) {
+        deps.examQuestionViewStimulus.innerHTML = '<div class="muted">-</div>';
+      }
+      if (deps.examQuestionViewOptions) {
+        deps.examQuestionViewOptions.innerHTML = '<div class="muted">-</div>';
+      }
+    }
+  }
+
   function getExamCount() {
     return Array.isArray(examsCache) ? examsCache.length : 0;
   }
@@ -550,11 +700,18 @@
           "</td>",
         "<td>" + deps.escapeHtml(String(title || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.question_code || "-")) + "</td>",
-        '<td><button class="icon-only-btn danger" type="button" data-exam-preview-remove="' +
+        '<td><span class="action-icons">' +
+          '<button class="icon-only-btn" type="button" data-exam-preview-view="' +
+          deps.escapeHtml(String(it.question_id || "")) +
+          '" title="Lihat soal" aria-label="Lihat soal">' +
+          '<svg viewBox="0 0 24 24" focusable="false"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>' +
+          "</button>" +
+          '<button class="icon-only-btn danger" type="button" data-exam-preview-remove="' +
           deps.escapeHtml(String(it.question_id || "")) +
           '" title="Keluarkan soal" aria-label="Keluarkan soal">' +
           '<svg viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>' +
-          "</button></td>",
+          "</button>" +
+          "</span></td>",
       ].join("");
       deps.examQuestionsPreviewBody.appendChild(tr);
     });
@@ -896,6 +1053,16 @@
       deps.examQuestionsPreviewBody.addEventListener(
         "click",
         async function (e) {
+          const viewBtn =
+            e.target && e.target.closest("button[data-exam-preview-view]");
+          if (viewBtn) {
+            const questionID = Number(
+              viewBtn.getAttribute("data-exam-preview-view") || 0,
+            );
+            if (examQuestionsPreviewExamID <= 0 || questionID <= 0) return;
+            await openExamQuestionView(examQuestionsPreviewExamID, questionID);
+            return;
+          }
           const btn =
             e.target && e.target.closest("button[data-exam-preview-remove]");
           if (!btn) return;

@@ -5655,6 +5655,21 @@
     const examQuestionsPreviewPage = document.getElementById(
       "guru-exam-questions-preview-page",
     );
+    const examQuestionViewDialog = document.getElementById(
+      "guru-exam-question-view-dialog",
+    );
+    const examQuestionViewTitle = document.getElementById(
+      "guru-exam-question-view-title",
+    );
+    const examQuestionViewStimulus = document.getElementById(
+      "guru-exam-question-view-stimulus",
+    );
+    const examQuestionViewStem = document.getElementById(
+      "guru-exam-question-view-stem",
+    );
+    const examQuestionViewOptions = document.getElementById(
+      "guru-exam-question-view-options",
+    );
     const examQuestionPickBody = document.getElementById(
       "guru-exam-question-pick-body",
     );
@@ -6330,6 +6345,11 @@
         examQuestionsPreviewPrev: examQuestionsPreviewPrev,
         examQuestionsPreviewNext: examQuestionsPreviewNext,
         examQuestionsPreviewPage: examQuestionsPreviewPage,
+        examQuestionViewDialog: examQuestionViewDialog,
+        examQuestionViewTitle: examQuestionViewTitle,
+        examQuestionViewStimulus: examQuestionViewStimulus,
+        examQuestionViewStem: examQuestionViewStem,
+        examQuestionViewOptions: examQuestionViewOptions,
         onExamsLoaded: function (exams) {
           if (GuruResults && typeof GuruResults.setExams === "function") {
             GuruResults.setExams(exams);

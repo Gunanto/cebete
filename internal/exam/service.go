@@ -422,6 +422,15 @@ type AttemptQuestion struct {
 	Options       []QuestionOption `json:"options,omitempty"`
 }
 
+type ExamQuestionDetail struct {
+	QuestionID   int64            `json:"question_id"`
+	QuestionType string           `json:"question_type"`
+	StemHTML     string           `json:"stem_html"`
+	StimulusHTML *string          `json:"stimulus_html,omitempty"`
+	AnswerKey    json.RawMessage  `json:"answer_key"`
+	Options      []QuestionOption `json:"options,omitempty"`
+}
+
 type QuestionOption struct {
 	OptionKey  string `json:"option_key"`
 	OptionHTML string `json:"option_html"`
@@ -3760,6 +3769,105 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	}
 	if randomizeOptions && len(out.Options) > 1 {
 		out.Options = shuffleQuestionOptionsByAttempt(out.Options, attemptID, out.QuestionID)
+	}
+
+	return &out, nil
+}
+
+func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error) {
+	if examID <= 0 || questionID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	r := s.db.QueryRowContext(ctx, `
+		SELECT
+			eq.question_id,
+			q.question_type,
+			COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
+			COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
+			q.stimulus_html AS legacy_stimulus_html,
+			COALESCE(NULLIF(qv.answer_key, '{}'::jsonb), NULLIF(qv_fallback.answer_key, '{}'::jsonb), '{}'::jsonb) AS answer_key,
+			q.metadata
+		FROM exam_questions eq
+		JOIN questions q
+			ON q.id = eq.question_id
+		LEFT JOIN LATERAL (
+				SELECT qv.answer_key, qv.stimulus_html, qv.stem_html
+				FROM question_versions qv
+				WHERE qv.question_id = q.id
+				ORDER BY CASE
+					WHEN qv.version_no = q.version THEN 0
+					WHEN qv.status = 'final' THEN 1
+					ELSE 2
+				END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv ON TRUE
+		LEFT JOIN LATERAL (
+				SELECT qv2.answer_key, qv2.stimulus_html, qv2.stem_html
+				FROM questions q2
+				JOIN question_versions qv2 ON qv2.question_id = q2.id
+				WHERE q.question_code_id IS NOT NULL
+				  AND q2.question_code_id = q.question_code_id
+				  AND q2.id <> q.id
+				  AND q2.question_type = q.question_type
+				  AND (
+					NULLIF(btrim(q.metadata->>'title'), '') IS NULL
+					OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(q.metadata->>'title'), '')
+				  )
+				  AND (
+					NULLIF(btrim(q.metadata->>'material'), '') IS NULL
+					OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(q.metadata->>'material'), '')
+				  )
+				ORDER BY CASE
+					WHEN qv2.status = 'final' THEN 0
+					ELSE 1
+				END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
+		WHERE eq.exam_id = $1
+		  AND eq.question_id = $2
+	`, examID, questionID)
+
+	var out ExamQuestionDetail
+	var versionStimulus sql.NullString
+	var legacyStimulus sql.NullString
+	var questionMetadata json.RawMessage
+	if err := r.Scan(
+		&out.QuestionID,
+		&out.QuestionType,
+		&out.StemHTML,
+		&versionStimulus,
+		&legacyStimulus,
+		&out.AnswerKey,
+		&questionMetadata,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotInExam
+		}
+		return nil, fmt.Errorf("query exam question detail: %w", err)
+	}
+	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, questionMetadata)
+
+	optRows, err := s.db.QueryContext(ctx, `
+		SELECT option_key, option_html
+		FROM question_options
+		WHERE question_id = $1
+		ORDER BY option_key ASC
+	`, out.QuestionID)
+	if err != nil {
+		return nil, fmt.Errorf("query question options: %w", err)
+	}
+	defer optRows.Close()
+
+	for optRows.Next() {
+		var opt QuestionOption
+		if err := optRows.Scan(&opt.OptionKey, &opt.OptionHTML); err != nil {
+			return nil, fmt.Errorf("scan question option: %w", err)
+		}
+		out.Options = append(out.Options, opt)
+	}
+	if err := optRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate question options: %w", err)
 	}
 
 	return &out, nil
