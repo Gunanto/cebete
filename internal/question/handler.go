@@ -90,6 +90,8 @@ type assignQuestionLearningGoalRequest struct {
 }
 
 type createQuestionVersionRequest struct {
+	StimulusType    *string               `json:"stimulus_type"`
+	StimulusContent json.RawMessage       `json:"stimulus_content"`
 	StimulusHTML    *string               `json:"stimulus_html"`
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
@@ -103,6 +105,8 @@ type createQuestionVersionRequest struct {
 }
 
 type updateQuestionVersionRequest struct {
+	StimulusType    *string               `json:"stimulus_type"`
+	StimulusContent json.RawMessage       `json:"stimulus_content"`
 	StimulusHTML    *string               `json:"stimulus_html"`
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
@@ -828,6 +832,8 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 
 	item, err := h.svc.CreateQuestionVersion(r.Context(), CreateQuestionVersionInput{
 		QuestionID:      questionID,
+		StimulusType:    req.StimulusType,
+		StimulusContent: req.StimulusContent,
 		StimulusHTML:    req.StimulusHTML,
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,
@@ -1033,6 +1039,8 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 	item, err := h.svc.UpdateQuestionVersion(r.Context(), UpdateQuestionVersionInput{
 		QuestionID:      questionID,
 		VersionNo:       versionNo,
+		StimulusType:    req.StimulusType,
+		StimulusContent: req.StimulusContent,
 		StimulusHTML:    req.StimulusHTML,
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,

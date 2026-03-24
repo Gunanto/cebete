@@ -5483,6 +5483,21 @@
     const manuscriptStimulusEditor = document.getElementById(
       "guru-manuscript-stimulus-editor",
     );
+    const manuscriptStimulusType = document.getElementById(
+      "guru-manuscript-stimulus-type",
+    );
+    const manuscriptStimulusSinglePanel = document.getElementById(
+      "guru-manuscript-stimulus-single-panel",
+    );
+    const manuscriptStimulusMultiteksPanel = document.getElementById(
+      "guru-manuscript-stimulus-multiteks-panel",
+    );
+    const manuscriptStimulusTabsWrap = document.getElementById(
+      "guru-manuscript-stimulus-tabs",
+    );
+    const manuscriptAddStimulusTabBtn = document.getElementById(
+      "guru-manuscript-add-stimulus-tab-btn",
+    );
     const manuscriptStemEditor = document.getElementById(
       "guru-manuscript-stem-editor",
     );
@@ -7220,6 +7235,11 @@
         manuscriptLearningGoalSelect: manuscriptLearningGoalSelect,
         manuscriptQuestionTypeUI: manuscriptQuestionTypeUI,
         manuscriptStimulusEditor: manuscriptStimulusEditor,
+        manuscriptStimulusType: manuscriptStimulusType,
+        manuscriptStimulusSinglePanel: manuscriptStimulusSinglePanel,
+        manuscriptStimulusMultiteksPanel: manuscriptStimulusMultiteksPanel,
+        manuscriptStimulusTabsWrap: manuscriptStimulusTabsWrap,
+        manuscriptAddStimulusTabBtn: manuscriptAddStimulusTabBtn,
         manuscriptStemEditor: manuscriptStemEditor,
         manuscriptExplanationEditor: manuscriptExplanationEditor,
         manuscriptHintEditor: manuscriptHintEditor,

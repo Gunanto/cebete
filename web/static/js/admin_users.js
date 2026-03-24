@@ -131,9 +131,7 @@
       : null;
     const nisnLabel = nisnEl ? nisnEl.closest("label") : null;
     const schoolCodeEl = formEl.elements.namedItem("school_code_display");
-    const schoolCodeLabel = schoolCodeEl
-      ? schoolCodeEl.closest("label")
-      : null;
+    const schoolCodeLabel = schoolCodeEl ? schoolCodeEl.closest("label") : null;
     if (schoolLabel) {
       schoolLabel.dataset.requiredRole = mustHaveClass ? "siswa" : "";
     }
@@ -293,7 +291,8 @@
       deps.text(deps.pageInfo, "Baris " + String(start) + " - " + String(end));
     }
     if (deps.prevPageBtn) deps.prevPageBtn.disabled = currentOffset <= 0;
-    if (deps.nextPageBtn) deps.nextPageBtn.disabled = items.length < currentLimit;
+    if (deps.nextPageBtn)
+      deps.nextPageBtn.disabled = items.length < currentLimit;
     if (!deps.regBody) return;
     if (!items.length) {
       deps.regBody.innerHTML =
@@ -725,7 +724,9 @@
             return;
           }
           if (isStudentRole(role) && (!participantNo || !nisn)) {
-            deps.setMsg("Untuk role siswa, nomor peserta dan NISN wajib diisi.");
+            deps.setMsg(
+              "Untuk role siswa, nomor peserta dan NISN wajib diisi.",
+            );
             return;
           }
           if (isStudentRole(role) && !schoolCode) {
@@ -821,7 +822,9 @@
             return;
           }
           if (isStudentRole(role) && (!participantNo || !nisn)) {
-            deps.setMsg("Untuk role siswa, nomor peserta dan NISN wajib diisi.");
+            deps.setMsg(
+              "Untuk role siswa, nomor peserta dan NISN wajib diisi.",
+            );
             return;
           }
           if (isStudentRole(role) && !schoolCode) {

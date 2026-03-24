@@ -2186,6 +2186,25 @@ textarea:focus-visible {
     max-height: 220px;
 }
 
+#guru-manuscript-stimulus-tabs [data-stimulus-tab-row].is-dragging {
+    opacity: 0.75;
+    border-style: dashed;
+}
+
+#guru-manuscript-stimulus-tabs [data-stimulus-tab-row].is-drop-target {
+    border-color: #0f766e;
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+}
+
+#guru-manuscript-stimulus-tabs [data-stimulus-tab-drag-handle] {
+    cursor: grab;
+    font-weight: 700;
+}
+
+#guru-manuscript-stimulus-tabs [data-stimulus-tab-drag-handle]:active {
+    cursor: grabbing;
+}
+
 .manuscript-submit-row {
     position: relative;
     z-index: 8;

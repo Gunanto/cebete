@@ -904,9 +904,43 @@
                     </label>
                     <section class="panel stimulus-editor-wrap">
                         <h4>Stimulus</h4>
-                        <div class="quill-editor-shell mt">
-                            <div id="guru-manuscript-stimulus-editor"></div>
-                        </div>
+                        <label
+                            >Tipe Stimulus
+                            <select id="guru-manuscript-stimulus-type">
+                                <option value="single">Single</option>
+                                <option value="multiteks">Multiteks</option>
+                            </select>
+                        </label>
+                        <section
+                            id="guru-manuscript-stimulus-single-panel"
+                            class="mt"
+                        >
+                            <div class="quill-editor-shell mt">
+                                <div id="guru-manuscript-stimulus-editor"></div>
+                            </div>
+                        </section>
+                        <section
+                            id="guru-manuscript-stimulus-multiteks-panel"
+                            class="mt"
+                            hidden
+                        >
+                            <div class="admin-section-head">
+                                <div class="muted">
+                                    Tambahkan satu atau lebih tab stimulus.
+                                </div>
+                                <button
+                                    id="guru-manuscript-add-stimulus-tab-btn"
+                                    class="btn btn-secondary btn-inline"
+                                    type="button"
+                                >
+                                    Tambah Tab
+                                </button>
+                            </div>
+                            <div
+                                id="guru-manuscript-stimulus-tabs"
+                                class="mt"
+                            ></div>
+                        </section>
                         <input
                             type="hidden"
                             name="stimulus_html"

@@ -91,3 +91,24 @@ Hubungi proktor/admin bila:
 
 - Gunakan akun Google yang sama saat daftar dan saat login.
 - Jika ujian memerlukan token, mintalah token itu ke proktor.
+
+## 10. Panduan Login Non-Reguler
+
+Silakan ikuti Latihan TKA dengan langkah berikut:
+
+1. Buka https://cbt.pakgun.my.id/.
+2. Klik `Daftar Non-Reguler`.
+3. Klik `Daftar dengan Google`.
+4. Pilih akun Google yang aktif.
+5. Jika diminta, masukkan password akun Google Anda.
+6. Pada halaman **Selamat Datang**, lengkapi data siswa (Saat ini Anda hanya bisa terdaftar sebagai siswa/peserta ujian):
+   - Nama Lengkap
+   - No. HP (opsional)
+   - NPSN (wajib)
+   - Data lain akan terisi otomatis jika NPSN benar
+7. Isi kelas.
+8. Klik `Kirim Pendaftaran`.
+
+Setelah itu, tunggu persetujuan dari proktor. Jika pendaftaran sudah disetujui, Anda bisa langsung masuk ke halaman ujian.
+
+Untuk login kembali, buka https://cbt.pakgun.my.id/ lalu klik `Masuk dengan Google`. Pastikan Anda menggunakan email yang sama seperti saat pendaftaran.

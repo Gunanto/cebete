@@ -5,6 +5,8 @@
   var manuscriptExplanationQuill = null;
   var manuscriptHintQuill = null;
   var manuscriptOptionQuillByRow = new WeakMap();
+  var manuscriptStimulusTabQuillByRow = new WeakMap();
+  var manuscriptDraggingStimulusTabRow = null;
   var currentManuscriptQuestionType = "";
   var manuscriptEditingQuestionID = 0;
   var manuscriptEditSnapshot = null;
@@ -25,9 +27,7 @@
   function syncHiddenInputs() {
     if (!deps) return;
     if (deps.manuscriptStimulusHTMLInput) {
-      deps.manuscriptStimulusHTMLInput.value = getQuillHTML(
-        manuscriptStimulusQuill,
-      );
+      deps.manuscriptStimulusHTMLInput.value = buildStimulusPayload().html;
     }
     if (deps.manuscriptStemHTMLInput) {
       deps.manuscriptStemHTMLInput.value = getQuillHTML(manuscriptStemQuill);
@@ -47,6 +47,251 @@
     if (manuscriptStemQuill) manuscriptStemQuill.setContents([]);
     if (manuscriptExplanationQuill) manuscriptExplanationQuill.setContents([]);
     if (manuscriptHintQuill) manuscriptHintQuill.setContents([]);
+    if (deps && deps.manuscriptStimulusType) {
+      deps.manuscriptStimulusType.value = "single";
+    }
+    if (deps && deps.manuscriptStimulusTabsWrap) {
+      deps.manuscriptStimulusTabsWrap.innerHTML = "";
+    }
+    ensureStimulusTabRows();
+    applyStimulusTypeUI();
+    syncHiddenInputs();
+  }
+
+  function createStimulusTabRow(data, idx) {
+    if (!deps || typeof deps.escapeHtml !== "function") return "";
+    const title = String((data && data.title) || "").trim();
+    const body = String((data && data.body) || "").trim();
+    return (
+      '<div class="panel mt" data-stimulus-tab-row="1">' +
+      '<div class="admin-section-head">' +
+      '<div class="action-icons">' +
+      '<button type="button" class="btn btn-secondary btn-inline" draggable="true" data-stimulus-tab-drag-handle="1" title="Geser urutan tab">Geser</button>' +
+      "<strong>Tab " +
+      String(idx + 1) +
+      "</strong>" +
+      "</div>" +
+      '<div class="action-icons">' +
+      '<button type="button" class="btn btn-secondary btn-inline" data-stimulus-tab-up="1">Naik</button>' +
+      '<button type="button" class="btn btn-secondary btn-inline" data-stimulus-tab-down="1">Turun</button>' +
+      "</div>" +
+      "</div>" +
+      '<label>Judul Tab<input type="text" data-stimulus-tab-title value="' +
+      deps.escapeHtml(title) +
+      '" placeholder="Teks 1" /></label>' +
+      '<label class="mt">Isi Tab</label>' +
+      '<div class="quill-editor-shell mt"><div class="manuscript-stimulus-tab-editor"></div></div>' +
+      '<input type="hidden" data-stimulus-tab-body value="' +
+      deps.escapeHtml(body) +
+      '" />' +
+      '<button type="button" class="btn btn-secondary btn-inline mt" data-stimulus-tab-remove="1">Hapus Tab</button>' +
+      "</div>"
+    );
+  }
+
+  function bindStimulusTabEditor(row) {
+    if (!row || manuscriptStimulusTabQuillByRow.has(row) || !window.Quill) {
+      return;
+    }
+    if (!deps || typeof deps.createQuillEditor !== "function") return;
+    const host = row.querySelector(".manuscript-stimulus-tab-editor");
+    const hidden = row.querySelector("[data-stimulus-tab-body]");
+    if (!host || !hidden) return;
+    const initialHTML = String(hidden.value || "").trim();
+    const quill = deps.createQuillEditor(host, "Isi stimulus tab...", {
+      defaultFontSize: "12pt",
+    });
+    if (!quill) return;
+    if (initialHTML) {
+      quill.clipboard.dangerouslyPasteHTML(initialHTML);
+    }
+    hidden.value = getQuillHTML(quill);
+    quill.on("text-change", function () {
+      hidden.value = getQuillHTML(quill);
+      syncHiddenInputs();
+    });
+    manuscriptStimulusTabQuillByRow.set(row, quill);
+  }
+
+  function bindStimulusTabEditors() {
+    if (!deps || !deps.manuscriptStimulusTabsWrap) return;
+    deps.manuscriptStimulusTabsWrap
+      .querySelectorAll("[data-stimulus-tab-row]")
+      .forEach(function (row) {
+        bindStimulusTabEditor(row);
+      });
+  }
+
+  function getStimulusTabRows() {
+    return Array.from(
+      (deps &&
+        deps.manuscriptStimulusTabsWrap &&
+        deps.manuscriptStimulusTabsWrap.querySelectorAll(
+          "[data-stimulus-tab-row]",
+        )) ||
+        [],
+    );
+  }
+
+  function refreshStimulusTabRowLabels() {
+    const rows = getStimulusTabRows();
+    rows.forEach(function (row, idx) {
+      const label = row.querySelector(".admin-section-head strong");
+      const upBtn = row.querySelector("button[data-stimulus-tab-up]");
+      const downBtn = row.querySelector("button[data-stimulus-tab-down]");
+      if (label) {
+        label.textContent = "Tab " + String(idx + 1);
+      }
+      if (upBtn) {
+        upBtn.disabled = idx === 0;
+      }
+      if (downBtn) {
+        downBtn.disabled = idx === rows.length - 1;
+      }
+    });
+  }
+
+  function syncStimulusTabState() {
+    refreshStimulusTabRowLabels();
+    syncHiddenInputs();
+  }
+
+  function appendStimulusTabRow(data) {
+    if (!deps || !deps.manuscriptStimulusTabsWrap) return;
+    const idx = getStimulusTabRows().length;
+    deps.manuscriptStimulusTabsWrap.insertAdjacentHTML(
+      "beforeend",
+      createStimulusTabRow(data || {}, idx),
+    );
+    bindStimulusTabEditors();
+    syncStimulusTabState();
+  }
+
+  function setStimulusTabRows(tabs) {
+    if (!deps || !deps.manuscriptStimulusTabsWrap) return;
+    const list = Array.isArray(tabs) ? tabs : [];
+    deps.manuscriptStimulusTabsWrap.innerHTML = list.length
+      ? list
+          .map(function (it, idx) {
+            return createStimulusTabRow(it || {}, idx);
+          })
+          .join("")
+      : "";
+    ensureStimulusTabRows();
+  }
+
+  function moveStimulusTabRowBefore(sourceRow, targetRow) {
+    if (
+      !deps ||
+      !deps.manuscriptStimulusTabsWrap ||
+      !sourceRow ||
+      !targetRow ||
+      sourceRow === targetRow
+    ) {
+      return;
+    }
+    deps.manuscriptStimulusTabsWrap.insertBefore(sourceRow, targetRow);
+    syncStimulusTabState();
+  }
+
+  function clearStimulusTabDropTargets() {
+    if (!deps || !deps.manuscriptStimulusTabsWrap) return;
+    deps.manuscriptStimulusTabsWrap
+      .querySelectorAll("[data-stimulus-tab-row].is-drop-target")
+      .forEach(function (row) {
+        row.classList.remove("is-drop-target");
+      });
+  }
+
+  function ensureStimulusTabRows() {
+    if (!deps || !deps.manuscriptStimulusTabsWrap) return;
+    if (!getStimulusTabRows().length) {
+      deps.manuscriptStimulusTabsWrap.innerHTML = createStimulusTabRow(
+        { title: "Teks 1", body: "" },
+        0,
+      );
+    }
+    bindStimulusTabEditors();
+    refreshStimulusTabRowLabels();
+  }
+
+  function collectStimulusTabs() {
+    return getStimulusTabRows()
+      .map(function (row, idx) {
+        const titleInput = row.querySelector("[data-stimulus-tab-title]");
+        const bodyInput = row.querySelector("[data-stimulus-tab-body]");
+        const title = String((titleInput && titleInput.value) || "").trim();
+        const body = String((bodyInput && bodyInput.value) || "").trim();
+        return {
+          title: title || "Teks " + String(idx + 1),
+          body: body,
+        };
+      })
+      .filter(function (it) {
+        return it.body;
+      });
+  }
+
+  function renderStimulusHTMLFromTabs(tabs) {
+    const list = Array.isArray(tabs) ? tabs : [];
+    return list
+      .map(function (it, idx) {
+        const title = deps.escapeHtml(
+          String((it && it.title) || "").trim() || "Tab " + String(idx + 1),
+        );
+        const body = String((it && it.body) || "").trim();
+        if (!body) return "";
+        return (
+          '<section class="panel mt"><h4>' +
+          title +
+          '</h4><div class="box mt">' +
+          body +
+          "</div></section>"
+        );
+      })
+      .join("");
+  }
+
+  function buildStimulusPayload() {
+    const stimulusType = String(
+      (deps &&
+        deps.manuscriptStimulusType &&
+        deps.manuscriptStimulusType.value) ||
+        "single",
+    )
+      .trim()
+      .toLowerCase();
+    if (stimulusType === "multiteks") {
+      const tabs = collectStimulusTabs();
+      return {
+        type: "multiteks",
+        content: tabs.length ? { tabs: tabs } : null,
+        html: renderStimulusHTMLFromTabs(tabs).trim(),
+      };
+    }
+    const body = getQuillHTML(manuscriptStimulusQuill).trim();
+    return {
+      type: "single",
+      content: body ? { body: body } : null,
+      html: body,
+    };
+  }
+
+  function applyStimulusTypeUI() {
+    if (!deps || !deps.manuscriptStimulusType) return;
+    const isMulti =
+      String(deps.manuscriptStimulusType.value || "")
+        .trim()
+        .toLowerCase() === "multiteks";
+    if (deps.manuscriptStimulusSinglePanel) {
+      deps.manuscriptStimulusSinglePanel.hidden = isMulti;
+    }
+    if (deps.manuscriptStimulusMultiteksPanel) {
+      deps.manuscriptStimulusMultiteksPanel.hidden = !isMulti;
+    }
+    if (isMulti) {
+      ensureStimulusTabRows();
+    }
     syncHiddenInputs();
   }
 
@@ -483,6 +728,10 @@
       question_code_id: Number(
         (selectedQuestion && selectedQuestion.question_code_id) || 0,
       ),
+      stimulus_type: String((item && item.stimulus_type) || "single").trim(),
+      stimulus_content: stableStringify(
+        (item && item.stimulus_content) || null,
+      ),
       stimulus_html: String((item && item.stimulus_html) || "").trim(),
       stem_html: String((item && item.stem_html) || "").trim(),
       explanation_html: String((item && item.explanation_html) || "").trim(),
@@ -502,6 +751,10 @@
       version_no: Number((data && data.version_no) || 0),
       learning_goal_id: Number((data && data.learning_goal_id) || 0),
       question_code_id: Number((data && data.question_code_id) || 0),
+      stimulus_type: String((data && data.stimulus_type) || "single").trim(),
+      stimulus_content: stableStringify(
+        (data && data.stimulus_content) || null,
+      ),
       stimulus_html: String((data && data.stimulus_html) || "").trim(),
       stem_html: String((data && data.stem_html) || "").trim(),
       explanation_html: String((data && data.explanation_html) || "").trim(),
@@ -520,6 +773,8 @@
     return (
       a.question_id === b.question_id &&
       a.version_no === b.version_no &&
+      a.stimulus_type === b.stimulus_type &&
+      a.stimulus_content === b.stimulus_content &&
       a.stimulus_html === b.stimulus_html &&
       a.stem_html === b.stem_html &&
       a.explanation_html === b.explanation_html &&
@@ -661,7 +916,36 @@
     }
 
     applyTypeUI(true);
-    setQuillHTMLValue(manuscriptStimulusQuill, item.stimulus_html);
+    const stimulusType = String((item && item.stimulus_type) || "single")
+      .trim()
+      .toLowerCase();
+    const stimulusContent =
+      item && item.stimulus_content && typeof item.stimulus_content === "object"
+        ? item.stimulus_content
+        : null;
+    if (deps.manuscriptStimulusType) {
+      deps.manuscriptStimulusType.value =
+        stimulusType === "multiteks" ? "multiteks" : "single";
+    }
+    if (stimulusType === "multiteks") {
+      const tabs =
+        stimulusContent && Array.isArray(stimulusContent.tabs)
+          ? stimulusContent.tabs
+          : [];
+      setStimulusTabRows(tabs);
+      setQuillHTMLValue(manuscriptStimulusQuill, "");
+    } else {
+      const body =
+        stimulusContent && typeof stimulusContent.body === "string"
+          ? stimulusContent.body
+          : item.stimulus_html;
+      setQuillHTMLValue(manuscriptStimulusQuill, body);
+      if (deps.manuscriptStimulusTabsWrap) {
+        deps.manuscriptStimulusTabsWrap.innerHTML = "";
+      }
+      ensureStimulusTabRows();
+    }
+    applyStimulusTypeUI();
     setQuillHTMLValue(manuscriptStemQuill, item.stem_html);
     setQuillHTMLValue(manuscriptExplanationQuill, item.explanation_html);
     setQuillHTMLValue(manuscriptHintQuill, item.hint_html);
@@ -958,8 +1242,11 @@
           deps.syncManuscriptSubjectState();
         }
       }
-      const stimulusHTML = String(fd.get("stimulus_html") || "").trim();
+      const stimulusPayload = buildStimulusPayload();
+      const stimulusHTML = String(stimulusPayload.html || "").trim();
       const payload = {
+        stimulus_type: stimulusPayload.type,
+        stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
         stem_html: stemHTML.trim(),
         answer_key: answerKeyObj,
@@ -1004,6 +1291,8 @@
         version_no: editingVersionNo,
         learning_goal_id: selectedLearningGoalID,
         question_code_id: selectedQuestionCodeID,
+        stimulus_type: stimulusPayload.type,
+        stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
         stem_html: stemHTML,
         explanation_html: payload.explanation_html,
@@ -1053,8 +1342,13 @@
       if (deps.manuscriptOptionsWrap) {
         deps.manuscriptOptionsWrap.innerHTML = "";
       }
+      if (deps.manuscriptStimulusTabsWrap) {
+        deps.manuscriptStimulusTabsWrap.innerHTML = "";
+      }
       ensureOptionRows();
       ensureTFStatementRows();
+      ensureStimulusTabRows();
+      applyStimulusTypeUI();
       applyTypeUI(true);
       clearEditMode();
       setMsg(
@@ -1152,14 +1446,21 @@
     applyTypeUI(false);
   }
 
+  function onStimulusTypeChange() {
+    applyStimulusTypeUI();
+  }
+
   function onFormChangeOrInput(e) {
     const target = e.target;
     if (!target) return;
     if (
       target.name === "manuscript_mc_key" ||
       target.name === "manuscript_mr_key" ||
+      target === (deps && deps.manuscriptStimulusType) ||
       target.hasAttribute("data-option-key") ||
       target.hasAttribute("data-option-html") ||
+      target.hasAttribute("data-stimulus-tab-title") ||
+      target.hasAttribute("data-stimulus-tab-body") ||
       target.hasAttribute("data-statement-id") ||
       target.hasAttribute("data-statement-text") ||
       target.hasAttribute("data-statement-correct")
@@ -1169,6 +1470,13 @@
         target.hasAttribute("data-option-html")
       ) {
         renderKeyChoices();
+      }
+      if (
+        target === (deps && deps.manuscriptStimulusType) ||
+        target.hasAttribute("data-stimulus-tab-title") ||
+        target.hasAttribute("data-stimulus-tab-body")
+      ) {
+        syncHiddenInputs();
       }
       syncAnswerKeyPreview();
     }
@@ -1192,6 +1500,12 @@
       deps.manuscriptQuestionTypeUI.addEventListener(
         "change",
         onQuestionTypeChange,
+      );
+    }
+    if (deps.manuscriptStimulusType) {
+      deps.manuscriptStimulusType.addEventListener(
+        "change",
+        onStimulusTypeChange,
       );
     }
     if (deps.manuscriptForm) {
@@ -1229,6 +1543,101 @@
         ensureOptionRows();
         renderKeyChoices();
         syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptAddStimulusTabBtn) {
+      deps.manuscriptAddStimulusTabBtn.addEventListener("click", function () {
+        appendStimulusTabRow({});
+      });
+    }
+    if (deps.manuscriptStimulusTabsWrap) {
+      deps.manuscriptStimulusTabsWrap.addEventListener(
+        "dragstart",
+        function (e) {
+          const handle =
+            e.target && e.target.closest("[data-stimulus-tab-drag-handle]");
+          if (!handle) return;
+          const row = handle.closest("[data-stimulus-tab-row]");
+          if (!row) return;
+          manuscriptDraggingStimulusTabRow = row;
+          row.classList.add("is-dragging");
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", "stimulus-tab");
+          }
+        },
+      );
+      deps.manuscriptStimulusTabsWrap.addEventListener(
+        "dragover",
+        function (e) {
+          const targetRow =
+            e.target && e.target.closest("[data-stimulus-tab-row]");
+          if (!manuscriptDraggingStimulusTabRow || !targetRow) return;
+          e.preventDefault();
+          clearStimulusTabDropTargets();
+          if (targetRow !== manuscriptDraggingStimulusTabRow) {
+            targetRow.classList.add("is-drop-target");
+          }
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = "move";
+          }
+        },
+      );
+      deps.manuscriptStimulusTabsWrap.addEventListener("drop", function (e) {
+        const targetRow =
+          e.target && e.target.closest("[data-stimulus-tab-row]");
+        if (!manuscriptDraggingStimulusTabRow || !targetRow) return;
+        e.preventDefault();
+        clearStimulusTabDropTargets();
+        if (manuscriptDraggingStimulusTabRow === targetRow) return;
+        moveStimulusTabRowBefore(manuscriptDraggingStimulusTabRow, targetRow);
+      });
+      deps.manuscriptStimulusTabsWrap.addEventListener(
+        "dragleave",
+        function (e) {
+          const targetRow =
+            e.target && e.target.closest("[data-stimulus-tab-row]");
+          if (!targetRow) return;
+          targetRow.classList.remove("is-drop-target");
+        },
+      );
+      deps.manuscriptStimulusTabsWrap.addEventListener("dragend", function () {
+        clearStimulusTabDropTargets();
+        if (manuscriptDraggingStimulusTabRow) {
+          manuscriptDraggingStimulusTabRow.classList.remove("is-dragging");
+        }
+        manuscriptDraggingStimulusTabRow = null;
+      });
+      deps.manuscriptStimulusTabsWrap.addEventListener("click", function (e) {
+        const target = e.target;
+        const upBtn = target && target.closest("button[data-stimulus-tab-up]");
+        if (upBtn) {
+          const row = upBtn.closest("[data-stimulus-tab-row]");
+          const prev = row && row.previousElementSibling;
+          if (row && prev) {
+            deps.manuscriptStimulusTabsWrap.insertBefore(row, prev);
+            syncStimulusTabState();
+          }
+          return;
+        }
+        const downBtn =
+          target && target.closest("button[data-stimulus-tab-down]");
+        if (downBtn) {
+          const row = downBtn.closest("[data-stimulus-tab-row]");
+          const next = row && row.nextElementSibling;
+          if (row && next) {
+            deps.manuscriptStimulusTabsWrap.insertBefore(next, row);
+            syncStimulusTabState();
+          }
+          return;
+        }
+        const btn =
+          target && target.closest("button[data-stimulus-tab-remove]");
+        if (!btn) return;
+        const row = btn.closest("[data-stimulus-tab-row]");
+        if (row) row.remove();
+        ensureStimulusTabRows();
+        syncStimulusTabState();
       });
     }
     const statementButtons = [
@@ -1323,6 +1732,8 @@
         });
       }
     }
+    ensureStimulusTabRows();
+    applyStimulusTypeUI();
     syncHiddenInputs();
   }
 

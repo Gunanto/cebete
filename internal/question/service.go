@@ -84,6 +84,8 @@ type QuestionBlueprint struct {
 
 type CreateQuestionVersionInput struct {
 	QuestionID      int64
+	StimulusType    *string
+	StimulusContent json.RawMessage
 	StimulusHTML    *string
 	StemHTML        *string
 	ExplanationHTML *string
@@ -142,6 +144,8 @@ type AssignQuestionLearningGoalInput struct {
 type UpdateQuestionVersionInput struct {
 	QuestionID      int64
 	VersionNo       int
+	StimulusType    *string
+	StimulusContent json.RawMessage
 	StimulusHTML    *string
 	StemHTML        *string
 	ExplanationHTML *string
@@ -164,6 +168,8 @@ type QuestionVersion struct {
 	ID              int64                 `json:"id"`
 	QuestionID      int64                 `json:"question_id"`
 	VersionNo       int                   `json:"version_no"`
+	StimulusType    *string               `json:"stimulus_type,omitempty"`
+	StimulusContent json.RawMessage       `json:"stimulus_content,omitempty"`
 	StimulusHTML    *string               `json:"stimulus_html,omitempty"`
 	StemHTML        string                `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html,omitempty"`
@@ -200,6 +206,8 @@ type ExportQuestionData struct {
 	Objective            string
 	CognitiveLevel       string
 	Difficulty           *int
+	StimulusType         *string
+	StimulusContent      json.RawMessage
 	StimulusHTML         *string
 	StemHTML             string
 	ExplanationHTML      *string
@@ -620,7 +628,7 @@ func (s *Service) ListQuestionCodes(ctx context.Context, subjectID int64, q stri
 	if ownerID != nil && *ownerID > 0 {
 		ownerFilter = *ownerID
 	}
-	
+
 	// If no owner filter, use simple query
 	if ownerFilter <= 0 {
 		rows, err := s.db.QueryContext(ctx, `
@@ -649,7 +657,7 @@ func (s *Service) ListQuestionCodes(ctx context.Context, subjectID int64, q stri
 		}
 		return items, nil
 	}
-	
+
 	// For guru, show codes they created OR codes with questions they own
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, subject_id, code, name, is_active, created_by, created_at, updated_at
@@ -983,13 +991,14 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		return nil, err
 	}
 
-	if in.StimulusHTML != nil {
-		v := strings.TrimSpace(*in.StimulusHTML)
-		if v == "" {
-			base.StimulusHTML = nil
-		} else {
-			base.StimulusHTML = &v
+	if in.StimulusType != nil || len(bytes.TrimSpace(in.StimulusContent)) > 0 || in.StimulusHTML != nil {
+		stimType, stimContent, stimHTML, err := normalizeStimulusFields(in.StimulusType, in.StimulusContent, in.StimulusHTML)
+		if err != nil {
+			return nil, err
 		}
+		base.StimulusType = stimType
+		base.StimulusContent = stimContent
+		base.StimulusHTML = stimHTML
 	}
 	if in.StemHTML != nil {
 		v := strings.TrimSpace(*in.StemHTML)
@@ -1046,6 +1055,8 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	contentHash, err := computeQuestionContentHash(
 		questionType,
 		base.StemHTML,
+		base.StimulusType,
+		base.StimulusContent,
 		base.StimulusHTML,
 		base.ExplanationHTML,
 		base.HintHTML,
@@ -1099,17 +1110,17 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 
 	row := tx.QueryRowContext(ctx, `
 			INSERT INTO question_versions (
-				question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+				question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
 				content_hash, created_by, created_at
 			) VALUES (
-				$1, $2, $3, $4, $5, $6,
-				$7::jsonb, 'draft', FALSE, TRUE, $8, $9, $10,
-				$11, NULLIF($12, 0), now()
+				$1, $2, $3, $4::jsonb, $5, $6, $7, $8,
+				$9::jsonb, 'draft', FALSE, TRUE, $10, $11, $12,
+				$13, NULLIF($14, 0), now()
 			)
-			RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+			RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
+		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
@@ -1155,7 +1166,7 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-			SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
@@ -1194,11 +1205,11 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	}
 
 	refetch := tx.QueryRowContext(ctx, `
-			SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
-		`, questionID, versionNo)
+	`, questionID, versionNo)
 	out, err := scanQuestionVersion(refetch)
 	if err != nil {
 		return nil, fmt.Errorf("reload question version: %w", err)
@@ -1410,7 +1421,7 @@ func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64, ow
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1
@@ -1518,7 +1529,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 	}
 	var verQuery strings.Builder
 	verQuery.WriteString(`
-		SELECT version_no, stimulus_html, stem_html, explanation_html, hint_html, answer_key
+		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html, answer_key
 		FROM question_versions
 		WHERE question_id = $1
 		  AND ($2 <= 0 OR created_by = $2)
@@ -1529,11 +1540,15 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 		args = append(args, versionNo)
 	}
 	verQuery.WriteString(" ORDER BY is_active DESC, version_no DESC LIMIT 1")
+	var stimulusType sql.NullString
+	var stimulusContent []byte
 	var stimulus sql.NullString
 	var explanation sql.NullString
 	var hint sql.NullString
 	if err := s.db.QueryRowContext(ctx, verQuery.String(), args...).Scan(
 		&out.VersionNo,
+		&stimulusType,
+		&stimulusContent,
 		&stimulus,
 		&out.StemHTML,
 		&explanation,
@@ -1547,6 +1562,12 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 			return nil, ErrVersionNotFound
 		}
 		return nil, fmt.Errorf("load question version: %w", err)
+	}
+	if stimulusType.Valid {
+		out.StimulusType = &stimulusType.String
+	}
+	if len(bytes.TrimSpace(stimulusContent)) > 0 {
+		out.StimulusContent = append(json.RawMessage(nil), stimulusContent...)
 	}
 	if stimulus.Valid {
 		out.StimulusHTML = &stimulus.String
@@ -1827,7 +1848,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
@@ -1853,13 +1874,14 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 
 	next := *item
 	prevAnswerKey := append([]byte(nil), item.AnswerKey...)
-	if in.StimulusHTML != nil {
-		v := strings.TrimSpace(*in.StimulusHTML)
-		if v == "" {
-			next.StimulusHTML = nil
-		} else {
-			next.StimulusHTML = &v
+	if in.StimulusType != nil || len(bytes.TrimSpace(in.StimulusContent)) > 0 || in.StimulusHTML != nil {
+		stimType, stimContent, stimHTML, err := normalizeStimulusFields(in.StimulusType, in.StimulusContent, in.StimulusHTML)
+		if err != nil {
+			return nil, err
 		}
+		next.StimulusType = stimType
+		next.StimulusContent = stimContent
+		next.StimulusHTML = stimHTML
 	}
 	if in.StemHTML != nil {
 		v := strings.TrimSpace(*in.StemHTML)
@@ -1922,6 +1944,8 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	contentHash, err := computeQuestionContentHash(
 		questionType,
 		next.StemHTML,
+		next.StimulusType,
+		next.StimulusContent,
 		next.StimulusHTML,
 		next.ExplanationHTML,
 		next.HintHTML,
@@ -1934,19 +1958,21 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 
 	updatedRow := tx.QueryRowContext(ctx, `
 		UPDATE question_versions
-		SET stimulus_html = $3,
-			stem_html = $4,
-			explanation_html = $5,
-			hint_html = $6,
-			answer_key = $7::jsonb,
-			duration_seconds = $8,
-			weight = $9,
-			change_note = $10,
-			content_hash = $11
+		SET stimulus_type = $3,
+			stimulus_content = $4::jsonb,
+			stimulus_html = $5,
+			stem_html = $6,
+			explanation_html = $7,
+			hint_html = $8,
+			answer_key = $9::jsonb,
+			duration_seconds = $10,
+			weight = $11,
+			change_note = $12,
+			content_hash = $13
 		WHERE question_id = $1 AND version_no = $2
-		RETURNING id, question_id, version_no, stimulus_html, stem_html, explanation_html, hint_html,
+		RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
+	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusType), nullJSONBytes(next.StimulusContent), nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
 	out, err := scanQuestionVersion(updatedRow)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2538,6 +2564,8 @@ func (s *Service) ensureExamAndQuestionLinked(ctx context.Context, examID, quest
 }
 
 type baseVersionData struct {
+	StimulusType    *string
+	StimulusContent json.RawMessage
 	StimulusHTML    *string
 	StemHTML        string
 	ExplanationHTML *string
@@ -2546,6 +2574,108 @@ type baseVersionData struct {
 	DurationSeconds *int
 	Weight          float64
 	ChangeNote      *string
+}
+
+func normalizeStimulusFields(stimulusType *string, stimulusContent json.RawMessage, stimulusHTML *string) (*string, json.RawMessage, *string, error) {
+	trimmedHTML := ""
+	if stimulusHTML != nil {
+		trimmedHTML = strings.TrimSpace(*stimulusHTML)
+	}
+
+	hasStructured := stimulusType != nil || len(bytes.TrimSpace(stimulusContent)) > 0
+	if !hasStructured {
+		if trimmedHTML == "" {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, &trimmedHTML, nil
+	}
+
+	if stimulusType == nil {
+		return nil, nil, nil, fmt.Errorf("%w: stimulus_type is required when stimulus_content is set", ErrInvalidInput)
+	}
+	typ := strings.TrimSpace(strings.ToLower(*stimulusType))
+	switch typ {
+	case "single", "multiteks":
+	default:
+		return nil, nil, nil, fmt.Errorf("%w: stimulus_type must be single or multiteks", ErrInvalidInput)
+	}
+
+	content := bytes.TrimSpace(stimulusContent)
+	if len(content) == 0 {
+		return nil, nil, nil, fmt.Errorf("%w: stimulus_content is required when stimulus_type is set", ErrInvalidInput)
+	}
+
+	rendered, normalizedContent, err := buildStimulusHTMLFromContent(typ, content)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if rendered == "" {
+		return nil, nil, nil, nil
+	}
+	normalizedType := typ
+	return &normalizedType, normalizedContent, &rendered, nil
+}
+
+func buildStimulusHTMLFromContent(stimulusType string, raw json.RawMessage) (string, json.RawMessage, error) {
+	switch strings.TrimSpace(strings.ToLower(stimulusType)) {
+	case "single":
+		var payload struct {
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return "", nil, fmt.Errorf("%w: stimulus_content single must be object", ErrInvalidInput)
+		}
+		payload.Body = strings.TrimSpace(payload.Body)
+		if payload.Body == "" {
+			return "", nil, nil
+		}
+		normalized, err := json.Marshal(map[string]string{"body": payload.Body})
+		if err != nil {
+			return "", nil, fmt.Errorf("marshal stimulus content: %w", err)
+		}
+		return payload.Body, normalized, nil
+	case "multiteks":
+		var payload struct {
+			Tabs []struct {
+				Title string `json:"title"`
+				Body  string `json:"body"`
+			} `json:"tabs"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return "", nil, fmt.Errorf("%w: stimulus_content multiteks must be object", ErrInvalidInput)
+		}
+		tabs := make([]map[string]string, 0, len(payload.Tabs))
+		var b strings.Builder
+		for i, tab := range payload.Tabs {
+			title := strings.TrimSpace(tab.Title)
+			body := strings.TrimSpace(tab.Body)
+			if body == "" {
+				continue
+			}
+			tabs = append(tabs, map[string]string{
+				"title": title,
+				"body":  body,
+			})
+			if title == "" {
+				title = fmt.Sprintf("Tab %d", i+1)
+			}
+			b.WriteString(`<section class="panel mt"><h4>`)
+			b.WriteString(html.EscapeString(title))
+			b.WriteString(`</h4><div class="box mt">`)
+			b.WriteString(body)
+			b.WriteString(`</div></section>`)
+		}
+		if len(tabs) == 0 {
+			return "", nil, nil
+		}
+		normalized, err := json.Marshal(map[string]any{"tabs": tabs})
+		if err != nil {
+			return "", nil, fmt.Errorf("marshal stimulus content: %w", err)
+		}
+		return strings.TrimSpace(b.String()), normalized, nil
+	default:
+		return "", nil, fmt.Errorf("%w: stimulus_type must be single or multiteks", ErrInvalidInput)
+	}
 }
 
 type queryContextRunner interface {
@@ -2572,7 +2702,7 @@ func (s *Service) canCreateVersionTx(ctx context.Context, tx *sql.Tx, questionID
 
 func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, questionID int64, defaultStem string) (*baseVersionData, int, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT version_no, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			answer_key, duration_seconds, weight, change_note
 		FROM question_versions
 		WHERE question_id = $1
@@ -2582,6 +2712,8 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	`, questionID)
 
 	var versionNo int
+	var stimulusType sql.NullString
+	var stimulusContent []byte
 	var stimulusHTML sql.NullString
 	var stemHTML string
 	var explanation sql.NullString
@@ -2590,7 +2722,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	var duration sql.NullInt64
 	var weight float64
 	var change sql.NullString
-	if err := row.Scan(&versionNo, &stimulusHTML, &stemHTML, &explanation, &hint, &answerKey, &duration, &weight, &change); err != nil {
+	if err := row.Scan(&versionNo, &stimulusType, &stimulusContent, &stimulusHTML, &stemHTML, &explanation, &hint, &answerKey, &duration, &weight, &change); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, fmt.Errorf("load latest version: %w", err)
 		}
@@ -2605,6 +2737,14 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 		}, 1, nil
 	}
 
+	var stimulusTypePtr *string
+	if stimulusType.Valid {
+		stimulusTypePtr = &stimulusType.String
+	}
+	var stimulusContentRaw json.RawMessage
+	if len(bytes.TrimSpace(stimulusContent)) > 0 {
+		stimulusContentRaw = append(json.RawMessage(nil), stimulusContent...)
+	}
 	var stimulusHTMLPtr *string
 	if stimulusHTML.Valid {
 		stimulusHTMLPtr = &stimulusHTML.String
@@ -2634,6 +2774,8 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	}
 
 	return &baseVersionData{
+		StimulusType:    stimulusTypePtr,
+		StimulusContent: stimulusContentRaw,
 		StimulusHTML:    stimulusHTMLPtr,
 		StemHTML:        stemHTML,
 		ExplanationHTML: explanationPtr,
@@ -2838,6 +2980,8 @@ type normalizedAnswerKey struct {
 type questionContentForHash struct {
 	QuestionType    string                `json:"question_type"`
 	StemHTML        string                `json:"stem_html"`
+	StimulusType    string                `json:"stimulus_type,omitempty"`
+	StimulusContent json.RawMessage       `json:"stimulus_content,omitempty"`
 	StimulusHTML    string                `json:"stimulus_html,omitempty"`
 	ExplanationHTML string                `json:"explanation_html,omitempty"`
 	HintHTML        string                `json:"hint_html,omitempty"`
@@ -2845,7 +2989,7 @@ type questionContentForHash struct {
 	AnswerKey       normalizedAnswerKey   `json:"answer_key"`
 }
 
-func computeQuestionContentHash(questionType string, stemHTML string, stimulusHTML *string, explanationHTML *string, hintHTML *string, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
+func computeQuestionContentHash(questionType string, stemHTML string, stimulusType *string, stimulusContent json.RawMessage, stimulusHTML *string, explanationHTML *string, hintHTML *string, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
 	qType := strings.TrimSpace(strings.ToLower(questionType))
 	var obj map[string]any
 	if err := json.Unmarshal(answerKey, &obj); err != nil {
@@ -2918,6 +3062,12 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusHT
 		StemHTML:     strings.TrimSpace(stemHTML),
 		Options:      normalizedOptions,
 		AnswerKey:    normalized,
+	}
+	if stimulusType != nil {
+		payload.StimulusType = strings.TrimSpace(strings.ToLower(*stimulusType))
+	}
+	if len(bytes.TrimSpace(stimulusContent)) > 0 {
+		payload.StimulusContent = append(json.RawMessage(nil), bytes.TrimSpace(stimulusContent)...)
 	}
 	if stimulusHTML != nil {
 		payload.StimulusHTML = strings.TrimSpace(*stimulusHTML)
@@ -3023,6 +3173,8 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 		hash, err := computeQuestionContentHash(
 			questionType,
 			c.stemHTML,
+			nil,
+			nil,
 			stimPtr,
 			explPtr,
 			hintPtr,
@@ -3211,6 +3363,8 @@ func scanQuestionCode(scanner interface{ Scan(dest ...any) error }) (*QuestionCo
 
 func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*QuestionVersion, error) {
 	var out QuestionVersion
+	var stimulusType sql.NullString
+	var stimulusContent []byte
 	var stimulusHTML sql.NullString
 	var explanation sql.NullString
 	var hint sql.NullString
@@ -3221,6 +3375,8 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.ID,
 		&out.QuestionID,
 		&out.VersionNo,
+		&stimulusType,
+		&stimulusContent,
 		&stimulusHTML,
 		&out.StemHTML,
 		&explanation,
@@ -3236,6 +3392,12 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.CreatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if stimulusType.Valid {
+		out.StimulusType = &stimulusType.String
+	}
+	if len(bytes.TrimSpace(stimulusContent)) > 0 {
+		out.StimulusContent = append(json.RawMessage(nil), stimulusContent...)
 	}
 	if stimulusHTML.Valid {
 		out.StimulusHTML = &stimulusHTML.String
@@ -3285,6 +3447,13 @@ func nullStringPtr(v *string) any {
 		return nil
 	}
 	return s
+}
+
+func nullJSONBytes(v json.RawMessage) any {
+	if len(bytes.TrimSpace(v)) == 0 {
+		return nil
+	}
+	return []byte(bytes.TrimSpace(v))
 }
 
 func nullInt64Ptr(v *int64) any {
