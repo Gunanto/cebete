@@ -2127,9 +2127,9 @@ textarea:focus-visible {
 
 .matching-choice-chip {
     width: 100%;
-    border: 1px solid #bfd3ea;
+    border: 1px solid #b7d8b8;
     border-radius: 12px;
-    background: #fff;
+    background: linear-gradient(180deg, #f3fff1 0%, #e2f7dc 100%);
     padding: 10px 12px;
     text-align: left;
     cursor: grab;
@@ -2138,11 +2138,11 @@ textarea:focus-visible {
 }
 
 .matching-choice-chip.is-used {
-    background: #f8fbff;
+    background: linear-gradient(180deg, #fff7cc 0%, #ffe38a 100%);
 }
 
 .matching-choice-chip.is-assigned {
-    border-color: #8fb1da;
+    border-color: #d1a72c;
 }
 
 .matching-choice-chip:active {
