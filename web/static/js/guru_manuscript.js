@@ -614,8 +614,28 @@
     });
   }
 
+  function isMatchingQuestionTypeActive() {
+    const selectedType = String(
+      (deps &&
+        deps.manuscriptQuestionTypeUI &&
+        deps.manuscriptQuestionTypeUI.value) ||
+        currentManuscriptQuestionType ||
+        (deps && typeof deps.getCurrentManuscriptQuestionType === "function"
+          ? deps.getCurrentManuscriptQuestionType()
+          : "") ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    return selectedType === "menjodohkan_drag_drop";
+  }
+
   function renderMatchPairRows(selectedPairs) {
     if (!deps || !deps.manuscriptMatchPairsWrap) return;
+    if (!isMatchingQuestionTypeActive()) {
+      deps.manuscriptMatchPairsWrap.innerHTML = "";
+      return;
+    }
     const prompts = collectMatchItems("prompt");
     const choices = collectMatchItems("choice");
     const selectedMap = {};
@@ -2090,7 +2110,9 @@
         target.hasAttribute("data-match-html")
       ) {
         try {
-          renderMatchPairRows();
+          if (isMatchingQuestionTypeActive()) {
+            renderMatchPairRows();
+          }
         } catch (_) {
           // Ignore incomplete matching rows while user is editing.
         }
@@ -2302,7 +2324,9 @@
           "beforeend",
           createMatchContentRow("prompt", null, idx),
         );
-        renderMatchPairRows();
+        if (isMatchingQuestionTypeActive()) {
+          renderMatchPairRows();
+        }
         syncAnswerKeyPreview();
       });
     }
@@ -2317,13 +2341,17 @@
           "beforeend",
           createMatchContentRow("choice", null, idx),
         );
-        renderMatchPairRows();
+        if (isMatchingQuestionTypeActive()) {
+          renderMatchPairRows();
+        }
         syncAnswerKeyPreview();
       });
     }
     if (deps.manuscriptSyncMatchPairsBtn) {
       deps.manuscriptSyncMatchPairsBtn.addEventListener("click", function () {
-        renderMatchPairRows();
+        if (isMatchingQuestionTypeActive()) {
+          renderMatchPairRows();
+        }
         syncAnswerKeyPreview();
       });
     }
@@ -2335,7 +2363,9 @@
         const row = btn.closest('[data-match-row="prompt"]');
         if (row) row.remove();
         ensureMatchRows("prompt");
-        renderMatchPairRows();
+        if (isMatchingQuestionTypeActive()) {
+          renderMatchPairRows();
+        }
         syncAnswerKeyPreview();
       });
     }
@@ -2347,7 +2377,9 @@
         const row = btn.closest('[data-match-row="choice"]');
         if (row) row.remove();
         ensureMatchRows("choice");
-        renderMatchPairRows();
+        if (isMatchingQuestionTypeActive()) {
+          renderMatchPairRows();
+        }
         syncAnswerKeyPreview();
       });
     }
