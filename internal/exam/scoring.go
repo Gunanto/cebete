@@ -46,6 +46,8 @@ func ScoreQuestion(in ScoreInput) ScoreResult {
 		return scoreBenarSalahPernyataan(in.AnswerKey, in.AnswerPayload, weight)
 	case "menjodohkan_drag_drop":
 		return scoreMenjodohkanDragDrop(in.AnswerKey, in.AnswerPayload, weight)
+	case "short_answer":
+		return scoreShortAnswer(in.AnswerKey, in.AnswerPayload, weight)
 	default:
 		return scorePGTunggal(in.AnswerKey, in.AnswerPayload, in.CorrectKeys, weight)
 	}
@@ -191,6 +193,30 @@ func scoreMenjodohkanDragDrop(answerKeyRaw, payloadRaw []byte, weight float64) S
 	return ScoreResult{Answered: true, IsCorrect: boolPtr(false), EarnedScore: 0, Reason: "wrong", Selected: selectedPairs, Correct: correctPairs}
 }
 
+func scoreShortAnswer(answerKeyRaw, payloadRaw []byte, weight float64) ScoreResult {
+	correctAnswers, okKey := parseShortAnswerKey(answerKeyRaw)
+	if !okKey || len(correctAnswers) == 0 {
+		return ScoreResult{Reason: "malformed_answer_key"}
+	}
+
+	selected, status := parseShortAnswerPayload(payloadRaw)
+	if status == "unanswered" {
+		return ScoreResult{Answered: false, IsCorrect: nil, EarnedScore: 0, Reason: "unanswered", Correct: correctAnswers}
+	}
+	if status == "malformed" {
+		f := false
+		return ScoreResult{Answered: true, IsCorrect: &f, EarnedScore: 0, Reason: "malformed_payload", Correct: correctAnswers}
+	}
+
+	selectedNormalized := normalizeShortAnswerValue(selected)
+	for _, correct := range correctAnswers {
+		if selectedNormalized == normalizeShortAnswerValue(correct) {
+			return ScoreResult{Answered: true, IsCorrect: boolPtr(true), EarnedScore: weight, Reason: "correct", Selected: []string{selected}, Correct: correctAnswers}
+		}
+	}
+	return ScoreResult{Answered: true, IsCorrect: boolPtr(false), EarnedScore: 0, Reason: "wrong", Selected: []string{selected}, Correct: correctAnswers}
+}
+
 func parsePGTunggalKey(raw []byte) (string, bool) {
 	if len(raw) == 0 {
 		return "", false
@@ -301,6 +327,57 @@ func parseMatchingPairsKey(raw []byte) ([]string, bool) {
 	return parseMatchingPairs(v)
 }
 
+func parseShortAnswerKey(raw []byte) ([]string, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, false
+	}
+	mode := "normalized_exact"
+	if v, ok := obj["match_mode"].(string); ok {
+		mode = strings.TrimSpace(strings.ToLower(v))
+	}
+	if mode != "" && mode != "normalized_exact" {
+		return nil, false
+	}
+	v, ok := obj["accepted_answers"]
+	if !ok {
+		return nil, false
+	}
+	list := anyToStringSlice(v)
+	if len(list) == 0 {
+		return nil, false
+	}
+	out := make([]string, 0, len(list))
+	seen := map[string]struct{}{}
+	for _, item := range list {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			return nil, false
+		}
+		normalized := normalizeShortAnswerValue(item)
+		if normalized == "" {
+			return nil, false
+		}
+		if _, exists := seen[normalized]; exists {
+			return nil, false
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := normalizeShortAnswerValue(out[i])
+		right := normalizeShortAnswerValue(out[j])
+		if left == right {
+			return out[i] < out[j]
+		}
+		return left < right
+	})
+	return out, true
+}
+
 func parseSingleSelection(raw []byte) (string, string) {
 	if len(raw) == 0 {
 		return "", "unanswered"
@@ -361,6 +438,32 @@ func parseMatchingPairsPayload(raw []byte) ([]string, string) {
 		return nil, "unanswered"
 	}
 	return pairs, "answered"
+}
+
+func parseShortAnswerPayload(raw []byte) (string, string) {
+	if len(raw) == 0 {
+		return "", "unanswered"
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", "malformed"
+	}
+	v, ok := obj["text"]
+	if !ok {
+		return "", "unanswered"
+	}
+	text, ok := v.(string)
+	if !ok {
+		return "", "malformed"
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", "unanswered"
+	}
+	if len([]rune(text)) > 33 {
+		return "", "malformed"
+	}
+	return text, "answered"
 }
 
 func parseMatchingPairs(v interface{}) ([]string, bool) {
@@ -471,6 +574,14 @@ func normalizeStringSet(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func normalizeShortAnswerValue(in string) string {
+	in = strings.TrimSpace(strings.ToLower(in))
+	if in == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(in), " ")
 }
 
 func firstClean(in []string) string {

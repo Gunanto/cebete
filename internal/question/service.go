@@ -341,7 +341,7 @@ func NewService(db *sql.DB) *Service {
 func normalizeQuestionType(v string) string {
 	v = strings.TrimSpace(strings.ToLower(v))
 	switch v {
-	case "pg_tunggal", "multi_jawaban", "benar_salah_pernyataan", "menjodohkan_drag_drop":
+	case "pg_tunggal", "multi_jawaban", "benar_salah_pernyataan", "menjodohkan_drag_drop", "short_answer":
 		return v
 	default:
 		return ""
@@ -2870,6 +2870,17 @@ type matchingAnswerKey struct {
 	Pairs []matchingPair `json:"pairs"`
 }
 
+type shortAnswerQuestionContent struct {
+	Placeholder string `json:"placeholder,omitempty"`
+	InputType   string `json:"input_type,omitempty"`
+	MaxLength   int    `json:"max_length,omitempty"`
+}
+
+type shortAnswerAnswerKey struct {
+	AcceptedAnswers []string `json:"accepted_answers"`
+	MatchMode       string   `json:"match_mode,omitempty"`
+}
+
 func normalizeQuestionContent(questionType string, raw json.RawMessage) (json.RawMessage, error) {
 	qType := strings.TrimSpace(strings.ToLower(questionType))
 	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
@@ -2885,6 +2896,17 @@ func normalizeQuestionContent(questionType string, raw json.RawMessage) (json.Ra
 	var obj map[string]any
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("%w: question_content must be object", ErrInvalidInput)
+	}
+	if qType == "short_answer" {
+		content, err := parseShortAnswerQuestionContent(raw)
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := json.Marshal(content)
+		if err != nil {
+			return nil, fmt.Errorf("marshal normalized question_content: %w", err)
+		}
+		return json.RawMessage(normalized), nil
 	}
 	if qType != "menjodohkan_drag_drop" {
 		return json.RawMessage(`{}`), nil
@@ -2983,6 +3005,87 @@ func parseMatchingAnswerKey(raw json.RawMessage) (matchingAnswerKey, error) {
 		return out[i].PromptID < out[j].PromptID
 	})
 	return matchingAnswerKey{Mode: mode, Pairs: out}, nil
+}
+
+func parseShortAnswerQuestionContent(raw json.RawMessage) (shortAnswerQuestionContent, error) {
+	var payload shortAnswerQuestionContent
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return shortAnswerQuestionContent{}, fmt.Errorf("%w: question_content must be object", ErrInvalidInput)
+	}
+	payload.Placeholder = strings.TrimSpace(payload.Placeholder)
+	payload.InputType = strings.TrimSpace(strings.ToLower(payload.InputType))
+	if payload.InputType == "" {
+		payload.InputType = "textarea"
+	}
+	if payload.InputType != "text" && payload.InputType != "textarea" {
+		return shortAnswerQuestionContent{}, fmt.Errorf("%w: short_answer question_content.input_type must be 'text' or 'textarea'", ErrInvalidInput)
+	}
+	if payload.MaxLength == 0 {
+		payload.MaxLength = 33
+	}
+	if payload.MaxLength < 1 || payload.MaxLength > 33 {
+		return shortAnswerQuestionContent{}, fmt.Errorf("%w: short_answer question_content.max_length must be between 1 and 33", ErrInvalidInput)
+	}
+	return payload, nil
+}
+
+func normalizeShortAnswerTextForCompare(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(raw), " ")
+}
+
+func parseShortAnswerAnswerKey(raw json.RawMessage) (shortAnswerAnswerKey, error) {
+	var payload shortAnswerAnswerKey
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return shortAnswerAnswerKey{}, fmt.Errorf("%w: answer_key must be object", ErrInvalidInput)
+	}
+	mode := strings.TrimSpace(strings.ToLower(payload.MatchMode))
+	if mode == "" {
+		mode = "normalized_exact"
+	}
+	if mode != "normalized_exact" {
+		return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.match_mode must be 'normalized_exact'", ErrInvalidInput)
+	}
+	if len(payload.AcceptedAnswers) == 0 {
+		return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.accepted_answers (non-empty array) is required", ErrInvalidInput)
+	}
+	seenLiteral := map[string]struct{}{}
+	seenNormalized := map[string]struct{}{}
+	out := make([]string, 0, len(payload.AcceptedAnswers))
+	for i, item := range payload.AcceptedAnswers {
+		val := strings.TrimSpace(item)
+		if val == "" {
+			return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.accepted_answers[%d] must be non-empty string", ErrInvalidInput, i)
+		}
+		if _, exists := seenLiteral[val]; exists {
+			return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.accepted_answers has duplicate '%s'", ErrInvalidInput, val)
+		}
+		seenLiteral[val] = struct{}{}
+		normalized := normalizeShortAnswerTextForCompare(val)
+		if normalized == "" {
+			return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.accepted_answers[%d] must be non-empty string", ErrInvalidInput, i)
+		}
+		if _, exists := seenNormalized[normalized]; exists {
+			return shortAnswerAnswerKey{}, fmt.Errorf("%w: short_answer answer_key.accepted_answers has duplicate after normalization '%s'", ErrInvalidInput, val)
+		}
+		seenNormalized[normalized] = struct{}{}
+		out = append(out, val)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := normalizeShortAnswerTextForCompare(out[i])
+		right := normalizeShortAnswerTextForCompare(out[j])
+		if left == right {
+			return out[i] < out[j]
+		}
+		return left < right
+	})
+	return shortAnswerAnswerKey{
+		AcceptedAnswers: out,
+		MatchMode:       mode,
+	}, nil
 }
 
 func validateMatchingReferences(contentRaw, answerKeyRaw json.RawMessage) error {
@@ -3089,6 +3192,11 @@ func validateAnswerKey(questionType string, raw json.RawMessage) error {
 		if err != nil {
 			return err
 		}
+	case "short_answer":
+		_, err := parseShortAnswerAnswerKey(raw)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: unsupported question_type '%s'", ErrInvalidInput, questionType)
 	}
@@ -3123,7 +3231,7 @@ func parseCorrectKeysForOptions(questionType string, raw json.RawMessage) (map[s
 			}
 			keys[v] = true
 		}
-	case "menjodohkan_drag_drop":
+	case "menjodohkan_drag_drop", "short_answer":
 		return nil, nil
 	}
 	return keys, nil
@@ -3131,7 +3239,7 @@ func parseCorrectKeysForOptions(questionType string, raw json.RawMessage) (map[s
 
 func normalizeAndValidateOptions(questionType string, options []QuestionOptionInput, answerKey json.RawMessage) ([]QuestionOptionInput, map[string]bool, error) {
 	qType := strings.TrimSpace(strings.ToLower(questionType))
-	if qType == "benar_salah_pernyataan" || qType == "menjodohkan_drag_drop" {
+	if qType == "benar_salah_pernyataan" || qType == "menjodohkan_drag_drop" || qType == "short_answer" {
 		return nil, nil, nil
 	}
 	if len(options) == 0 {
@@ -3187,6 +3295,7 @@ type normalizedAnswerKey struct {
 	Mode       string                `json:"mode,omitempty"`
 	Statements []normalizedStatement `json:"statements,omitempty"`
 	Pairs      []matchingPair        `json:"pairs,omitempty"`
+	Accepted   []string              `json:"accepted,omitempty"`
 }
 
 type normalizedMatchingContent struct {
@@ -3195,17 +3304,24 @@ type normalizedMatchingContent struct {
 	NoteHTML string                `json:"note_html,omitempty"`
 }
 
+type normalizedShortAnswerContent struct {
+	Placeholder string `json:"placeholder,omitempty"`
+	InputType   string `json:"input_type,omitempty"`
+	MaxLength   int    `json:"max_length,omitempty"`
+}
+
 type questionContentForHash struct {
-	QuestionType    string                    `json:"question_type"`
-	StemHTML        string                    `json:"stem_html"`
-	StimulusType    string                    `json:"stimulus_type,omitempty"`
-	StimulusContent json.RawMessage           `json:"stimulus_content,omitempty"`
-	StimulusHTML    string                    `json:"stimulus_html,omitempty"`
-	ExplanationHTML string                    `json:"explanation_html,omitempty"`
-	HintHTML        string                    `json:"hint_html,omitempty"`
-	QuestionContent normalizedMatchingContent `json:"question_content,omitempty"`
-	Options         []QuestionOptionInput     `json:"options,omitempty"`
-	AnswerKey       normalizedAnswerKey       `json:"answer_key"`
+	QuestionType       string                       `json:"question_type"`
+	StemHTML           string                       `json:"stem_html"`
+	StimulusType       string                       `json:"stimulus_type,omitempty"`
+	StimulusContent    json.RawMessage              `json:"stimulus_content,omitempty"`
+	StimulusHTML       string                       `json:"stimulus_html,omitempty"`
+	ExplanationHTML    string                       `json:"explanation_html,omitempty"`
+	HintHTML           string                       `json:"hint_html,omitempty"`
+	QuestionContent    normalizedMatchingContent    `json:"question_content,omitempty"`
+	ShortAnswerContent normalizedShortAnswerContent `json:"short_answer_content,omitempty"`
+	Options            []QuestionOptionInput        `json:"options,omitempty"`
+	AnswerKey          normalizedAnswerKey          `json:"answer_key"`
 }
 
 func computeQuestionContentHash(questionType string, stemHTML string, stimulusType *string, stimulusContent json.RawMessage, stimulusHTML *string, explanationHTML *string, hintHTML *string, questionContent json.RawMessage, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
@@ -3280,6 +3396,13 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusTy
 			Choices:  content.Choices,
 			NoteHTML: content.NoteHTML,
 		}
+	case "short_answer":
+		key, err := parseShortAnswerAnswerKey(answerKey)
+		if err != nil {
+			return "", err
+		}
+		normalized.Mode = key.MatchMode
+		normalized.Accepted = key.AcceptedAnswers
 	}
 
 	normalizedOptions := make([]QuestionOptionInput, 0, len(options))
@@ -3294,11 +3417,29 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusTy
 	})
 
 	payload := questionContentForHash{
-		QuestionType:    qType,
-		StemHTML:        strings.TrimSpace(stemHTML),
-		QuestionContent: normalizedContent,
-		Options:         normalizedOptions,
-		AnswerKey:       normalized,
+		QuestionType: qType,
+		StemHTML:     strings.TrimSpace(stemHTML),
+		Options:      normalizedOptions,
+		AnswerKey:    normalized,
+	}
+	if qType == "menjodohkan_drag_drop" {
+		payload.QuestionContent = normalizedContent
+	}
+	if qType == "short_answer" {
+		contentRaw := bytes.TrimSpace(questionContent)
+		content := shortAnswerQuestionContent{InputType: "textarea", MaxLength: 33}
+		if len(contentRaw) > 0 && string(contentRaw) != "{}" && string(contentRaw) != "null" {
+			parsed, err := parseShortAnswerQuestionContent(questionContent)
+			if err != nil {
+				return "", err
+			}
+			content = parsed
+		}
+		payload.ShortAnswerContent = normalizedShortAnswerContent{
+			Placeholder: content.Placeholder,
+			InputType:   content.InputType,
+			MaxLength:   content.MaxLength,
+		}
 	}
 	if stimulusType != nil {
 		payload.StimulusType = strings.TrimSpace(strings.ToLower(*stimulusType))
@@ -3371,7 +3512,7 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 
 	for _, c := range candidates {
 		opts := []QuestionOptionInput{}
-		if strings.TrimSpace(strings.ToLower(questionType)) != "benar_salah_pernyataan" && strings.TrimSpace(strings.ToLower(questionType)) != "menjodohkan_drag_drop" {
+		if strings.TrimSpace(strings.ToLower(questionType)) != "benar_salah_pernyataan" && strings.TrimSpace(strings.ToLower(questionType)) != "menjodohkan_drag_drop" && strings.TrimSpace(strings.ToLower(questionType)) != "short_answer" {
 			optRows, err := tx.QueryContext(ctx, `
 				SELECT option_key, option_html
 				FROM question_options

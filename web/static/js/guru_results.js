@@ -106,6 +106,9 @@
     ) {
       return "TF";
     }
+    if (key === "shortanswer" || key === "isiansingkat" || key === "sa") {
+      return "SA";
+    }
     return "-";
   }
 

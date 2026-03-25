@@ -44,3 +44,31 @@ func TestValidateAnswerPayload_NonMatchingPassThrough(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 }
+
+func TestValidateShortAnswerPayload(t *testing.T) {
+	questionContent := json.RawMessage(`{"max_length":33}`)
+
+	tests := []struct {
+		name    string
+		payload string
+		wantErr bool
+	}{
+		{name: "empty object allowed", payload: `{}`, wantErr: false},
+		{name: "empty text allowed", payload: `{"text":""}`, wantErr: false},
+		{name: "valid text", payload: `{"text":"Jakarta"}`, wantErr: false},
+		{name: "non string text", payload: `{"text":123}`, wantErr: true},
+		{name: "too long", payload: `{"text":"1234567890123456789012345678901234"}`, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateAnswerPayload("short_answer", questionContent, json.RawMessage(tc.payload))
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+		})
+	}
+}

@@ -3376,6 +3376,8 @@ func validateAnswerPayload(questionType string, questionContent, payload json.Ra
 	switch qType {
 	case "menjodohkan_drag_drop":
 		return validateMatchingAnswerPayload(questionContent, payload)
+	case "short_answer":
+		return validateShortAnswerPayload(questionContent, payload)
 	default:
 		return nil
 	}
@@ -3456,6 +3458,37 @@ func validateMatchingAnswerPayload(questionContent, payload json.RawMessage) err
 		}
 		seenPrompt[promptID] = struct{}{}
 		seenChoice[choiceID] = struct{}{}
+	}
+	return nil
+}
+
+func validateShortAnswerPayload(questionContent, payload json.RawMessage) error {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return ErrInvalidInput
+	}
+	rawText, exists := obj["text"]
+	if !exists || rawText == nil {
+		return nil
+	}
+	text, ok := rawText.(string)
+	if !ok {
+		return ErrInvalidInput
+	}
+	maxLength := 33
+	if len(questionContent) > 0 {
+		var content struct {
+			MaxLength int `json:"max_length"`
+		}
+		if err := json.Unmarshal(questionContent, &content); err != nil {
+			return ErrInvalidInput
+		}
+		if content.MaxLength > 0 && content.MaxLength < maxLength {
+			maxLength = content.MaxLength
+		}
+	}
+	if len([]rune(text)) > maxLength {
+		return ErrInvalidInput
 	}
 	return nil
 }
@@ -5563,6 +5596,9 @@ func formatAnswerForResultsMatrix(questionType string, payload []byte) string {
 		}
 		sort.Strings(pairs)
 		return strings.Join(pairs, "|")
+	case "short_answer":
+		text, _ := obj["text"].(string)
+		return strings.TrimSpace(text)
 	default:
 		return ""
 	}
@@ -5642,6 +5678,24 @@ func formatAnswerKeyForResultsMatrix(questionType string, payload []byte) string
 		}
 		sort.Strings(pairs)
 		return strings.Join(pairs, "|")
+	case "short_answer":
+		var obj struct {
+			AcceptedAnswers []string `json:"accepted_answers"`
+		}
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return ""
+		}
+		if len(obj.AcceptedAnswers) == 0 {
+			return ""
+		}
+		vals := make([]string, 0, len(obj.AcceptedAnswers))
+		for _, answer := range obj.AcceptedAnswers {
+			answer = strings.TrimSpace(answer)
+			if answer != "" {
+				vals = append(vals, answer)
+			}
+		}
+		return strings.Join(vals, " | ")
 	default:
 		return ""
 	}

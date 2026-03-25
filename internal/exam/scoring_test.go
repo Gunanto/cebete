@@ -238,6 +238,112 @@ func TestScoreQuestion_MenjodohkanDragDrop(t *testing.T) {
 	}
 }
 
+func TestScoreQuestion_ShortAnswer(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		payload   string
+		weight    float64
+		reason    string
+		answered  bool
+		earned    float64
+		isCorrect *bool
+	}{
+		{
+			name:      "exact correct after normalization",
+			key:       `{"accepted_answers":["Jakarta","DKI Jakarta"],"match_mode":"normalized_exact"}`,
+			payload:   `{"text":"  jakarta  "}`,
+			weight:    2,
+			reason:    "correct",
+			answered:  true,
+			earned:    2,
+			isCorrect: boolPtr(true),
+		},
+		{
+			name:      "multi space normalization",
+			key:       `{"accepted_answers":["DKI Jakarta"]}`,
+			payload:   `{"text":"DKI   Jakarta"}`,
+			weight:    2,
+			reason:    "correct",
+			answered:  true,
+			earned:    2,
+			isCorrect: boolPtr(true),
+		},
+		{
+			name:      "punctuation stays different",
+			key:       `{"accepted_answers":["Jakarta"]}`,
+			payload:   `{"text":"Jakarta."}`,
+			weight:    2,
+			reason:    "wrong",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "numeric format stays different",
+			key:       `{"accepted_answers":["3,14"]}`,
+			payload:   `{"text":"3.14"}`,
+			weight:    2,
+			reason:    "wrong",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "unanswered empty text",
+			key:       `{"accepted_answers":["Jakarta"]}`,
+			payload:   `{"text":"   "}`,
+			weight:    1,
+			reason:    "unanswered",
+			answered:  false,
+			earned:    0,
+			isCorrect: nil,
+		},
+		{
+			name:      "malformed payload non string",
+			key:       `{"accepted_answers":["Jakarta"]}`,
+			payload:   `{"text":123}`,
+			weight:    1,
+			reason:    "malformed_payload",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "malformed payload too long",
+			key:       `{"accepted_answers":["Jakarta"]}`,
+			payload:   `{"text":"1234567890123456789012345678901234"}`,
+			weight:    1,
+			reason:    "malformed_payload",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "malformed answer key",
+			key:       `{"accepted_answers":[]}`,
+			payload:   `{"text":"Jakarta"}`,
+			weight:    1,
+			reason:    "malformed_answer_key",
+			answered:  false,
+			earned:    0,
+			isCorrect: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ScoreQuestion(ScoreInput{
+				QuestionType:  "short_answer",
+				AnswerKey:     []byte(tc.key),
+				AnswerPayload: []byte(tc.payload),
+				Weight:        tc.weight,
+			})
+			assertScoreResult(t, got, tc.reason, tc.answered, tc.earned, tc.isCorrect)
+		})
+	}
+}
+
 func assertScoreResult(t *testing.T, got ScoreResult, reason string, answered bool, earned float64, isCorrect *bool) {
 	t.Helper()
 	if got.Reason != reason {

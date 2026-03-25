@@ -910,6 +910,9 @@
                             <option value="menjodohkan_drag_drop">
                                 MATCH (Menjodohkan Drag-Drop)
                             </option>
+                            <option value="short_answer">
+                                SA (Short Answer = Isian Singkat)
+                            </option>
                         </select>
                     </label>
                     <section class="panel stimulus-editor-wrap">
@@ -1099,6 +1102,61 @@
                                     id="guru-manuscript-match-pairs"
                                     class="mt"
                                 ></div>
+                            </section>
+                        </div>
+                        <div
+                            id="guru-manuscript-key-short-answer"
+                            class="mt"
+                            hidden
+                        >
+                            <section class="panel mt">
+                                <h4>Pengaturan Short Answer</h4>
+                                <label>
+                                    Jawaban Benar yang Diterima
+                                    <textarea
+                                        id="guru-manuscript-short-answer-accepted"
+                                        rows="5"
+                                        placeholder="Satu jawaban per baris&#10;Jakarta&#10;DKI Jakarta"
+                                    ></textarea>
+                                </label>
+                                <label class="mt">
+                                    Placeholder Input Peserta
+                                    <input
+                                        id="guru-manuscript-short-answer-placeholder"
+                                        type="text"
+                                        maxlength="100"
+                                        placeholder="Ketik jawaban singkat"
+                                    />
+                                </label>
+                                <label class="mt">
+                                    Bentuk Input
+                                    <select
+                                        id="guru-manuscript-short-answer-input-type"
+                                    >
+                                        <option value="textarea">
+                                            Textarea
+                                        </option>
+                                        <option value="text">Text</option>
+                                    </select>
+                                </label>
+                                <label class="mt">
+                                    Maksimal Karakter
+                                    <input
+                                        id="guru-manuscript-short-answer-max-length"
+                                        type="number"
+                                        min="1"
+                                        max="33"
+                                        value="33"
+                                        readonly
+                                    />
+                                </label>
+                                <p class="muted mt">
+                                    Penilaian otomatis memakai
+                                    <code>normalized_exact</code>, maksimal 33
+                                    karakter, case-insensitive, trim spasi
+                                    awal/akhir, dan multi-spasi diringkas
+                                    menjadi satu.
+                                </p>
                             </section>
                         </div>
                     </section>

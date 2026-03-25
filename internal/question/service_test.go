@@ -23,6 +23,12 @@ func TestValidateAnswerKey(t *testing.T) {
 		{name: "bs invalid empty", questionType: "benar_salah_pernyataan", answerKey: `{"statements":[]}`, wantErr: true},
 		{name: "matching valid", questionType: "menjodohkan_drag_drop", answerKey: `{"mode":"exact","pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`, wantErr: false},
 		{name: "matching invalid duplicate prompt", questionType: "menjodohkan_drag_drop", answerKey: `{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P1","choice_id":"C1"}]}`, wantErr: true},
+		{name: "short answer valid", questionType: "short_answer", answerKey: `{"accepted_answers":["Jakarta","DKI Jakarta"],"match_mode":"normalized_exact"}`, wantErr: false},
+		{name: "short answer valid without mode", questionType: "short_answer", answerKey: `{"accepted_answers":["Jakarta"]}`, wantErr: false},
+		{name: "short answer invalid empty list", questionType: "short_answer", answerKey: `{"accepted_answers":[]}`, wantErr: true},
+		{name: "short answer invalid blank item", questionType: "short_answer", answerKey: `{"accepted_answers":["Jakarta","  "]}`, wantErr: true},
+		{name: "short answer invalid duplicate normalized", questionType: "short_answer", answerKey: `{"accepted_answers":["DKI Jakarta","dki   jakarta"]}`, wantErr: true},
+		{name: "short answer invalid mode", questionType: "short_answer", answerKey: `{"accepted_answers":["Jakarta"],"match_mode":"exact"}`, wantErr: true},
 		{name: "unsupported type", questionType: "isian", answerKey: `{"correct":"x"}`, wantErr: true},
 		{name: "invalid json", questionType: "pg_tunggal", answerKey: `{"correct":`, wantErr: true},
 	}
@@ -106,6 +112,22 @@ func TestNormalizeAndValidateOptions(t *testing.T) {
 			t.Fatalf("expected nil output for matching, got out=%v correct=%v", out, correct)
 		}
 	})
+
+	t.Run("short answer ignore options", func(t *testing.T) {
+		out, correct, err := normalizeAndValidateOptions(
+			"short_answer",
+			[]QuestionOptionInput{
+				{OptionKey: "A", OptionHTML: "<p>A</p>"},
+			},
+			json.RawMessage(`{"accepted_answers":["Jakarta"]}`),
+		)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if out != nil || correct != nil {
+			t.Fatalf("expected nil output for short answer, got out=%v correct=%v", out, correct)
+		}
+	})
 }
 
 func TestNormalizeQuestionContentAndMatchingReferences(t *testing.T) {
@@ -123,5 +145,26 @@ func TestNormalizeQuestionContentAndMatchingReferences(t *testing.T) {
 	}
 	if err := validateMatchingReferences(normalized, json.RawMessage(`{"pairs":[{"prompt_id":"P9","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`)); err == nil {
 		t.Fatalf("expected invalid references error")
+	}
+}
+
+func TestNormalizeShortAnswerQuestionContent(t *testing.T) {
+	raw := json.RawMessage(`{"placeholder":"  Ketik jawaban  ","input_type":"TEXTAREA","max_length":33}`)
+	normalized, err := normalizeQuestionContent("short_answer", raw)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(normalized, &out); err != nil {
+		t.Fatalf("unmarshal normalized content: %v", err)
+	}
+	if got := out["placeholder"]; got != "Ketik jawaban" {
+		t.Fatalf("expected trimmed placeholder, got %v", got)
+	}
+	if got := out["input_type"]; got != "textarea" {
+		t.Fatalf("expected textarea input_type, got %v", got)
+	}
+	if got := out["max_length"]; got != float64(33) {
+		t.Fatalf("expected max_length 33, got %v", got)
 	}
 }

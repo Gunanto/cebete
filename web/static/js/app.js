@@ -158,6 +158,7 @@
     if (v === "multi_jawaban") return "MR";
     if (v === "benar_salah_pernyataan") return "TF";
     if (v === "menjodohkan_drag_drop") return "MATCH";
+    if (v === "short_answer") return "SA";
     return "-";
   }
 
@@ -1895,6 +1896,9 @@
         });
         return answered.size === expected.size;
       }
+      if (qType === "short_answer") {
+        return typeof payload.text === "string" && payload.text.trim() !== "";
+      }
       if (qType === "pg_tunggal") {
         return (
           typeof payload.selected === "string" && payload.selected.trim() !== ""
@@ -1919,6 +1923,7 @@
       if (v === "multi_jawaban") return "Pilihan Ganda Multi Jawaban";
       if (v === "benar_salah_pernyataan") return "Benar/Salah Pernyataan";
       if (v === "menjodohkan_drag_drop") return "Menjodohkan Drag-Drop";
+      if (v === "short_answer") return "Short Answer";
       return v || "-";
     }
 
@@ -2262,6 +2267,52 @@
         );
         return;
       }
+      if (qType === "short_answer") {
+        const content = readShortAnswerContent(q);
+        const value =
+          typeof payload.text === "string" ? String(payload.text) : "";
+        const maxLength = Math.min(
+          33,
+          Math.max(1, Number(content.max_length) || 33),
+        );
+        const placeholder = content.placeholder || "Ketik jawaban singkat";
+        const helperText =
+          "Jawaban singkat. Maksimal " + String(maxLength) + " karakter.";
+        if (content.input_type === "text") {
+          html(
+            optionsBox,
+            '<label class="short-answer-wrap">' +
+              '<div class="muted">' +
+              escapeHtml(helperText) +
+              "</div>" +
+              '<input type="text" id="short-answer-input" maxlength="' +
+              escapeHtml(String(maxLength)) +
+              '" placeholder="' +
+              escapeHtml(placeholder) +
+              '" value="' +
+              escapeHtml(value) +
+              '" class="mt" />' +
+              "</label>",
+          );
+        } else {
+          html(
+            optionsBox,
+            '<label class="short-answer-wrap">' +
+              '<div class="muted">' +
+              escapeHtml(helperText) +
+              "</div>" +
+              '<textarea id="short-answer-input" rows="3" maxlength="' +
+              escapeHtml(String(maxLength)) +
+              '" placeholder="' +
+              escapeHtml(placeholder) +
+              '" class="mt">' +
+              escapeHtml(value) +
+              "</textarea>" +
+              "</label>",
+          );
+        }
+        return;
+      }
 
       const multiple = qType === "multi_jawaban";
       const inputType = multiple ? "checkbox" : "radio";
@@ -2317,6 +2368,17 @@
         choices:
           content && Array.isArray(content.choices) ? content.choices : [],
         note_html: String((content && content.note_html) || "").trim(),
+      };
+    }
+
+    function readShortAnswerContent(q) {
+      const content = parseJSONLoose(q && q.question_content, {});
+      return {
+        placeholder: String((content && content.placeholder) || "").trim(),
+        input_type: String((content && content.input_type) || "textarea")
+          .trim()
+          .toLowerCase(),
+        max_length: Number((content && content.max_length) || 33) || 33,
       };
     }
 
@@ -2746,6 +2808,12 @@
           })
           .filter(Boolean);
         return { pairs: pairs };
+      }
+      if (qType === "short_answer") {
+        const input = optionsBox.querySelector("#short-answer-input");
+        return {
+          text: String((input && input.value) || ""),
+        };
       }
 
       const selectedNodes = optionsBox.querySelectorAll(
@@ -5942,6 +6010,9 @@
     const manuscriptKeyMatch = document.getElementById(
       "guru-manuscript-key-match",
     );
+    const manuscriptKeyShortAnswer = document.getElementById(
+      "guru-manuscript-key-short-answer",
+    );
     const manuscriptStatementsWrap = document.getElementById(
       "guru-manuscript-statements",
     );
@@ -5971,6 +6042,18 @@
     );
     const manuscriptMatchNoteHTML = document.getElementById(
       "guru-manuscript-match-note-html",
+    );
+    const manuscriptShortAnswerAccepted = document.getElementById(
+      "guru-manuscript-short-answer-accepted",
+    );
+    const manuscriptShortAnswerPlaceholder = document.getElementById(
+      "guru-manuscript-short-answer-placeholder",
+    );
+    const manuscriptShortAnswerInputType = document.getElementById(
+      "guru-manuscript-short-answer-input-type",
+    );
+    const manuscriptShortAnswerMaxLength = document.getElementById(
+      "guru-manuscript-short-answer-max-length",
     );
     const manuscriptAnswerKeyRaw = document.getElementById(
       "guru-manuscript-answer-key-raw",
@@ -7449,6 +7532,7 @@
       if (t === "multi_jawaban") return "MR";
       if (t === "benar_salah_pernyataan") return "TF";
       if (t === "menjodohkan_drag_drop") return "MATCH";
+      if (t === "short_answer") return "SA";
       return t ? t.toUpperCase() : "-";
     }
 
@@ -7681,6 +7765,7 @@
         manuscriptKeyMROptions: manuscriptKeyMROptions,
         manuscriptKeyTF: manuscriptKeyTF,
         manuscriptKeyMatch: manuscriptKeyMatch,
+        manuscriptKeyShortAnswer: manuscriptKeyShortAnswer,
         manuscriptStatementsWrap: manuscriptStatementsWrap,
         manuscriptAddStatementBtn: manuscriptAddStatementBtn,
         manuscriptAddStatementBtnBottom: manuscriptAddStatementBtnBottom,
@@ -7691,6 +7776,10 @@
         manuscriptAddMatchChoiceBtn: manuscriptAddMatchChoiceBtn,
         manuscriptSyncMatchPairsBtn: manuscriptSyncMatchPairsBtn,
         manuscriptMatchNoteHTML: manuscriptMatchNoteHTML,
+        manuscriptShortAnswerAccepted: manuscriptShortAnswerAccepted,
+        manuscriptShortAnswerPlaceholder: manuscriptShortAnswerPlaceholder,
+        manuscriptShortAnswerInputType: manuscriptShortAnswerInputType,
+        manuscriptShortAnswerMaxLength: manuscriptShortAnswerMaxLength,
         manuscriptAnswerKeyRaw: manuscriptAnswerKeyRaw,
         manuscriptEditingVersionNoInput: manuscriptEditingVersionNoInput,
         manuscriptSubmitBtn: manuscriptSubmitBtn,

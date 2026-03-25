@@ -79,6 +79,18 @@
     if (deps && deps.manuscriptStimulusTabsWrap) {
       deps.manuscriptStimulusTabsWrap.innerHTML = "";
     }
+    if (deps && deps.manuscriptShortAnswerAccepted) {
+      deps.manuscriptShortAnswerAccepted.value = "";
+    }
+    if (deps && deps.manuscriptShortAnswerPlaceholder) {
+      deps.manuscriptShortAnswerPlaceholder.value = "";
+    }
+    if (deps && deps.manuscriptShortAnswerInputType) {
+      deps.manuscriptShortAnswerInputType.value = "textarea";
+    }
+    if (deps && deps.manuscriptShortAnswerMaxLength) {
+      deps.manuscriptShortAnswerMaxLength.value = "33";
+    }
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
@@ -782,7 +794,53 @@
       }
       return { mode: "exact", pairs: pairs };
     }
+    if (qType === "short_answer") {
+      const acceptedRaw = String(
+        (deps &&
+          deps.manuscriptShortAnswerAccepted &&
+          deps.manuscriptShortAnswerAccepted.value) ||
+          "",
+      );
+      const acceptedAnswers = acceptedRaw
+        .split(/\r?\n/)
+        .map(function (it) {
+          return String(it || "").trim();
+        })
+        .filter(Boolean);
+      if (!acceptedAnswers.length) {
+        throw new Error("Minimal 1 jawaban benar wajib diisi.");
+      }
+      return {
+        accepted_answers: acceptedAnswers,
+        match_mode: "normalized_exact",
+      };
+    }
     throw new Error("Tipe soal belum valid.");
+  }
+
+  function collectShortAnswerQuestionContent() {
+    return {
+      placeholder: String(
+        (deps &&
+          deps.manuscriptShortAnswerPlaceholder &&
+          deps.manuscriptShortAnswerPlaceholder.value) ||
+          "",
+      ).trim(),
+      input_type: String(
+        (deps &&
+          deps.manuscriptShortAnswerInputType &&
+          deps.manuscriptShortAnswerInputType.value) ||
+          "textarea",
+      )
+        .trim()
+        .toLowerCase(),
+      max_length: Number(
+        (deps &&
+          deps.manuscriptShortAnswerMaxLength &&
+          deps.manuscriptShortAnswerMaxLength.value) ||
+          33,
+      ),
+    };
   }
 
   function syncAnswerKeyPreview() {
@@ -834,6 +892,10 @@
       deps.manuscriptKeyMatch.hidden =
         currentManuscriptQuestionType !== "menjodohkan_drag_drop";
     }
+    if (deps.manuscriptKeyShortAnswer) {
+      deps.manuscriptKeyShortAnswer.hidden =
+        currentManuscriptQuestionType !== "short_answer";
+    }
     if (currentManuscriptQuestionType === "benar_salah_pernyataan") {
       ensureTFStatementRows();
     } else if (currentManuscriptQuestionType === "menjodohkan_drag_drop") {
@@ -844,6 +906,8 @@
       } catch (_) {
         // Ignore incomplete matching builder state while form is initializing.
       }
+    } else if (currentManuscriptQuestionType === "short_answer") {
+      // Short answer uses dedicated panel.
     } else {
       ensureOptionRows();
       renderKeyChoices();
@@ -951,12 +1015,36 @@
           return a.prompt_id.localeCompare(b.prompt_id);
         });
     }
+    if (Array.isArray(out.accepted_answers)) {
+      out.accepted_answers = out.accepted_answers
+        .map(function (it) {
+          return String(it || "").trim();
+        })
+        .filter(Boolean)
+        .sort(function (a, b) {
+          return a.localeCompare(b, undefined, { sensitivity: "base" });
+        });
+    }
     return out;
   }
 
   function normalizeQuestionContentForCompare(questionContentObj) {
     if (!questionContentObj || typeof questionContentObj !== "object")
       return {};
+    if (
+      currentManuscriptQuestionType === "short_answer" ||
+      Object.prototype.hasOwnProperty.call(questionContentObj, "input_type") ||
+      Object.prototype.hasOwnProperty.call(questionContentObj, "max_length") ||
+      Object.prototype.hasOwnProperty.call(questionContentObj, "placeholder")
+    ) {
+      return {
+        placeholder: String(questionContentObj.placeholder || "").trim(),
+        input_type: String(questionContentObj.input_type || "textarea")
+          .trim()
+          .toLowerCase(),
+        max_length: Number(questionContentObj.max_length || 33),
+      };
+    }
     function normalizeItems(items) {
       return (Array.isArray(items) ? items : [])
         .map(function (it) {
@@ -1157,6 +1245,14 @@
       );
     } else if (qType === "menjodohkan_drag_drop") {
       renderMatchPairRows(Array.isArray(key.pairs) ? key.pairs : []);
+    } else if (qType === "short_answer") {
+      if (deps && deps.manuscriptShortAnswerAccepted) {
+        deps.manuscriptShortAnswerAccepted.value = Array.isArray(
+          key.accepted_answers,
+        )
+          ? key.accepted_answers.join("\n")
+          : "";
+      }
     }
     syncAnswerKeyPreview();
   }
@@ -1255,19 +1351,35 @@
     syncHiddenInputs();
 
     const keyObj = parseAnswerKeyObject(item.answer_key);
+    const contentObj =
+      item && item.question_content && typeof item.question_content === "object"
+        ? item.question_content
+        : {};
     if (currentManuscriptQuestionType === "benar_salah_pernyataan") {
       renderTFStatementsFromData(keyObj.statements);
     } else if (currentManuscriptQuestionType === "menjodohkan_drag_drop") {
-      const contentObj =
-        item &&
-        item.question_content &&
-        typeof item.question_content === "object"
-          ? item.question_content
-          : {};
       renderMatchRowsFromData("prompt", contentObj.prompts);
       renderMatchRowsFromData("choice", contentObj.choices);
       if (deps && deps.manuscriptMatchNoteHTML) {
         deps.manuscriptMatchNoteHTML.value = String(contentObj.note_html || "");
+      }
+    } else if (currentManuscriptQuestionType === "short_answer") {
+      if (deps && deps.manuscriptShortAnswerPlaceholder) {
+        deps.manuscriptShortAnswerPlaceholder.value = String(
+          contentObj.placeholder || "",
+        );
+      }
+      if (deps && deps.manuscriptShortAnswerInputType) {
+        deps.manuscriptShortAnswerInputType.value = String(
+          contentObj.input_type || "textarea",
+        )
+          .trim()
+          .toLowerCase();
+      }
+      if (deps && deps.manuscriptShortAnswerMaxLength) {
+        deps.manuscriptShortAnswerMaxLength.value = String(
+          Number(contentObj.max_length || 33) || 33,
+        );
       }
     } else {
       renderOptionsFromData(item.options);
@@ -1306,6 +1418,9 @@
       }
       if (Array.isArray(keyObj && keyObj.pairs)) {
         return "menjodohkan_drag_drop";
+      }
+      if (Array.isArray(keyObj && keyObj.accepted_answers)) {
+        return "short_answer";
       }
       return "";
     })();
@@ -1399,6 +1514,17 @@
           String(questionContent.note_html) +
           "</div></div>"
         : "");
+    const shortAnswerContentHTML =
+      '<div class="box">' +
+      "<div><strong>Placeholder:</strong> " +
+      deps.escapeHtml(String(questionContent.placeholder || "-")) +
+      '</div><div class="mt"><strong>Input:</strong> ' +
+      deps.escapeHtml(
+        String(questionContent.input_type || "textarea").toLowerCase(),
+      ) +
+      '</div><div class="mt"><strong>Maksimal Karakter:</strong> ' +
+      deps.escapeHtml(String(questionContent.max_length || 33)) +
+      "</div></div>";
     const correctKeysFromOptions = options
       .filter(function (it) {
         return it && it.is_correct === true;
@@ -1471,6 +1597,18 @@
               "</ol>"
           : '<div class="muted">Kunci jawaban belum diisi.</div>';
       }
+      if (questionType === "short_answer") {
+        return Array.isArray(keyObj.accepted_answers) &&
+          keyObj.accepted_answers.length
+          ? "<ol>" +
+              keyObj.accepted_answers
+                .map(function (it) {
+                  return "<li>" + deps.escapeHtml(String(it || "")) + "</li>";
+                })
+                .join("") +
+              "</ol>"
+          : '<div class="muted">Kunci jawaban belum diisi.</div>';
+      }
       if (correctKeysFromOptions.length) {
         return (
           '<div class="answer-key-value">' +
@@ -1483,9 +1621,11 @@
     const optionSectionHTML =
       questionType === "menjodohkan_drag_drop"
         ? matchingHTML
-        : statements.length
-          ? statementsHTML
-          : optionsHTML;
+        : questionType === "short_answer"
+          ? shortAnswerContentHTML
+          : statements.length
+            ? statementsHTML
+            : optionsHTML;
     if (deps.manuscriptPreviewTitle) {
       deps.text(
         deps.manuscriptPreviewTitle,
@@ -1587,6 +1727,8 @@
       optionsPayload = validateOptions(collectOptions());
       if (selectedType === "menjodohkan_drag_drop") {
         questionContentPayload = collectMatchQuestionContent();
+      } else if (selectedType === "short_answer") {
+        questionContentPayload = collectShortAnswerQuestionContent();
       }
       answerKeyObj = collectAnswerKey();
       if (deps.manuscriptAnswerKeyRaw) {
@@ -1754,6 +1896,18 @@
       if (deps.manuscriptMatchNoteHTML) {
         deps.manuscriptMatchNoteHTML.value = "";
       }
+      if (deps.manuscriptShortAnswerAccepted) {
+        deps.manuscriptShortAnswerAccepted.value = "";
+      }
+      if (deps.manuscriptShortAnswerPlaceholder) {
+        deps.manuscriptShortAnswerPlaceholder.value = "";
+      }
+      if (deps.manuscriptShortAnswerInputType) {
+        deps.manuscriptShortAnswerInputType.value = "textarea";
+      }
+      if (deps.manuscriptShortAnswerMaxLength) {
+        deps.manuscriptShortAnswerMaxLength.value = "33";
+      }
       ensureOptionRows();
       ensureTFStatementRows();
       ensureMatchRows("prompt");
@@ -1833,6 +1987,14 @@
     if (deps.manuscriptMatchPairsWrap)
       deps.manuscriptMatchPairsWrap.innerHTML = "";
     if (deps.manuscriptMatchNoteHTML) deps.manuscriptMatchNoteHTML.value = "";
+    if (deps.manuscriptShortAnswerAccepted)
+      deps.manuscriptShortAnswerAccepted.value = "";
+    if (deps.manuscriptShortAnswerPlaceholder)
+      deps.manuscriptShortAnswerPlaceholder.value = "";
+    if (deps.manuscriptShortAnswerInputType)
+      deps.manuscriptShortAnswerInputType.value = "textarea";
+    if (deps.manuscriptShortAnswerMaxLength)
+      deps.manuscriptShortAnswerMaxLength.value = "33";
     ensureOptionRows();
     ensureTFStatementRows();
     ensureMatchRows("prompt");
@@ -1904,7 +2066,11 @@
       target.hasAttribute("data-match-id") ||
       target.hasAttribute("data-match-html") ||
       target.hasAttribute("data-match-pair-prompt") ||
-      target === (deps && deps.manuscriptMatchNoteHTML)
+      target === (deps && deps.manuscriptMatchNoteHTML) ||
+      target === (deps && deps.manuscriptShortAnswerAccepted) ||
+      target === (deps && deps.manuscriptShortAnswerPlaceholder) ||
+      target === (deps && deps.manuscriptShortAnswerInputType) ||
+      target === (deps && deps.manuscriptShortAnswerMaxLength)
     ) {
       if (
         target.hasAttribute("data-option-key") ||

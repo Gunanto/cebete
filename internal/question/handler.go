@@ -758,6 +758,9 @@ func buildExportOptions(data *ExportQuestionData) string {
 		}
 		return ""
 	}
+	if qType == "short_answer" {
+		return "Jawaban singkat"
+	}
 	parts := make([]string, 0, len(data.Options))
 	for i, opt := range data.Options {
 		key := strings.TrimSpace(opt.OptionKey)
@@ -840,6 +843,21 @@ func buildExportAnswerKey(data *ExportQuestionData) string {
 				pairs = append(pairs, promptID+"->"+choiceID)
 			}
 			return strings.Join(pairs, "|")
+		}
+	}
+	if qType == "short_answer" {
+		var payload struct {
+			AcceptedAnswers []string `json:"accepted_answers"`
+		}
+		if json.Unmarshal(data.AnswerKey, &payload) == nil {
+			vals := make([]string, 0, len(payload.AcceptedAnswers))
+			for _, v := range payload.AcceptedAnswers {
+				v = strings.TrimSpace(v)
+				if v != "" {
+					vals = append(vals, v)
+				}
+			}
+			return strings.Join(vals, " | ")
 		}
 	}
 	return ""
