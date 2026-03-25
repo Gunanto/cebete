@@ -839,7 +839,11 @@
     } else if (currentManuscriptQuestionType === "menjodohkan_drag_drop") {
       ensureMatchRows("prompt");
       ensureMatchRows("choice");
-      renderMatchPairRows();
+      try {
+        renderMatchPairRows(collectSelectedMatchPairsFromUI());
+      } catch (_) {
+        // Ignore incomplete matching builder state while form is initializing.
+      }
     } else {
       ensureOptionRows();
       renderKeyChoices();
