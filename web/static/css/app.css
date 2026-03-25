@@ -3867,6 +3867,22 @@ body[data-page="peserta_content"] .portal-sidebar-backdrop[hidden] {
     display: none;
 }
 
+body[data-page="peserta_content"] #peserta-exams-panel .bs-table th:last-child,
+body[data-page="peserta_content"] #peserta-exams-panel .bs-table td:last-child {
+    width: 1%;
+    white-space: nowrap;
+}
+
+body[data-page="peserta_content"]
+    #peserta-exams-panel
+    .bs-table
+    td:last-child
+    .btn-inline {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
 @media (max-width: 900px) {
     .actions {
         grid-template-columns: 1fr;
