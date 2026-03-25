@@ -90,6 +90,7 @@ type CreateQuestionVersionInput struct {
 	StemHTML        *string
 	ExplanationHTML *string
 	HintHTML        *string
+	QuestionContent json.RawMessage
 	AnswerKey       json.RawMessage
 	Options         []QuestionOptionInput
 	DurationSeconds *int
@@ -150,6 +151,7 @@ type UpdateQuestionVersionInput struct {
 	StemHTML        *string
 	ExplanationHTML *string
 	HintHTML        *string
+	QuestionContent json.RawMessage
 	AnswerKey       json.RawMessage
 	Options         []QuestionOptionInput
 	DurationSeconds *int
@@ -174,6 +176,7 @@ type QuestionVersion struct {
 	StemHTML        string                `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html,omitempty"`
 	HintHTML        *string               `json:"hint_html,omitempty"`
+	QuestionContent json.RawMessage       `json:"question_content,omitempty"`
 	AnswerKey       json.RawMessage       `json:"answer_key"`
 	Status          string                `json:"status"`
 	IsPublic        bool                  `json:"is_public"`
@@ -212,6 +215,7 @@ type ExportQuestionData struct {
 	StemHTML             string
 	ExplanationHTML      *string
 	HintHTML             *string
+	QuestionContent      json.RawMessage
 	AnswerKey            json.RawMessage
 	Options              []QuestionOptionInput
 }
@@ -337,7 +341,7 @@ func NewService(db *sql.DB) *Service {
 func normalizeQuestionType(v string) string {
 	v = strings.TrimSpace(strings.ToLower(v))
 	switch v {
-	case "pg_tunggal", "multi_jawaban", "benar_salah_pernyataan":
+	case "pg_tunggal", "multi_jawaban", "benar_salah_pernyataan", "menjodohkan_drag_drop":
 		return v
 	default:
 		return ""
@@ -1021,6 +1025,9 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		}
 		base.AnswerKey = in.AnswerKey
 	}
+	if len(bytes.TrimSpace(in.QuestionContent)) > 0 {
+		base.QuestionContent = in.QuestionContent
+	}
 	if in.DurationSeconds != nil {
 		if *in.DurationSeconds < 0 {
 			return nil, fmt.Errorf("%w: duration_seconds cannot be negative", ErrInvalidInput)
@@ -1044,8 +1051,17 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	if len(base.AnswerKey) == 0 {
 		base.AnswerKey = json.RawMessage(`{}`)
 	}
+	base.QuestionContent, err = normalizeQuestionContent(questionType, base.QuestionContent)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateAnswerKey(questionType, base.AnswerKey); err != nil {
 		return nil, err
+	}
+	if questionType == "menjodohkan_drag_drop" {
+		if err := validateMatchingReferences(base.QuestionContent, base.AnswerKey); err != nil {
+			return nil, err
+		}
 	}
 	normalizedOptions, correctOptionKeys, err := normalizeAndValidateOptions(questionType, in.Options, base.AnswerKey)
 	if err != nil {
@@ -1060,6 +1076,7 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		base.StimulusHTML,
 		base.ExplanationHTML,
 		base.HintHTML,
+		base.QuestionContent,
 		base.AnswerKey,
 		normalizedOptions,
 	)
@@ -1111,16 +1128,16 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	row := tx.QueryRowContext(ctx, `
 			INSERT INTO question_versions (
 				question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-				answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
+				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
 				content_hash, created_by, created_at
 			) VALUES (
 				$1, $2, $3, $4::jsonb, $5, $6, $7, $8,
-				$9::jsonb, 'draft', FALSE, TRUE, $10, $11, $12,
-				$13, NULLIF($14, 0), now()
+				$9::jsonb, $10::jsonb, 'draft', FALSE, TRUE, $11, $12, $13,
+				$14, NULLIF($15, 0), now()
 			)
 			RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
+				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.QuestionContent), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
@@ -1167,7 +1184,7 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 
 	row := tx.QueryRowContext(ctx, `
 			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
 			FOR UPDATE
@@ -1206,7 +1223,7 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 
 	refetch := tx.QueryRowContext(ctx, `
 			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-				answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
 	`, questionID, versionNo)
@@ -1422,7 +1439,7 @@ func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64, ow
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1
 		  AND ($2 <= 0 OR created_by = $2)
@@ -1529,7 +1546,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 	}
 	var verQuery strings.Builder
 	verQuery.WriteString(`
-		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html, answer_key
+		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html, question_content, answer_key
 		FROM question_versions
 		WHERE question_id = $1
 		  AND ($2 <= 0 OR created_by = $2)
@@ -1553,6 +1570,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 		&out.StemHTML,
 		&explanation,
 		&hint,
+		&out.QuestionContent,
 		&out.AnswerKey,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1849,7 +1867,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 
 	row := tx.QueryRowContext(ctx, `
 		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
 		FOR UPDATE
@@ -1926,8 +1944,20 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	if len(next.AnswerKey) == 0 {
 		next.AnswerKey = json.RawMessage(`{}`)
 	}
+	if len(bytes.TrimSpace(in.QuestionContent)) > 0 {
+		next.QuestionContent = in.QuestionContent
+	}
+	next.QuestionContent, err = normalizeQuestionContent(questionType, next.QuestionContent)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateAnswerKey(questionType, next.AnswerKey); err != nil {
 		return nil, err
+	}
+	if questionType == "menjodohkan_drag_drop" {
+		if err := validateMatchingReferences(next.QuestionContent, next.AnswerKey); err != nil {
+			return nil, err
+		}
 	}
 
 	optionsInput := in.Options
@@ -1949,6 +1979,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 		next.StimulusHTML,
 		next.ExplanationHTML,
 		next.HintHTML,
+		next.QuestionContent,
 		next.AnswerKey,
 		normalizedOptions,
 	)
@@ -1964,15 +1995,16 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 			stem_html = $6,
 			explanation_html = $7,
 			hint_html = $8,
-			answer_key = $9::jsonb,
-			duration_seconds = $10,
-			weight = $11,
-			change_note = $12,
-			content_hash = $13
+			question_content = $9::jsonb,
+			answer_key = $10::jsonb,
+			duration_seconds = $11,
+			weight = $12,
+			change_note = $13,
+			content_hash = $14
 		WHERE question_id = $1 AND version_no = $2
 		RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-			answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusType), nullJSONBytes(next.StimulusContent), nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
+			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
+	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusType), nullJSONBytes(next.StimulusContent), nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.QuestionContent), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
 	out, err := scanQuestionVersion(updatedRow)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2570,6 +2602,7 @@ type baseVersionData struct {
 	StemHTML        string
 	ExplanationHTML *string
 	HintHTML        *string
+	QuestionContent json.RawMessage
 	AnswerKey       json.RawMessage
 	DurationSeconds *int
 	Weight          float64
@@ -2703,7 +2736,7 @@ func (s *Service) canCreateVersionTx(ctx context.Context, tx *sql.Tx, questionID
 func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, questionID int64, defaultStem string) (*baseVersionData, int, error) {
 	row := tx.QueryRowContext(ctx, `
 		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-			answer_key, duration_seconds, weight, change_note
+			question_content, answer_key, duration_seconds, weight, change_note
 		FROM question_versions
 		WHERE question_id = $1
 		ORDER BY version_no DESC
@@ -2718,11 +2751,12 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	var stemHTML string
 	var explanation sql.NullString
 	var hint sql.NullString
+	var questionContent json.RawMessage
 	var answerKey json.RawMessage
 	var duration sql.NullInt64
 	var weight float64
 	var change sql.NullString
-	if err := row.Scan(&versionNo, &stimulusType, &stimulusContent, &stimulusHTML, &stemHTML, &explanation, &hint, &answerKey, &duration, &weight, &change); err != nil {
+	if err := row.Scan(&versionNo, &stimulusType, &stimulusContent, &stimulusHTML, &stemHTML, &explanation, &hint, &questionContent, &answerKey, &duration, &weight, &change); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, fmt.Errorf("load latest version: %w", err)
 		}
@@ -2731,9 +2765,10 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 			return nil, 0, fmt.Errorf("%w: question stem_html is empty", ErrInvalidInput)
 		}
 		return &baseVersionData{
-			StemHTML:  defaultStem,
-			AnswerKey: json.RawMessage(`{}`),
-			Weight:    1,
+			StemHTML:        defaultStem,
+			QuestionContent: json.RawMessage(`{}`),
+			AnswerKey:       json.RawMessage(`{}`),
+			Weight:          1,
 		}, 1, nil
 	}
 
@@ -2780,6 +2815,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 		StemHTML:        stemHTML,
 		ExplanationHTML: explanationPtr,
 		HintHTML:        hintPtr,
+		QuestionContent: questionContent,
 		AnswerKey:       answerKey,
 		DurationSeconds: durationPtr,
 		Weight:          weight,
@@ -2811,6 +2847,174 @@ func (s *Service) listQuestionOptions(ctx context.Context, q queryContextRunner,
 		return nil, fmt.Errorf("iterate question options: %w", err)
 	}
 	return options, nil
+}
+
+type matchingContentItem struct {
+	ID   string `json:"id"`
+	HTML string `json:"html"`
+}
+
+type matchingQuestionContent struct {
+	Prompts  []matchingContentItem `json:"prompts"`
+	Choices  []matchingContentItem `json:"choices"`
+	NoteHTML string                `json:"note_html,omitempty"`
+}
+
+type matchingPair struct {
+	PromptID string `json:"prompt_id"`
+	ChoiceID string `json:"choice_id"`
+}
+
+type matchingAnswerKey struct {
+	Mode  string         `json:"mode,omitempty"`
+	Pairs []matchingPair `json:"pairs"`
+}
+
+func normalizeQuestionContent(questionType string, raw json.RawMessage) (json.RawMessage, error) {
+	qType := strings.TrimSpace(strings.ToLower(questionType))
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		if qType == "menjodohkan_drag_drop" {
+			return nil, fmt.Errorf("%w: question_content is required for menjodohkan_drag_drop", ErrInvalidInput)
+		}
+		return json.RawMessage(`{}`), nil
+	}
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("%w: question_content must be valid json", ErrInvalidInput)
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("%w: question_content must be object", ErrInvalidInput)
+	}
+	if qType != "menjodohkan_drag_drop" {
+		return json.RawMessage(`{}`), nil
+	}
+
+	content, err := parseMatchingQuestionContent(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := json.Marshal(content)
+	if err != nil {
+		return nil, fmt.Errorf("marshal normalized question_content: %w", err)
+	}
+	return json.RawMessage(normalized), nil
+}
+
+func parseMatchingQuestionContent(raw json.RawMessage) (matchingQuestionContent, error) {
+	var payload matchingQuestionContent
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return matchingQuestionContent{}, fmt.Errorf("%w: question_content must be object", ErrInvalidInput)
+	}
+
+	prompts, err := normalizeMatchingContentItems(payload.Prompts, "prompts")
+	if err != nil {
+		return matchingQuestionContent{}, err
+	}
+	choices, err := normalizeMatchingContentItems(payload.Choices, "choices")
+	if err != nil {
+		return matchingQuestionContent{}, err
+	}
+	payload.Prompts = prompts
+	payload.Choices = choices
+	payload.NoteHTML = strings.TrimSpace(payload.NoteHTML)
+	return payload, nil
+}
+
+func normalizeMatchingContentItems(items []matchingContentItem, field string) ([]matchingContentItem, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: question_content.%s must be non-empty array", ErrInvalidInput, field)
+	}
+	seen := map[string]struct{}{}
+	out := make([]matchingContentItem, 0, len(items))
+	for i, item := range items {
+		id := strings.TrimSpace(item.ID)
+		html := strings.TrimSpace(item.HTML)
+		if id == "" {
+			return nil, fmt.Errorf("%w: question_content.%s[%d].id is required", ErrInvalidInput, field, i)
+		}
+		if html == "" {
+			return nil, fmt.Errorf("%w: question_content.%s[%d].html is required", ErrInvalidInput, field, i)
+		}
+		if _, exists := seen[id]; exists {
+			return nil, fmt.Errorf("%w: duplicate %s id '%s'", ErrInvalidInput, field[:len(field)-1], id)
+		}
+		seen[id] = struct{}{}
+		out = append(out, matchingContentItem{ID: id, HTML: html})
+	}
+	return out, nil
+}
+
+func parseMatchingAnswerKey(raw json.RawMessage) (matchingAnswerKey, error) {
+	var payload matchingAnswerKey
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return matchingAnswerKey{}, fmt.Errorf("%w: answer_key must be object", ErrInvalidInput)
+	}
+	mode := strings.TrimSpace(strings.ToLower(payload.Mode))
+	if mode == "" {
+		mode = "exact"
+	}
+	if mode != "exact" {
+		return matchingAnswerKey{}, fmt.Errorf("%w: menjodohkan_drag_drop answer_key.mode must be 'exact'", ErrInvalidInput)
+	}
+	if len(payload.Pairs) == 0 {
+		return matchingAnswerKey{}, fmt.Errorf("%w: menjodohkan_drag_drop answer_key.pairs (non-empty array) is required", ErrInvalidInput)
+	}
+	seenPrompt := map[string]struct{}{}
+	seenChoice := map[string]struct{}{}
+	out := make([]matchingPair, 0, len(payload.Pairs))
+	for i, pair := range payload.Pairs {
+		promptID := strings.TrimSpace(pair.PromptID)
+		choiceID := strings.TrimSpace(pair.ChoiceID)
+		if promptID == "" || choiceID == "" {
+			return matchingAnswerKey{}, fmt.Errorf("%w: menjodohkan_drag_drop answer_key.pairs[%d].prompt_id and choice_id are required", ErrInvalidInput, i)
+		}
+		if _, exists := seenPrompt[promptID]; exists {
+			return matchingAnswerKey{}, fmt.Errorf("%w: duplicate prompt_id '%s' in answer_key.pairs", ErrInvalidInput, promptID)
+		}
+		if _, exists := seenChoice[choiceID]; exists {
+			return matchingAnswerKey{}, fmt.Errorf("%w: duplicate choice_id '%s' in answer_key.pairs", ErrInvalidInput, choiceID)
+		}
+		seenPrompt[promptID] = struct{}{}
+		seenChoice[choiceID] = struct{}{}
+		out = append(out, matchingPair{PromptID: promptID, ChoiceID: choiceID})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].PromptID < out[j].PromptID
+	})
+	return matchingAnswerKey{Mode: mode, Pairs: out}, nil
+}
+
+func validateMatchingReferences(contentRaw, answerKeyRaw json.RawMessage) error {
+	content, err := parseMatchingQuestionContent(contentRaw)
+	if err != nil {
+		return err
+	}
+	key, err := parseMatchingAnswerKey(answerKeyRaw)
+	if err != nil {
+		return err
+	}
+
+	promptSet := make(map[string]struct{}, len(content.Prompts))
+	for _, item := range content.Prompts {
+		promptSet[item.ID] = struct{}{}
+	}
+	choiceSet := make(map[string]struct{}, len(content.Choices))
+	for _, item := range content.Choices {
+		choiceSet[item.ID] = struct{}{}
+	}
+	if len(key.Pairs) != len(content.Prompts) {
+		return fmt.Errorf("%w: menjodohkan_drag_drop answer_key.pairs must cover every prompt", ErrInvalidInput)
+	}
+	for _, pair := range key.Pairs {
+		if _, ok := promptSet[pair.PromptID]; !ok {
+			return fmt.Errorf("%w: answer_key references unknown prompt_id '%s'", ErrInvalidInput, pair.PromptID)
+		}
+		if _, ok := choiceSet[pair.ChoiceID]; !ok {
+			return fmt.Errorf("%w: answer_key references unknown choice_id '%s'", ErrInvalidInput, pair.ChoiceID)
+		}
+	}
+	return nil
 }
 
 func validateAnswerKey(questionType string, raw json.RawMessage) error {
@@ -2880,6 +3084,11 @@ func validateAnswerKey(questionType string, raw json.RawMessage) error {
 			}
 			seen[id] = struct{}{}
 		}
+	case "menjodohkan_drag_drop":
+		_, err := parseMatchingAnswerKey(raw)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: unsupported question_type '%s'", ErrInvalidInput, questionType)
 	}
@@ -2914,13 +3123,15 @@ func parseCorrectKeysForOptions(questionType string, raw json.RawMessage) (map[s
 			}
 			keys[v] = true
 		}
+	case "menjodohkan_drag_drop":
+		return nil, nil
 	}
 	return keys, nil
 }
 
 func normalizeAndValidateOptions(questionType string, options []QuestionOptionInput, answerKey json.RawMessage) ([]QuestionOptionInput, map[string]bool, error) {
 	qType := strings.TrimSpace(strings.ToLower(questionType))
-	if qType == "benar_salah_pernyataan" {
+	if qType == "benar_salah_pernyataan" || qType == "menjodohkan_drag_drop" {
 		return nil, nil, nil
 	}
 	if len(options) == 0 {
@@ -2975,21 +3186,29 @@ type normalizedAnswerKey struct {
 	CorrectSet []string              `json:"correct_set,omitempty"`
 	Mode       string                `json:"mode,omitempty"`
 	Statements []normalizedStatement `json:"statements,omitempty"`
+	Pairs      []matchingPair        `json:"pairs,omitempty"`
+}
+
+type normalizedMatchingContent struct {
+	Prompts  []matchingContentItem `json:"prompts,omitempty"`
+	Choices  []matchingContentItem `json:"choices,omitempty"`
+	NoteHTML string                `json:"note_html,omitempty"`
 }
 
 type questionContentForHash struct {
-	QuestionType    string                `json:"question_type"`
-	StemHTML        string                `json:"stem_html"`
-	StimulusType    string                `json:"stimulus_type,omitempty"`
-	StimulusContent json.RawMessage       `json:"stimulus_content,omitempty"`
-	StimulusHTML    string                `json:"stimulus_html,omitempty"`
-	ExplanationHTML string                `json:"explanation_html,omitempty"`
-	HintHTML        string                `json:"hint_html,omitempty"`
-	Options         []QuestionOptionInput `json:"options,omitempty"`
-	AnswerKey       normalizedAnswerKey   `json:"answer_key"`
+	QuestionType    string                    `json:"question_type"`
+	StemHTML        string                    `json:"stem_html"`
+	StimulusType    string                    `json:"stimulus_type,omitempty"`
+	StimulusContent json.RawMessage           `json:"stimulus_content,omitempty"`
+	StimulusHTML    string                    `json:"stimulus_html,omitempty"`
+	ExplanationHTML string                    `json:"explanation_html,omitempty"`
+	HintHTML        string                    `json:"hint_html,omitempty"`
+	QuestionContent normalizedMatchingContent `json:"question_content,omitempty"`
+	Options         []QuestionOptionInput     `json:"options,omitempty"`
+	AnswerKey       normalizedAnswerKey       `json:"answer_key"`
 }
 
-func computeQuestionContentHash(questionType string, stemHTML string, stimulusType *string, stimulusContent json.RawMessage, stimulusHTML *string, explanationHTML *string, hintHTML *string, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
+func computeQuestionContentHash(questionType string, stemHTML string, stimulusType *string, stimulusContent json.RawMessage, stimulusHTML *string, explanationHTML *string, hintHTML *string, questionContent json.RawMessage, answerKey json.RawMessage, options []QuestionOptionInput) (string, error) {
 	qType := strings.TrimSpace(strings.ToLower(questionType))
 	var obj map[string]any
 	if err := json.Unmarshal(answerKey, &obj); err != nil {
@@ -2997,6 +3216,7 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusTy
 	}
 
 	var normalized normalizedAnswerKey
+	var normalizedContent normalizedMatchingContent
 	switch qType {
 	case "pg_tunggal":
 		correct, _ := obj["correct"].(string)
@@ -3044,6 +3264,22 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusTy
 			return stmts[i].ID < stmts[j].ID
 		})
 		normalized.Statements = stmts
+	case "menjodohkan_drag_drop":
+		key, err := parseMatchingAnswerKey(answerKey)
+		if err != nil {
+			return "", err
+		}
+		content, err := parseMatchingQuestionContent(questionContent)
+		if err != nil {
+			return "", err
+		}
+		normalized.Mode = key.Mode
+		normalized.Pairs = key.Pairs
+		normalizedContent = normalizedMatchingContent{
+			Prompts:  content.Prompts,
+			Choices:  content.Choices,
+			NoteHTML: content.NoteHTML,
+		}
 	}
 
 	normalizedOptions := make([]QuestionOptionInput, 0, len(options))
@@ -3058,10 +3294,11 @@ func computeQuestionContentHash(questionType string, stemHTML string, stimulusTy
 	})
 
 	payload := questionContentForHash{
-		QuestionType: qType,
-		StemHTML:     strings.TrimSpace(stemHTML),
-		Options:      normalizedOptions,
-		AnswerKey:    normalized,
+		QuestionType:    qType,
+		StemHTML:        strings.TrimSpace(stemHTML),
+		QuestionContent: normalizedContent,
+		Options:         normalizedOptions,
+		AnswerKey:       normalized,
 	}
 	if stimulusType != nil {
 		payload.StimulusType = strings.TrimSpace(strings.ToLower(*stimulusType))
@@ -3093,7 +3330,7 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT qv.id, qv.question_id, qv.stimulus_html, qv.stem_html, qv.explanation_html, qv.hint_html, qv.answer_key
+		SELECT qv.id, qv.question_id, qv.stimulus_html, qv.stem_html, qv.explanation_html, qv.hint_html, qv.question_content, qv.answer_key
 		FROM question_versions qv
 		JOIN questions q ON q.id = qv.question_id
 		WHERE q.is_active = TRUE
@@ -3114,12 +3351,13 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 		stemHTML        string
 		explanationHTML sql.NullString
 		hintHTML        sql.NullString
+		questionContent json.RawMessage
 		answerKey       json.RawMessage
 	}
 	candidates := make([]candidate, 0)
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.id, &c.questionID, &c.stimulusHTML, &c.stemHTML, &c.explanationHTML, &c.hintHTML, &c.answerKey); err != nil {
+		if err := rows.Scan(&c.id, &c.questionID, &c.stimulusHTML, &c.stemHTML, &c.explanationHTML, &c.hintHTML, &c.questionContent, &c.answerKey); err != nil {
 			return fmt.Errorf("scan content hash candidate: %w", err)
 		}
 		candidates = append(candidates, c)
@@ -3133,7 +3371,7 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 
 	for _, c := range candidates {
 		opts := []QuestionOptionInput{}
-		if strings.TrimSpace(strings.ToLower(questionType)) != "benar_salah_pernyataan" {
+		if strings.TrimSpace(strings.ToLower(questionType)) != "benar_salah_pernyataan" && strings.TrimSpace(strings.ToLower(questionType)) != "menjodohkan_drag_drop" {
 			optRows, err := tx.QueryContext(ctx, `
 				SELECT option_key, option_html
 				FROM question_options
@@ -3178,6 +3416,7 @@ func (s *Service) backfillContentHashCandidates(ctx context.Context, tx *sql.Tx,
 			stimPtr,
 			explPtr,
 			hintPtr,
+			c.questionContent,
 			c.answerKey,
 			opts,
 		)
@@ -3368,6 +3607,7 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 	var stimulusHTML sql.NullString
 	var explanation sql.NullString
 	var hint sql.NullString
+	var questionContent []byte
 	var duration sql.NullInt64
 	var change sql.NullString
 	var createdBy sql.NullInt64
@@ -3381,6 +3621,7 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.StemHTML,
 		&explanation,
 		&hint,
+		&questionContent,
 		&out.AnswerKey,
 		&out.Status,
 		&out.IsPublic,
@@ -3407,6 +3648,9 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 	}
 	if hint.Valid {
 		out.HintHTML = &hint.String
+	}
+	if len(bytes.TrimSpace(questionContent)) > 0 {
+		out.QuestionContent = append(json.RawMessage(nil), questionContent...)
 	}
 	if duration.Valid {
 		d := int(duration.Int64)

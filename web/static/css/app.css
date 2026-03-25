@@ -2053,6 +2053,64 @@ textarea:focus-visible {
     padding-left: 4px;
 }
 
+.matching-row {
+    border: 1px solid #d8e7f8;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f2f8ff 100%);
+}
+
+.matching-prompt {
+    padding: 6px 2px;
+}
+
+.matching-prompt p:last-child {
+    margin-bottom: 0;
+}
+
+#options-box select[data-match-prompt] {
+    width: 100%;
+    min-height: 42px;
+    border-radius: 10px;
+    border: 1px solid #a9c7e8;
+    background: #fff;
+    padding: 8px 10px;
+}
+
+#guru-manuscript-match-prompts textarea,
+#guru-manuscript-match-choices textarea,
+#guru-manuscript-match-note-html {
+    width: 100%;
+    min-height: 88px;
+    resize: vertical;
+}
+
+#guru-manuscript-match-pairs label {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+}
+
+#guru-manuscript-match-pairs select {
+    width: 100%;
+}
+
+.result-pair-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.result-pair-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #eef6ff;
+    border: 1px solid #c8dbef;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
 .editor-toolbar {
     display: flex;
     flex-wrap: wrap;

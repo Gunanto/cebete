@@ -42,6 +42,7 @@ type mockExamService struct {
 	removeExamAssignmentFn          func(ctx context.Context, examID, userID, actorID int64) error
 	previewExamByTokenForStaffFn    func(ctx context.Context, examToken string) (*ExamTokenPreview, error)
 	listExamQuestionsFn             func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
+	getExamQuestionDetailFn         func(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error)
 	listExamQuestionCodeRulesFn     func(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error)
 	upsertExamQuestionCodeRuleFn    func(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error)
 	deleteExamQuestionCodeRuleFn    func(ctx context.Context, examID, questionCodeID int64) error
@@ -101,6 +102,13 @@ func (m *mockExamService) ListAdminExamsByOwner(ctx context.Context, ownerID int
 		return nil, errors.New("not implemented")
 	}
 	return m.listAdminExamsByOwnerFn(ctx, ownerID, includeInactive)
+}
+
+func (m *mockExamService) GetExamQuestionDetail(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error) {
+	if m.getExamQuestionDetailFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.getExamQuestionDetailFn(ctx, examID, questionID)
 }
 
 func (m *mockExamService) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error) {

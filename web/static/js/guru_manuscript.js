@@ -517,6 +517,146 @@
     }
   }
 
+  function createMatchContentRow(kind, data, idx) {
+    if (!deps || typeof deps.escapeHtml !== "function") return "";
+    const prefix = kind === "choice" ? "C" : "P";
+    const id = String((data && data.id) || prefix + String(idx + 1)).trim();
+    const htmlValue = String((data && data.html) || "").trim();
+    const title = kind === "choice" ? "Choice" : "Prompt";
+    return (
+      '<div class="panel mt" data-match-row="' +
+      kind +
+      '">' +
+      "<label>ID " +
+      title +
+      '<input type="text" data-match-id value="' +
+      deps.escapeHtml(id) +
+      '" placeholder="' +
+      prefix +
+      String(idx + 1) +
+      '" /></label>' +
+      '<label class="mt">HTML ' +
+      title +
+      '<textarea data-match-html rows="3" placeholder="<p>Isi ' +
+      title.toLowerCase() +
+      '...</p>">' +
+      deps.escapeHtml(htmlValue) +
+      "</textarea></label>" +
+      '<button type="button" class="btn btn-secondary btn-inline mt" data-match-remove="' +
+      kind +
+      '">Hapus</button>' +
+      "</div>"
+    );
+  }
+
+  function ensureMatchRows(kind) {
+    const wrap =
+      kind === "choice"
+        ? deps && deps.manuscriptMatchChoicesWrap
+        : deps && deps.manuscriptMatchPromptsWrap;
+    if (!wrap) return;
+    if (!wrap.querySelector('[data-match-row="' + kind + '"]')) {
+      wrap.innerHTML = createMatchContentRow(kind, null, 0);
+      if (kind === "prompt" || kind === "choice") {
+        wrap.insertAdjacentHTML(
+          "beforeend",
+          createMatchContentRow(kind, null, 1),
+        );
+      }
+    }
+  }
+
+  function collectMatchItems(kind) {
+    const wrap =
+      kind === "choice"
+        ? deps && deps.manuscriptMatchChoicesWrap
+        : deps && deps.manuscriptMatchPromptsWrap;
+    const label = kind === "choice" ? "Choice" : "Prompt";
+    const rows = Array.from(
+      (wrap && wrap.querySelectorAll('[data-match-row="' + kind + '"]')) || [],
+    );
+    if (!rows.length) {
+      throw new Error("Tambahkan minimal 1 " + label.toLowerCase() + ".");
+    }
+    const seen = {};
+    return rows.map(function (row, idx) {
+      const id = String(
+        (row.querySelector("[data-match-id]") || {}).value || "",
+      ).trim();
+      const html = String(
+        (row.querySelector("[data-match-html]") || {}).value || "",
+      ).trim();
+      if (!id) {
+        throw new Error(
+          "ID " + label + " baris " + String(idx + 1) + " wajib diisi.",
+        );
+      }
+      if (seen[id]) {
+        throw new Error("ID " + label + " duplikat: " + id);
+      }
+      if (!html) {
+        throw new Error("HTML " + label + " " + id + " wajib diisi.");
+      }
+      seen[id] = true;
+      return { id: id, html: html };
+    });
+  }
+
+  function renderMatchPairRows(selectedPairs) {
+    if (!deps || !deps.manuscriptMatchPairsWrap) return;
+    const prompts = collectMatchItems("prompt");
+    const choices = collectMatchItems("choice");
+    const selectedMap = {};
+    (Array.isArray(selectedPairs) ? selectedPairs : []).forEach(
+      function (pair) {
+        const promptID = String((pair && pair.prompt_id) || "").trim();
+        const choiceID = String((pair && pair.choice_id) || "").trim();
+        if (promptID && choiceID) selectedMap[promptID] = choiceID;
+      },
+    );
+    deps.manuscriptMatchPairsWrap.innerHTML = prompts
+      .map(function (prompt) {
+        const options = ['<option value="">Pilih choice</option>'].concat(
+          choices.map(function (choice) {
+            const selected =
+              selectedMap[prompt.id] === choice.id ? " selected" : "";
+            return (
+              '<option value="' +
+              deps.escapeHtml(choice.id) +
+              '"' +
+              selected +
+              ">" +
+              deps.escapeHtml(choice.id) +
+              "</option>"
+            );
+          }),
+        );
+        return (
+          '<label class="mt" data-match-pair-row="1">Prompt <strong>' +
+          deps.escapeHtml(prompt.id) +
+          '</strong><select data-match-pair-prompt="' +
+          deps.escapeHtml(prompt.id) +
+          '">' +
+          options.join("") +
+          "</select></label>"
+        );
+      })
+      .join("");
+  }
+
+  function collectMatchQuestionContent() {
+    return {
+      prompts: collectMatchItems("prompt"),
+      choices: collectMatchItems("choice"),
+      note_html: String(
+        (deps &&
+          deps.manuscriptMatchNoteHTML &&
+          deps.manuscriptMatchNoteHTML.value) ||
+          "",
+      ).trim(),
+    };
+  }
+
   function collectAnswerKey() {
     const qType = String(currentManuscriptQuestionType || "").toLowerCase();
     if (qType === "pg_tunggal") {
@@ -579,6 +719,42 @@
       });
       return { statements: statements };
     }
+    if (qType === "menjodohkan_drag_drop") {
+      const content = collectMatchQuestionContent();
+      renderMatchPairRows();
+      const rows = Array.from(
+        (deps &&
+          deps.manuscriptMatchPairsWrap &&
+          deps.manuscriptMatchPairsWrap.querySelectorAll(
+            "[data-match-pair-row]",
+          )) ||
+          [],
+      );
+      const usedChoice = {};
+      const pairs = rows.map(function (row, idx) {
+        const promptID = String(
+          row.querySelector("select").getAttribute("data-match-pair-prompt") ||
+            "",
+        ).trim();
+        const choiceID = String(
+          (row.querySelector("select") || {}).value || "",
+        ).trim();
+        if (!choiceID) {
+          throw new Error(
+            "Pasangan prompt " + String(idx + 1) + " wajib dipilih.",
+          );
+        }
+        if (usedChoice[choiceID]) {
+          throw new Error("Choice dipakai lebih dari sekali: " + choiceID);
+        }
+        usedChoice[choiceID] = true;
+        return { prompt_id: promptID, choice_id: choiceID };
+      });
+      if (pairs.length !== content.prompts.length) {
+        throw new Error("Semua prompt wajib memiliki pasangan.");
+      }
+      return { mode: "exact", pairs: pairs };
+    }
     throw new Error("Tipe soal belum valid.");
   }
 
@@ -627,8 +803,16 @@
       deps.manuscriptKeyTF.hidden =
         currentManuscriptQuestionType !== "benar_salah_pernyataan";
     }
+    if (deps.manuscriptKeyMatch) {
+      deps.manuscriptKeyMatch.hidden =
+        currentManuscriptQuestionType !== "menjodohkan_drag_drop";
+    }
     if (currentManuscriptQuestionType === "benar_salah_pernyataan") {
       ensureTFStatementRows();
+    } else if (currentManuscriptQuestionType === "menjodohkan_drag_drop") {
+      ensureMatchRows("prompt");
+      ensureMatchRows("choice");
+      renderMatchPairRows();
     } else {
       ensureOptionRows();
       renderKeyChoices();
@@ -724,7 +908,41 @@
         .filter(Boolean)
         .sort();
     }
+    if (Array.isArray(out.pairs)) {
+      out.pairs = out.pairs
+        .map(function (it) {
+          return {
+            prompt_id: String((it && it.prompt_id) || "").trim(),
+            choice_id: String((it && it.choice_id) || "").trim(),
+          };
+        })
+        .sort(function (a, b) {
+          return a.prompt_id.localeCompare(b.prompt_id);
+        });
+    }
     return out;
+  }
+
+  function normalizeQuestionContentForCompare(questionContentObj) {
+    if (!questionContentObj || typeof questionContentObj !== "object")
+      return {};
+    function normalizeItems(items) {
+      return (Array.isArray(items) ? items : [])
+        .map(function (it) {
+          return {
+            id: String((it && it.id) || "").trim(),
+            html: String((it && it.html) || "").trim(),
+          };
+        })
+        .sort(function (a, b) {
+          return a.id.localeCompare(b.id);
+        });
+    }
+    return {
+      prompts: normalizeItems(questionContentObj.prompts),
+      choices: normalizeItems(questionContentObj.choices),
+      note_html: String(questionContentObj.note_html || "").trim(),
+    };
   }
 
   function normalizeOptionsForCompare(options) {
@@ -763,6 +981,9 @@
       stem_html: String((item && item.stem_html) || "").trim(),
       explanation_html: String((item && item.explanation_html) || "").trim(),
       hint_html: String((item && item.hint_html) || "").trim(),
+      question_content: stableStringify(
+        normalizeQuestionContentForCompare(item && item.question_content),
+      ),
       answer_key: stableStringify(
         normalizeAnswerKeyForCompare(parseAnswerKeyObject(item.answer_key)),
       ),
@@ -786,6 +1007,9 @@
       stem_html: String((data && data.stem_html) || "").trim(),
       explanation_html: String((data && data.explanation_html) || "").trim(),
       hint_html: String((data && data.hint_html) || "").trim(),
+      question_content: stableStringify(
+        normalizeQuestionContentForCompare(data && data.question_content),
+      ),
       answer_key: stableStringify(
         normalizeAnswerKeyForCompare(data && data.answer_key),
       ),
@@ -806,6 +1030,7 @@
       a.stem_html === b.stem_html &&
       a.explanation_html === b.explanation_html &&
       a.hint_html === b.hint_html &&
+      a.question_content === b.question_content &&
       a.answer_key === b.answer_key &&
       a.options === b.options
     );
@@ -836,6 +1061,24 @@
     deps.manuscriptStatementsWrap.innerHTML = list
       .map(function (it, idx) {
         return createTFStatementRow(it || {}, idx);
+      })
+      .join("");
+  }
+
+  function renderMatchRowsFromData(kind, items) {
+    const wrap =
+      kind === "choice"
+        ? deps && deps.manuscriptMatchChoicesWrap
+        : deps && deps.manuscriptMatchPromptsWrap;
+    if (!wrap) return;
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      ensureMatchRows(kind);
+      return;
+    }
+    wrap.innerHTML = list
+      .map(function (it, idx) {
+        return createMatchContentRow(kind, it || {}, idx);
       })
       .join("");
   }
@@ -881,6 +1124,8 @@
       renderTFStatementsFromData(
         Array.isArray(key.statements) ? key.statements : [],
       );
+    } else if (qType === "menjodohkan_drag_drop") {
+      renderMatchPairRows(Array.isArray(key.pairs) ? key.pairs : []);
     }
     syncAnswerKeyPreview();
   }
@@ -981,6 +1226,18 @@
     const keyObj = parseAnswerKeyObject(item.answer_key);
     if (currentManuscriptQuestionType === "benar_salah_pernyataan") {
       renderTFStatementsFromData(keyObj.statements);
+    } else if (currentManuscriptQuestionType === "menjodohkan_drag_drop") {
+      const contentObj =
+        item &&
+        item.question_content &&
+        typeof item.question_content === "object"
+          ? item.question_content
+          : {};
+      renderMatchRowsFromData("prompt", contentObj.prompts);
+      renderMatchRowsFromData("choice", contentObj.choices);
+      if (deps && deps.manuscriptMatchNoteHTML) {
+        deps.manuscriptMatchNoteHTML.value = String(contentObj.note_html || "");
+      }
     } else {
       renderOptionsFromData(item.options);
     }
@@ -1002,6 +1259,10 @@
     const explanation = String(item.explanation_html || "").trim();
     const hint = String(item.hint_html || "").trim();
     const options = Array.isArray(item.options) ? item.options : [];
+    const questionContent =
+      item && item.question_content && typeof item.question_content === "object"
+        ? item.question_content
+        : {};
     const statements = Array.isArray(keyObj && keyObj.statements)
       ? keyObj.statements
       : [];
@@ -1011,6 +1272,9 @@
       if (typeof (keyObj && keyObj.correct) === "string") return "pg_tunggal";
       if (Array.isArray(keyObj && keyObj.statements)) {
         return "benar_salah_pernyataan";
+      }
+      if (Array.isArray(keyObj && keyObj.pairs)) {
+        return "menjodohkan_drag_drop";
       }
       return "";
     })();
@@ -1060,6 +1324,50 @@
           .join("") +
         "</ol>"
       : '<div class="muted">Tidak ada pernyataan tersimpan.</div>';
+    const matchPrompts = Array.isArray(questionContent.prompts)
+      ? questionContent.prompts
+      : [];
+    const matchChoices = Array.isArray(questionContent.choices)
+      ? questionContent.choices
+      : [];
+    const matchingHTML =
+      "<div><strong>Prompt</strong></div>" +
+      (matchPrompts.length
+        ? "<ol>" +
+          matchPrompts
+            .map(function (it) {
+              return (
+                "<li><strong>" +
+                deps.escapeHtml(String(it.id || "")) +
+                "</strong> " +
+                String(it.html || "") +
+                "</li>"
+              );
+            })
+            .join("") +
+          "</ol>"
+        : '<div class="muted">Tidak ada prompt tersimpan.</div>') +
+      '<div class="mt"><strong>Choice</strong></div>' +
+      (matchChoices.length
+        ? "<ol>" +
+          matchChoices
+            .map(function (it) {
+              return (
+                "<li><strong>" +
+                deps.escapeHtml(String(it.id || "")) +
+                "</strong> " +
+                String(it.html || "") +
+                "</li>"
+              );
+            })
+            .join("") +
+          "</ol>"
+        : '<div class="muted">Tidak ada choice tersimpan.</div>') +
+      (questionContent.note_html
+        ? '<div class="mt"><strong>Catatan:</strong><div class="box mt">' +
+          String(questionContent.note_html) +
+          "</div></div>"
+        : "");
     const correctKeysFromOptions = options
       .filter(function (it) {
         return it && it.is_correct === true;
@@ -1115,6 +1423,23 @@
               "</ol>"
           : '<div class="muted">Kunci jawaban belum diisi.</div>';
       }
+      if (questionType === "menjodohkan_drag_drop") {
+        return Array.isArray(keyObj.pairs) && keyObj.pairs.length
+          ? "<ol>" +
+              keyObj.pairs
+                .map(function (it) {
+                  return (
+                    "<li><strong>" +
+                    deps.escapeHtml(String((it && it.prompt_id) || "-")) +
+                    "</strong> -> " +
+                    deps.escapeHtml(String((it && it.choice_id) || "-")) +
+                    "</li>"
+                  );
+                })
+                .join("") +
+              "</ol>"
+          : '<div class="muted">Kunci jawaban belum diisi.</div>';
+      }
       if (correctKeysFromOptions.length) {
         return (
           '<div class="answer-key-value">' +
@@ -1124,7 +1449,12 @@
       }
       return '<div class="muted">Kunci jawaban belum diisi.</div>';
     })();
-    const optionSectionHTML = statements.length ? statementsHTML : optionsHTML;
+    const optionSectionHTML =
+      questionType === "menjodohkan_drag_drop"
+        ? matchingHTML
+        : statements.length
+          ? statementsHTML
+          : optionsHTML;
     if (deps.manuscriptPreviewTitle) {
       deps.text(
         deps.manuscriptPreviewTitle,
@@ -1221,8 +1551,12 @@
     currentManuscriptQuestionType = selectedType;
     var answerKeyObj;
     var optionsPayload = [];
+    var questionContentPayload = null;
     try {
       optionsPayload = validateOptions(collectOptions());
+      if (selectedType === "menjodohkan_drag_drop") {
+        questionContentPayload = collectMatchQuestionContent();
+      }
       answerKeyObj = collectAnswerKey();
       if (deps.manuscriptAnswerKeyRaw) {
         deps.manuscriptAnswerKeyRaw.value = JSON.stringify(
@@ -1276,6 +1610,7 @@
         stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
         stem_html: stemHTML.trim(),
+        question_content: questionContentPayload,
         answer_key: answerKeyObj,
         options: optionsPayload,
         explanation_html: String(fd.get("explanation_html") || "").trim(),
@@ -1324,6 +1659,7 @@
         stem_html: stemHTML,
         explanation_html: payload.explanation_html,
         hint_html: payload.hint_html,
+        question_content: questionContentPayload,
         answer_key: answerKeyObj,
         options: optionsPayload,
       });
@@ -1375,8 +1711,23 @@
       if (deps.manuscriptStimulusTabsWrap) {
         deps.manuscriptStimulusTabsWrap.innerHTML = "";
       }
+      if (deps.manuscriptMatchPromptsWrap) {
+        deps.manuscriptMatchPromptsWrap.innerHTML = "";
+      }
+      if (deps.manuscriptMatchChoicesWrap) {
+        deps.manuscriptMatchChoicesWrap.innerHTML = "";
+      }
+      if (deps.manuscriptMatchPairsWrap) {
+        deps.manuscriptMatchPairsWrap.innerHTML = "";
+      }
+      if (deps.manuscriptMatchNoteHTML) {
+        deps.manuscriptMatchNoteHTML.value = "";
+      }
       ensureOptionRows();
       ensureTFStatementRows();
+      ensureMatchRows("prompt");
+      ensureMatchRows("choice");
+      renderMatchPairRows();
       ensureStimulusTabRows();
       applyStimulusTypeUI();
       applyTypeUI(true);
@@ -1444,8 +1795,18 @@
     if (deps.manuscriptStatementsWrap)
       deps.manuscriptStatementsWrap.innerHTML = "";
     if (deps.manuscriptOptionsWrap) deps.manuscriptOptionsWrap.innerHTML = "";
+    if (deps.manuscriptMatchPromptsWrap)
+      deps.manuscriptMatchPromptsWrap.innerHTML = "";
+    if (deps.manuscriptMatchChoicesWrap)
+      deps.manuscriptMatchChoicesWrap.innerHTML = "";
+    if (deps.manuscriptMatchPairsWrap)
+      deps.manuscriptMatchPairsWrap.innerHTML = "";
+    if (deps.manuscriptMatchNoteHTML) deps.manuscriptMatchNoteHTML.value = "";
     ensureOptionRows();
     ensureTFStatementRows();
+    ensureMatchRows("prompt");
+    ensureMatchRows("choice");
+    renderMatchPairRows();
     applyTypeUI(true);
   }
 
@@ -1508,7 +1869,11 @@
       target.hasAttribute("data-stimulus-tab-body") ||
       target.hasAttribute("data-statement-id") ||
       target.hasAttribute("data-statement-text") ||
-      target.hasAttribute("data-statement-correct")
+      target.hasAttribute("data-statement-correct") ||
+      target.hasAttribute("data-match-id") ||
+      target.hasAttribute("data-match-html") ||
+      target.hasAttribute("data-match-pair-prompt") ||
+      target === (deps && deps.manuscriptMatchNoteHTML)
     ) {
       if (
         target.hasAttribute("data-option-key") ||
@@ -1522,6 +1887,16 @@
         target.hasAttribute("data-stimulus-tab-body")
       ) {
         syncHiddenInputs();
+      }
+      if (
+        target.hasAttribute("data-match-id") ||
+        target.hasAttribute("data-match-html")
+      ) {
+        try {
+          renderMatchPairRows();
+        } catch (_) {
+          // Ignore incomplete matching rows while user is editing.
+        }
       }
       syncAnswerKeyPreview();
     }
@@ -1716,6 +2091,66 @@
         const row = btn.closest("[data-statement-row]");
         if (row) row.remove();
         ensureTFStatementRows();
+        syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptAddMatchPromptBtn) {
+      deps.manuscriptAddMatchPromptBtn.addEventListener("click", function () {
+        if (!deps.manuscriptMatchPromptsWrap) return;
+        const idx =
+          deps.manuscriptMatchPromptsWrap.querySelectorAll(
+            '[data-match-row="prompt"]',
+          ).length || 0;
+        deps.manuscriptMatchPromptsWrap.insertAdjacentHTML(
+          "beforeend",
+          createMatchContentRow("prompt", null, idx),
+        );
+        renderMatchPairRows();
+        syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptAddMatchChoiceBtn) {
+      deps.manuscriptAddMatchChoiceBtn.addEventListener("click", function () {
+        if (!deps.manuscriptMatchChoicesWrap) return;
+        const idx =
+          deps.manuscriptMatchChoicesWrap.querySelectorAll(
+            '[data-match-row="choice"]',
+          ).length || 0;
+        deps.manuscriptMatchChoicesWrap.insertAdjacentHTML(
+          "beforeend",
+          createMatchContentRow("choice", null, idx),
+        );
+        renderMatchPairRows();
+        syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptSyncMatchPairsBtn) {
+      deps.manuscriptSyncMatchPairsBtn.addEventListener("click", function () {
+        renderMatchPairRows();
+        syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptMatchPromptsWrap) {
+      deps.manuscriptMatchPromptsWrap.addEventListener("click", function (e) {
+        const btn =
+          e.target && e.target.closest('button[data-match-remove="prompt"]');
+        if (!btn) return;
+        const row = btn.closest('[data-match-row="prompt"]');
+        if (row) row.remove();
+        ensureMatchRows("prompt");
+        renderMatchPairRows();
+        syncAnswerKeyPreview();
+      });
+    }
+    if (deps.manuscriptMatchChoicesWrap) {
+      deps.manuscriptMatchChoicesWrap.addEventListener("click", function (e) {
+        const btn =
+          e.target && e.target.closest('button[data-match-remove="choice"]');
+        if (!btn) return;
+        const row = btn.closest('[data-match-row="choice"]');
+        if (row) row.remove();
+        ensureMatchRows("choice");
+        renderMatchPairRows();
         syncAnswerKeyPreview();
       });
     }

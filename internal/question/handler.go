@@ -96,6 +96,7 @@ type createQuestionVersionRequest struct {
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
 	HintHTML        *string               `json:"hint_html"`
+	QuestionContent json.RawMessage       `json:"question_content"`
 	AnswerKey       json.RawMessage       `json:"answer_key"`
 	Options         []QuestionOptionInput `json:"options"`
 	DurationSeconds *int                  `json:"duration_seconds"`
@@ -111,6 +112,7 @@ type updateQuestionVersionRequest struct {
 	StemHTML        *string               `json:"stem_html"`
 	ExplanationHTML *string               `json:"explanation_html"`
 	HintHTML        *string               `json:"hint_html"`
+	QuestionContent json.RawMessage       `json:"question_content"`
 	AnswerKey       json.RawMessage       `json:"answer_key"`
 	Options         []QuestionOptionInput `json:"options"`
 	DurationSeconds *int                  `json:"duration_seconds"`
@@ -728,6 +730,34 @@ func buildExportOptions(data *ExportQuestionData) string {
 		}
 		return strings.Join(parts, ", ")
 	}
+	if qType == "menjodohkan_drag_drop" {
+		var payload struct {
+			Prompts []struct {
+				ID   string `json:"id"`
+				HTML string `json:"html"`
+			} `json:"prompts"`
+			Choices []struct {
+				ID   string `json:"id"`
+				HTML string `json:"html"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal(data.QuestionContent, &payload) == nil {
+			prompts := make([]string, 0, len(payload.Prompts))
+			for _, it := range payload.Prompts {
+				if txt := stripHTML(it.HTML); txt != "" {
+					prompts = append(prompts, fmt.Sprintf("%s. %s", strings.TrimSpace(it.ID), txt))
+				}
+			}
+			choices := make([]string, 0, len(payload.Choices))
+			for _, it := range payload.Choices {
+				if txt := stripHTML(it.HTML); txt != "" {
+					choices = append(choices, fmt.Sprintf("%s. %s", strings.TrimSpace(it.ID), txt))
+				}
+			}
+			return "Prompts: " + strings.Join(prompts, "; ") + " | Choices: " + strings.Join(choices, "; ")
+		}
+		return ""
+	}
 	parts := make([]string, 0, len(data.Options))
 	for i, opt := range data.Options {
 		key := strings.TrimSpace(opt.OptionKey)
@@ -792,6 +822,26 @@ func buildExportAnswerKey(data *ExportQuestionData) string {
 			return strings.Join(vals, ",")
 		}
 	}
+	if qType == "menjodohkan_drag_drop" {
+		var payload struct {
+			Pairs []struct {
+				PromptID string `json:"prompt_id"`
+				ChoiceID string `json:"choice_id"`
+			} `json:"pairs"`
+		}
+		if json.Unmarshal(data.AnswerKey, &payload) == nil {
+			pairs := make([]string, 0, len(payload.Pairs))
+			for _, pair := range payload.Pairs {
+				promptID := strings.TrimSpace(pair.PromptID)
+				choiceID := strings.TrimSpace(pair.ChoiceID)
+				if promptID == "" || choiceID == "" {
+					continue
+				}
+				pairs = append(pairs, promptID+"->"+choiceID)
+			}
+			return strings.Join(pairs, "|")
+		}
+	}
 	return ""
 }
 
@@ -838,6 +888,7 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,
 		HintHTML:        req.HintHTML,
+		QuestionContent: req.QuestionContent,
 		AnswerKey:       req.AnswerKey,
 		Options:         req.Options,
 		DurationSeconds: req.DurationSeconds,
@@ -1045,6 +1096,7 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 		StemHTML:        req.StemHTML,
 		ExplanationHTML: req.ExplanationHTML,
 		HintHTML:        req.HintHTML,
+		QuestionContent: req.QuestionContent,
 		AnswerKey:       req.AnswerKey,
 		Options:         req.Options,
 		DurationSeconds: req.DurationSeconds,

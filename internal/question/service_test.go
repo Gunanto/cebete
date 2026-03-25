@@ -21,6 +21,8 @@ func TestValidateAnswerKey(t *testing.T) {
 		{name: "bs valid", questionType: "benar_salah_pernyataan", answerKey: `{"statements":[{"id":"s1","correct":true},{"id":"s2","correct":false}]}`, wantErr: false},
 		{name: "bs invalid duplicate id", questionType: "benar_salah_pernyataan", answerKey: `{"statements":[{"id":"s1","correct":true},{"id":"s1","correct":false}]}`, wantErr: true},
 		{name: "bs invalid empty", questionType: "benar_salah_pernyataan", answerKey: `{"statements":[]}`, wantErr: true},
+		{name: "matching valid", questionType: "menjodohkan_drag_drop", answerKey: `{"mode":"exact","pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`, wantErr: false},
+		{name: "matching invalid duplicate prompt", questionType: "menjodohkan_drag_drop", answerKey: `{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P1","choice_id":"C1"}]}`, wantErr: true},
 		{name: "unsupported type", questionType: "isian", answerKey: `{"correct":"x"}`, wantErr: true},
 		{name: "invalid json", questionType: "pg_tunggal", answerKey: `{"correct":`, wantErr: true},
 	}
@@ -88,4 +90,38 @@ func TestNormalizeAndValidateOptions(t *testing.T) {
 			t.Fatalf("expected nil output for tf, got out=%v correct=%v", out, correct)
 		}
 	})
+
+	t.Run("matching ignore options", func(t *testing.T) {
+		out, correct, err := normalizeAndValidateOptions(
+			"menjodohkan_drag_drop",
+			[]QuestionOptionInput{
+				{OptionKey: "A", OptionHTML: "<p>A</p>"},
+			},
+			json.RawMessage(`{"pairs":[{"prompt_id":"P1","choice_id":"C1"}]}`),
+		)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if out != nil || correct != nil {
+			t.Fatalf("expected nil output for matching, got out=%v correct=%v", out, correct)
+		}
+	})
+}
+
+func TestNormalizeQuestionContentAndMatchingReferences(t *testing.T) {
+	raw := json.RawMessage(`{
+		"prompts":[{"id":"P1","html":"<p>Satu</p>"},{"id":"P2","html":"<p>Dua</p>"}],
+		"choices":[{"id":"C1","html":"<p>A</p>"},{"id":"C2","html":"<p>B</p>"}],
+		"note_html":"<p>Catatan</p>"
+	}`)
+	normalized, err := normalizeQuestionContent("menjodohkan_drag_drop", raw)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := validateMatchingReferences(normalized, json.RawMessage(`{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`)); err != nil {
+		t.Fatalf("expected valid references, got %v", err)
+	}
+	if err := validateMatchingReferences(normalized, json.RawMessage(`{"pairs":[{"prompt_id":"P9","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`)); err == nil {
+		t.Fatalf("expected invalid references error")
+	}
 }

@@ -162,6 +162,82 @@ func TestScoreQuestion_BenarSalahPernyataan(t *testing.T) {
 	}
 }
 
+func TestScoreQuestion_MenjodohkanDragDrop(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		payload   string
+		weight    float64
+		reason    string
+		answered  bool
+		earned    float64
+		isCorrect *bool
+	}{
+		{
+			name:      "exact correct",
+			key:       `{"mode":"exact","pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`,
+			payload:   `{"pairs":[{"prompt_id":"P2","choice_id":"C1"},{"prompt_id":"P1","choice_id":"C2"}]}`,
+			weight:    3,
+			reason:    "correct",
+			answered:  true,
+			earned:    3,
+			isCorrect: boolPtr(true),
+		},
+		{
+			name:      "wrong pair",
+			key:       `{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`,
+			payload:   `{"pairs":[{"prompt_id":"P1","choice_id":"C1"},{"prompt_id":"P2","choice_id":"C2"}]}`,
+			weight:    3,
+			reason:    "wrong",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "unanswered missing pairs",
+			key:       `{"pairs":[{"prompt_id":"P1","choice_id":"C2"}]}`,
+			payload:   `{}`,
+			weight:    1,
+			reason:    "unanswered",
+			answered:  false,
+			earned:    0,
+			isCorrect: nil,
+		},
+		{
+			name:      "malformed payload duplicate prompt",
+			key:       `{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P2","choice_id":"C1"}]}`,
+			payload:   `{"pairs":[{"prompt_id":"P1","choice_id":"C2"},{"prompt_id":"P1","choice_id":"C1"}]}`,
+			weight:    2,
+			reason:    "malformed_payload",
+			answered:  true,
+			earned:    0,
+			isCorrect: boolPtr(false),
+		},
+		{
+			name:      "malformed answer key",
+			key:       `{"pairs":[]}`,
+			payload:   `{"pairs":[{"prompt_id":"P1","choice_id":"C2"}]}`,
+			weight:    1,
+			reason:    "malformed_answer_key",
+			answered:  false,
+			earned:    0,
+			isCorrect: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ScoreQuestion(ScoreInput{
+				QuestionType:  "menjodohkan_drag_drop",
+				AnswerKey:     []byte(tc.key),
+				AnswerPayload: []byte(tc.payload),
+				Weight:        tc.weight,
+			})
+			assertScoreResult(t, got, tc.reason, tc.answered, tc.earned, tc.isCorrect)
+		})
+	}
+}
+
 func assertScoreResult(t *testing.T, got ScoreResult, reason string, answered bool, earned float64, isCorrect *bool) {
 	t.Helper()
 	if got.Reason != reason {

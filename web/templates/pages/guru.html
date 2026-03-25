@@ -907,6 +907,9 @@
                             <option value="benar_salah_pernyataan">
                                 TF (True-False = Benar-Salah)
                             </option>
+                            <option value="menjodohkan_drag_drop">
+                                MATCH (Menjodohkan Drag-Drop)
+                            </option>
                         </select>
                     </label>
                     <section class="panel stimulus-editor-wrap">
@@ -1033,6 +1036,70 @@
                             >
                                 Tambah Pernyataan
                             </button>
+                        </div>
+                        <div id="guru-manuscript-key-match" class="mt" hidden>
+                            <div class="admin-section-head">
+                                <div class="muted">
+                                    Susun prompt, choice, dan pasangan benar
+                                    untuk matching.
+                                </div>
+                            </div>
+                            <section class="panel mt">
+                                <div class="admin-section-head">
+                                    <h4>Prompt</h4>
+                                    <button
+                                        id="guru-manuscript-add-match-prompt-btn"
+                                        class="btn btn-secondary btn-inline"
+                                        type="button"
+                                    >
+                                        Tambah Prompt
+                                    </button>
+                                </div>
+                                <div
+                                    id="guru-manuscript-match-prompts"
+                                    class="mt"
+                                ></div>
+                            </section>
+                            <section class="panel mt">
+                                <div class="admin-section-head">
+                                    <h4>Choice</h4>
+                                    <button
+                                        id="guru-manuscript-add-match-choice-btn"
+                                        class="btn btn-secondary btn-inline"
+                                        type="button"
+                                    >
+                                        Tambah Choice
+                                    </button>
+                                </div>
+                                <div
+                                    id="guru-manuscript-match-choices"
+                                    class="mt"
+                                ></div>
+                            </section>
+                            <section class="panel mt">
+                                <h4>Catatan Tambahan</h4>
+                                <textarea
+                                    id="guru-manuscript-match-note-html"
+                                    rows="3"
+                                    placeholder="<p>Catatan penting...</p>"
+                                ></textarea>
+                            </section>
+                            <section class="panel mt">
+                                <div class="admin-section-head">
+                                    <h4>Pasangan Benar</h4>
+                                    <button
+                                        id="guru-manuscript-sync-match-pairs-btn"
+                                        class="btn btn-secondary btn-inline"
+                                        type="button"
+                                    >
+                                        Sinkronkan Pasangan
+                                    </button>
+                                </div>
+                                <div
+                                    id="guru-manuscript-match-pairs"
+                                    class="mt"
+                                ></div>
+                            </section>
                         </div>
                     </section>
                     <label

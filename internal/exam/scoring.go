@@ -44,6 +44,8 @@ func ScoreQuestion(in ScoreInput) ScoreResult {
 		return scoreMultiJawaban(in.AnswerKey, in.AnswerPayload, in.CorrectKeys, weight)
 	case "benar_salah_pernyataan":
 		return scoreBenarSalahPernyataan(in.AnswerKey, in.AnswerPayload, weight)
+	case "menjodohkan_drag_drop":
+		return scoreMenjodohkanDragDrop(in.AnswerKey, in.AnswerPayload, weight)
 	default:
 		return scorePGTunggal(in.AnswerKey, in.AnswerPayload, in.CorrectKeys, weight)
 	}
@@ -167,6 +169,28 @@ func scoreBenarSalahPernyataan(answerKeyRaw, payloadRaw []byte, weight float64) 
 	}
 }
 
+func scoreMenjodohkanDragDrop(answerKeyRaw, payloadRaw []byte, weight float64) ScoreResult {
+	correctPairs, okKey := parseMatchingPairsKey(answerKeyRaw)
+	if !okKey || len(correctPairs) == 0 {
+		return ScoreResult{Reason: "malformed_answer_key"}
+	}
+
+	selectedPairs, status := parseMatchingPairsPayload(payloadRaw)
+	if status == "unanswered" {
+		return ScoreResult{Answered: false, IsCorrect: nil, EarnedScore: 0, Reason: "unanswered", Correct: correctPairs}
+	}
+	if status == "malformed" {
+		f := false
+		return ScoreResult{Answered: true, IsCorrect: &f, EarnedScore: 0, Reason: "malformed_payload", Correct: correctPairs}
+	}
+
+	isCorrect := equalSet(selectedPairs, correctPairs)
+	if isCorrect {
+		return ScoreResult{Answered: true, IsCorrect: boolPtr(true), EarnedScore: weight, Reason: "correct", Selected: selectedPairs, Correct: correctPairs}
+	}
+	return ScoreResult{Answered: true, IsCorrect: boolPtr(false), EarnedScore: 0, Reason: "wrong", Selected: selectedPairs, Correct: correctPairs}
+}
+
 func parsePGTunggalKey(raw []byte) (string, bool) {
 	if len(raw) == 0 {
 		return "", false
@@ -255,6 +279,28 @@ func parseBenarSalahKey(raw []byte) (map[string]bool, []string, bool) {
 	return out, order, true
 }
 
+func parseMatchingPairsKey(raw []byte) ([]string, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, false
+	}
+	mode := "exact"
+	if v, ok := obj["mode"].(string); ok {
+		mode = strings.TrimSpace(strings.ToLower(v))
+	}
+	if mode != "" && mode != "exact" {
+		return nil, false
+	}
+	v, ok := obj["pairs"]
+	if !ok {
+		return nil, false
+	}
+	return parseMatchingPairs(v)
+}
+
 func parseSingleSelection(raw []byte) (string, string) {
 	if len(raw) == 0 {
 		return "", "unanswered"
@@ -293,6 +339,62 @@ func parseSingleSelection(raw []byte) (string, string) {
 	default:
 		return "", "malformed"
 	}
+}
+
+func parseMatchingPairsPayload(raw []byte) ([]string, string) {
+	if len(raw) == 0 {
+		return nil, "unanswered"
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, "malformed"
+	}
+	v, ok := obj["pairs"]
+	if !ok {
+		return nil, "unanswered"
+	}
+	pairs, valid := parseMatchingPairs(v)
+	if !valid {
+		return nil, "malformed"
+	}
+	if len(pairs) == 0 {
+		return nil, "unanswered"
+	}
+	return pairs, "answered"
+}
+
+func parseMatchingPairs(v interface{}) ([]string, bool) {
+	arr, ok := v.([]interface{})
+	if !ok || len(arr) == 0 {
+		return nil, false
+	}
+	seenPrompt := map[string]struct{}{}
+	seenChoice := map[string]struct{}{}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		pair, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		promptID, _ := pair["prompt_id"].(string)
+		choiceID, _ := pair["choice_id"].(string)
+		promptID = strings.TrimSpace(promptID)
+		choiceID = strings.TrimSpace(choiceID)
+		if promptID == "" || choiceID == "" {
+			return nil, false
+		}
+		if _, exists := seenPrompt[promptID]; exists {
+			return nil, false
+		}
+		if _, exists := seenChoice[choiceID]; exists {
+			return nil, false
+		}
+		seenPrompt[promptID] = struct{}{}
+		seenChoice[choiceID] = struct{}{}
+		out = append(out, promptID+":"+choiceID)
+	}
+	sort.Strings(out)
+	return out, true
 }
 
 func parseMultiSelection(raw []byte) ([]string, string) {

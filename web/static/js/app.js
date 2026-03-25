@@ -157,6 +157,7 @@
     if (v === "pg_tunggal") return "MC";
     if (v === "multi_jawaban") return "MR";
     if (v === "benar_salah_pernyataan") return "TF";
+    if (v === "menjodohkan_drag_drop") return "MATCH";
     return "-";
   }
 
@@ -1869,6 +1870,31 @@
         });
         return answered.size === expected.size;
       }
+      if (qType === "menjodohkan_drag_drop") {
+        const content = readMatchingContent(questionLike);
+        if (!Array.isArray(content.prompts) || content.prompts.length === 0)
+          return false;
+        const expected = new Set(
+          content.prompts
+            .map(function (it) {
+              return String((it && it.id) || "").trim();
+            })
+            .filter(Boolean),
+        );
+        if (expected.size === 0) return false;
+        const pairs = Array.isArray(payload && payload.pairs)
+          ? payload.pairs
+          : [];
+        const answered = new Set();
+        pairs.forEach(function (pair) {
+          if (!pair || typeof pair !== "object") return;
+          const promptID = String(pair.prompt_id || "").trim();
+          const choiceID = String(pair.choice_id || "").trim();
+          if (!promptID || !choiceID || !expected.has(promptID)) return;
+          answered.add(promptID);
+        });
+        return answered.size === expected.size;
+      }
       if (qType === "pg_tunggal") {
         return (
           typeof payload.selected === "string" && payload.selected.trim() !== ""
@@ -1892,6 +1918,7 @@
       if (v === "pg_tunggal") return "Pilihan Ganda Tunggal";
       if (v === "multi_jawaban") return "Pilihan Ganda Multi Jawaban";
       if (v === "benar_salah_pernyataan") return "Benar/Salah Pernyataan";
+      if (v === "menjodohkan_drag_drop") return "Menjodohkan Drag-Drop";
       return v || "-";
     }
 
@@ -2213,6 +2240,78 @@
         );
         return;
       }
+      if (qType === "menjodohkan_drag_drop") {
+        const content = readMatchingContent(q);
+        if (!content.prompts.length || !content.choices.length) {
+          html(
+            optionsBox,
+            '<p class="muted">Konten matching tidak tersedia.</p>',
+          );
+          return;
+        }
+        const existing = {};
+        if (Array.isArray(payload.pairs)) {
+          payload.pairs.forEach(function (pair) {
+            if (!pair || typeof pair !== "object") return;
+            const promptID = String(pair.prompt_id || "").trim();
+            const choiceID = String(pair.choice_id || "").trim();
+            if (promptID && choiceID) existing[promptID] = choiceID;
+          });
+        }
+        const rows = content.prompts.map(function (prompt) {
+          const promptID = String((prompt && prompt.id) || "").trim();
+          const promptHTML = String((prompt && prompt.html) || "").trim();
+          const options = ['<option value="">Pilih jawaban</option>'].concat(
+            content.choices.map(function (choice) {
+              const choiceID = String((choice && choice.id) || "").trim();
+              const selectedAttr =
+                existing[promptID] === choiceID ? " selected" : "";
+              return (
+                '<option value="' +
+                escapeHtml(choiceID) +
+                '"' +
+                selectedAttr +
+                ">" +
+                escapeHtml(choiceID) +
+                "</option>"
+              );
+            }),
+          );
+          return (
+            '<div class="panel mt matching-row">' +
+            '<div class="matching-prompt">' +
+            (promptHTML || '<span class="muted">Prompt kosong.</span>') +
+            "</div>" +
+            '<label class="mt">Jawaban<select data-match-prompt="' +
+            escapeHtml(promptID) +
+            '">' +
+            options.join("") +
+            "</select></label>" +
+            "</div>"
+          );
+        });
+        const choiceBank =
+          '<div class="mt"><strong>Bank Jawaban</strong><div class="mt">' +
+          content.choices
+            .map(function (choice) {
+              return (
+                '<div class="mt"><span class="chip">' +
+                escapeHtml(String((choice && choice.id) || "").trim()) +
+                "</span> " +
+                String((choice && choice.html) || "") +
+                "</div>"
+              );
+            })
+            .join("") +
+          "</div></div>";
+        const noteSection = content.note_html
+          ? '<div class="mt"><strong>Catatan</strong><div class="box mt">' +
+            content.note_html +
+            "</div></div>"
+          : "";
+        html(optionsBox, rows.join("") + choiceBank + noteSection);
+        return;
+      }
 
       const multiple = qType === "multi_jawaban";
       const inputType = multiple ? "checkbox" : "radio";
@@ -2258,6 +2357,17 @@
           statement_html: String((opt && opt.option_html) || ""),
         };
       });
+    }
+
+    function readMatchingContent(q) {
+      const content = parseJSONLoose(q && q.question_content, {});
+      return {
+        prompts:
+          content && Array.isArray(content.prompts) ? content.prompts : [],
+        choices:
+          content && Array.isArray(content.choices) ? content.choices : [],
+        note_html: String((content && content.note_html) || "").trim(),
+      };
     }
 
     function renderMathInContainer(el) {
@@ -2467,6 +2577,21 @@
           }
         });
         return { answers: answers };
+      }
+      if (qType === "menjodohkan_drag_drop") {
+        const pairs = Array.from(
+          optionsBox.querySelectorAll("select[data-match-prompt]"),
+        )
+          .map(function (el) {
+            const promptID = String(
+              el.getAttribute("data-match-prompt") || "",
+            ).trim();
+            const choiceID = String(el.value || "").trim();
+            if (!promptID || !choiceID) return null;
+            return { prompt_id: promptID, choice_id: choiceID };
+          })
+          .filter(Boolean);
+        return { pairs: pairs };
       }
 
       const selectedNodes = optionsBox.querySelectorAll(
@@ -2922,6 +3047,25 @@
     function formatItemList(list) {
       const items = Array.isArray(list) ? list : [];
       if (!items.length) return "-";
+      const looksLikePairs = items.every(function (it) {
+        return String(it || "").includes(":");
+      });
+      if (looksLikePairs) {
+        return (
+          '<div class="result-pair-list">' +
+          items
+            .map(function (it) {
+              const text = String(it || "").trim();
+              return (
+                '<span class="result-pair-chip">' +
+                escapeHtml(text.replace(":", " -> ")) +
+                "</span>"
+              );
+            })
+            .join("") +
+          "</div>"
+        );
+      }
       return items
         .map(function (it) {
           return escapeHtml(String(it));
@@ -3783,6 +3927,25 @@
     function formatItemList(list) {
       const items = Array.isArray(list) ? list : [];
       if (!items.length) return "-";
+      const looksLikePairs = items.every(function (it) {
+        return String(it || "").includes(":");
+      });
+      if (looksLikePairs) {
+        return (
+          '<div class="result-pair-list">' +
+          items
+            .map(function (it) {
+              const text = String(it || "").trim();
+              return (
+                '<span class="result-pair-chip">' +
+                escapeHtml(text.replace(":", " -> ")) +
+                "</span>"
+              );
+            })
+            .join("") +
+          "</div>"
+        );
+      }
       return items
         .map(function (it) {
           return escapeHtml(String(it));
@@ -5543,6 +5706,9 @@
       "guru-manuscript-key-mr-options",
     );
     const manuscriptKeyTF = document.getElementById("guru-manuscript-key-tf");
+    const manuscriptKeyMatch = document.getElementById(
+      "guru-manuscript-key-match",
+    );
     const manuscriptStatementsWrap = document.getElementById(
       "guru-manuscript-statements",
     );
@@ -5551,6 +5717,27 @@
     );
     const manuscriptAddStatementBtnBottom = document.getElementById(
       "guru-manuscript-add-statement-btn-bottom",
+    );
+    const manuscriptMatchPromptsWrap = document.getElementById(
+      "guru-manuscript-match-prompts",
+    );
+    const manuscriptMatchChoicesWrap = document.getElementById(
+      "guru-manuscript-match-choices",
+    );
+    const manuscriptMatchPairsWrap = document.getElementById(
+      "guru-manuscript-match-pairs",
+    );
+    const manuscriptAddMatchPromptBtn = document.getElementById(
+      "guru-manuscript-add-match-prompt-btn",
+    );
+    const manuscriptAddMatchChoiceBtn = document.getElementById(
+      "guru-manuscript-add-match-choice-btn",
+    );
+    const manuscriptSyncMatchPairsBtn = document.getElementById(
+      "guru-manuscript-sync-match-pairs-btn",
+    );
+    const manuscriptMatchNoteHTML = document.getElementById(
+      "guru-manuscript-match-note-html",
     );
     const manuscriptAnswerKeyRaw = document.getElementById(
       "guru-manuscript-answer-key-raw",
@@ -7028,6 +7215,7 @@
       if (t === "pg_tunggal") return "MC";
       if (t === "multi_jawaban") return "MR";
       if (t === "benar_salah_pernyataan") return "TF";
+      if (t === "menjodohkan_drag_drop") return "MATCH";
       return t ? t.toUpperCase() : "-";
     }
 
@@ -7259,9 +7447,17 @@
         manuscriptKeyMCOptions: manuscriptKeyMCOptions,
         manuscriptKeyMROptions: manuscriptKeyMROptions,
         manuscriptKeyTF: manuscriptKeyTF,
+        manuscriptKeyMatch: manuscriptKeyMatch,
         manuscriptStatementsWrap: manuscriptStatementsWrap,
         manuscriptAddStatementBtn: manuscriptAddStatementBtn,
         manuscriptAddStatementBtnBottom: manuscriptAddStatementBtnBottom,
+        manuscriptMatchPromptsWrap: manuscriptMatchPromptsWrap,
+        manuscriptMatchChoicesWrap: manuscriptMatchChoicesWrap,
+        manuscriptMatchPairsWrap: manuscriptMatchPairsWrap,
+        manuscriptAddMatchPromptBtn: manuscriptAddMatchPromptBtn,
+        manuscriptAddMatchChoiceBtn: manuscriptAddMatchChoiceBtn,
+        manuscriptSyncMatchPairsBtn: manuscriptSyncMatchPairsBtn,
+        manuscriptMatchNoteHTML: manuscriptMatchNoteHTML,
         manuscriptAnswerKeyRaw: manuscriptAnswerKeyRaw,
         manuscriptEditingVersionNoInput: manuscriptEditingVersionNoInput,
         manuscriptSubmitBtn: manuscriptSubmitBtn,

@@ -410,25 +410,27 @@ type AttemptResultItem struct {
 }
 
 type AttemptQuestion struct {
-	AttemptID     int64            `json:"attempt_id"`
-	QuestionID    int64            `json:"question_id"`
-	SeqNo         int              `json:"seq_no"`
-	QuestionType  string           `json:"question_type"`
-	StemHTML      string           `json:"stem_html"`
-	StimulusHTML  *string          `json:"stimulus_html,omitempty"`
-	AnswerKey     json.RawMessage  `json:"answer_key"`
-	AnswerPayload json.RawMessage  `json:"answer_payload"`
-	IsDoubt       bool             `json:"is_doubt"`
-	Options       []QuestionOption `json:"options,omitempty"`
+	AttemptID       int64            `json:"attempt_id"`
+	QuestionID      int64            `json:"question_id"`
+	SeqNo           int              `json:"seq_no"`
+	QuestionType    string           `json:"question_type"`
+	StemHTML        string           `json:"stem_html"`
+	StimulusHTML    *string          `json:"stimulus_html,omitempty"`
+	QuestionContent json.RawMessage  `json:"question_content,omitempty"`
+	AnswerKey       json.RawMessage  `json:"answer_key"`
+	AnswerPayload   json.RawMessage  `json:"answer_payload"`
+	IsDoubt         bool             `json:"is_doubt"`
+	Options         []QuestionOption `json:"options,omitempty"`
 }
 
 type ExamQuestionDetail struct {
-	QuestionID   int64            `json:"question_id"`
-	QuestionType string           `json:"question_type"`
-	StemHTML     string           `json:"stem_html"`
-	StimulusHTML *string          `json:"stimulus_html,omitempty"`
-	AnswerKey    json.RawMessage  `json:"answer_key"`
-	Options      []QuestionOption `json:"options,omitempty"`
+	QuestionID      int64            `json:"question_id"`
+	QuestionType    string           `json:"question_type"`
+	StemHTML        string           `json:"stem_html"`
+	StimulusHTML    *string          `json:"stimulus_html,omitempty"`
+	QuestionContent json.RawMessage  `json:"question_content,omitempty"`
+	AnswerKey       json.RawMessage  `json:"answer_key"`
+	Options         []QuestionOption `json:"options,omitempty"`
 }
 
 type QuestionOption struct {
@@ -3278,6 +3280,13 @@ func (s *Service) SaveAnswer(ctx context.Context, input SaveAnswerInput) error {
 	if len(input.AnswerPayload) == 0 {
 		input.AnswerPayload = json.RawMessage(`{}`)
 	}
+	questionType, questionContent, err := s.loadQuestionValidationSchema(ctx, row.ExamID, input.QuestionID)
+	if err != nil {
+		return err
+	}
+	if err := validateAnswerPayload(questionType, questionContent, input.AnswerPayload); err != nil {
+		return err
+	}
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO attempt_answers (
@@ -3298,6 +3307,156 @@ func (s *Service) SaveAnswer(ctx context.Context, input SaveAnswerInput) error {
 		return fmt.Errorf("upsert answer: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Service) loadQuestionValidationSchema(ctx context.Context, examID, questionID int64) (string, json.RawMessage, error) {
+	var questionType string
+	var questionContent json.RawMessage
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			q.question_type,
+			COALESCE(NULLIF(qv.question_content, '{}'::jsonb), NULLIF(qv_fallback.question_content, '{}'::jsonb), '{}'::jsonb) AS question_content
+		FROM exam_questions eq
+		JOIN questions q
+			ON q.id = eq.question_id
+		LEFT JOIN LATERAL (
+			SELECT qv.question_content
+			FROM question_versions qv
+			WHERE qv.question_id = q.id
+			ORDER BY CASE
+				WHEN qv.version_no = q.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT qv2.question_content
+			FROM questions q2
+			JOIN question_versions qv2 ON qv2.question_id = q2.id
+			WHERE q.question_code_id IS NOT NULL
+			  AND q2.question_code_id = q.question_code_id
+			  AND q2.id <> q.id
+			  AND q2.question_type = q.question_type
+			  AND (
+				NULLIF(btrim(q.metadata->>'title'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'title'), '') = NULLIF(btrim(q.metadata->>'title'), '')
+			  )
+			  AND (
+				NULLIF(btrim(q.metadata->>'material'), '') IS NULL
+				OR NULLIF(btrim(q2.metadata->>'material'), '') = NULLIF(btrim(q.metadata->>'material'), '')
+			  )
+			ORDER BY CASE
+				WHEN qv2.status = 'final' THEN 0
+				ELSE 1
+			END, qv2.is_active DESC, qv2.version_no DESC, q2.id DESC
+			LIMIT 1
+		) qv_fallback ON TRUE
+		WHERE eq.exam_id = $1
+		  AND eq.question_id = $2
+	`, examID, questionID).Scan(&questionType, &questionContent)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil, ErrQuestionNotInExam
+		}
+		return "", nil, fmt.Errorf("load question validation schema: %w", err)
+	}
+	return strings.TrimSpace(strings.ToLower(questionType)), questionContent, nil
+}
+
+func validateAnswerPayload(questionType string, questionContent, payload json.RawMessage) error {
+	qType := strings.TrimSpace(strings.ToLower(questionType))
+	if len(payload) == 0 {
+		return nil
+	}
+	if !json.Valid(payload) {
+		return ErrInvalidInput
+	}
+	switch qType {
+	case "menjodohkan_drag_drop":
+		return validateMatchingAnswerPayload(questionContent, payload)
+	default:
+		return nil
+	}
+}
+
+func validateMatchingAnswerPayload(questionContent, payload json.RawMessage) error {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return ErrInvalidInput
+	}
+	rawPairs, exists := obj["pairs"]
+	if !exists || rawPairs == nil {
+		return nil
+	}
+	arr, ok := rawPairs.([]any)
+	if !ok {
+		return ErrInvalidInput
+	}
+	if len(arr) == 0 {
+		return nil
+	}
+	var content struct {
+		Prompts []struct {
+			ID string `json:"id"`
+		} `json:"prompts"`
+		Choices []struct {
+			ID string `json:"id"`
+		} `json:"choices"`
+	}
+	if len(questionContent) > 0 {
+		if err := json.Unmarshal(questionContent, &content); err != nil {
+			return ErrInvalidInput
+		}
+	}
+	promptSet := map[string]struct{}{}
+	for _, item := range content.Prompts {
+		id := strings.TrimSpace(item.ID)
+		if id != "" {
+			promptSet[id] = struct{}{}
+		}
+	}
+	choiceSet := map[string]struct{}{}
+	for _, item := range content.Choices {
+		id := strings.TrimSpace(item.ID)
+		if id != "" {
+			choiceSet[id] = struct{}{}
+		}
+	}
+	seenPrompt := map[string]struct{}{}
+	seenChoice := map[string]struct{}{}
+	for _, item := range arr {
+		pair, ok := item.(map[string]any)
+		if !ok {
+			return ErrInvalidInput
+		}
+		promptID, _ := pair["prompt_id"].(string)
+		choiceID, _ := pair["choice_id"].(string)
+		promptID = strings.TrimSpace(promptID)
+		choiceID = strings.TrimSpace(choiceID)
+		if promptID == "" || choiceID == "" {
+			return ErrInvalidInput
+		}
+		if len(promptSet) > 0 {
+			if _, ok := promptSet[promptID]; !ok {
+				return ErrInvalidInput
+			}
+		}
+		if len(choiceSet) > 0 {
+			if _, ok := choiceSet[choiceID]; !ok {
+				return ErrInvalidInput
+			}
+		}
+		if _, exists := seenPrompt[promptID]; exists {
+			return ErrInvalidInput
+		}
+		if _, exists := seenChoice[choiceID]; exists {
+			return ErrInvalidInput
+		}
+		seenPrompt[promptID] = struct{}{}
+		seenChoice[choiceID] = struct{}{}
+	}
 	return nil
 }
 
@@ -3673,6 +3832,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 				COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
 				COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
 				q.stimulus_html AS legacy_stimulus_html,
+				COALESCE(NULLIF(qv.question_content, '{}'::jsonb), NULLIF(qv_fallback.question_content, '{}'::jsonb), '{}'::jsonb) AS question_content,
 				COALESCE(NULLIF(qv.answer_key, '{}'::jsonb), NULLIF(qv_fallback.answer_key, '{}'::jsonb), '{}'::jsonb) AS answer_key,
 				q.metadata,
 			COALESCE(aa.answer_payload, '{}'::jsonb) AS answer_payload,
@@ -3686,7 +3846,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 			ON aa.attempt_id = a.id
 			AND aa.question_id = eq.question_id
 		LEFT JOIN LATERAL (
-				SELECT qv.answer_key, qv.stimulus_html, qv.stem_html
+				SELECT qv.answer_key, qv.question_content, qv.stimulus_html, qv.stem_html
 				FROM question_versions qv
 				WHERE qv.question_id = q.id
 				ORDER BY CASE
@@ -3697,7 +3857,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 			LIMIT 1
 		) qv ON TRUE
 		LEFT JOIN LATERAL (
-				SELECT qv2.answer_key, qv2.stimulus_html, qv2.stem_html
+				SELECT qv2.answer_key, qv2.question_content, qv2.stimulus_html, qv2.stem_html
 				FROM questions q2
 				JOIN question_versions qv2 ON qv2.question_id = q2.id
 				WHERE q.question_code_id IS NOT NULL
@@ -3733,6 +3893,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		&out.StemHTML,
 		&versionStimulus,
 		&legacyStimulus,
+		&out.QuestionContent,
 		&out.AnswerKey,
 		&questionMetadata,
 		&out.AnswerPayload,
@@ -3786,13 +3947,14 @@ func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID 
 			COALESCE(NULLIF(qv.stem_html, ''), NULLIF(qv_fallback.stem_html, ''), q.stem_html) AS stem_html,
 			COALESCE(qv.stimulus_html, qv_fallback.stimulus_html) AS version_stimulus_html,
 			q.stimulus_html AS legacy_stimulus_html,
+			COALESCE(NULLIF(qv.question_content, '{}'::jsonb), NULLIF(qv_fallback.question_content, '{}'::jsonb), '{}'::jsonb) AS question_content,
 			COALESCE(NULLIF(qv.answer_key, '{}'::jsonb), NULLIF(qv_fallback.answer_key, '{}'::jsonb), '{}'::jsonb) AS answer_key,
 			q.metadata
 		FROM exam_questions eq
 		JOIN questions q
 			ON q.id = eq.question_id
 		LEFT JOIN LATERAL (
-				SELECT qv.answer_key, qv.stimulus_html, qv.stem_html
+				SELECT qv.answer_key, qv.question_content, qv.stimulus_html, qv.stem_html
 				FROM question_versions qv
 				WHERE qv.question_id = q.id
 				ORDER BY CASE
@@ -3803,7 +3965,7 @@ func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID 
 			LIMIT 1
 		) qv ON TRUE
 		LEFT JOIN LATERAL (
-				SELECT qv2.answer_key, qv2.stimulus_html, qv2.stem_html
+				SELECT qv2.answer_key, qv2.question_content, qv2.stimulus_html, qv2.stem_html
 				FROM questions q2
 				JOIN question_versions qv2 ON qv2.question_id = q2.id
 				WHERE q.question_code_id IS NOT NULL
@@ -3838,6 +4000,7 @@ func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID 
 		&out.StemHTML,
 		&versionStimulus,
 		&legacyStimulus,
+		&out.QuestionContent,
 		&out.AnswerKey,
 		&questionMetadata,
 	); err != nil {
@@ -5378,6 +5541,28 @@ func formatAnswerForResultsMatrix(questionType string, payload []byte) string {
 			}
 		}
 		return b.String()
+	case "menjodohkan_drag_drop":
+		rawPairs, ok := obj["pairs"].([]interface{})
+		if !ok || len(rawPairs) == 0 {
+			return ""
+		}
+		pairs := make([]string, 0, len(rawPairs))
+		for _, it := range rawPairs {
+			o, ok := it.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			promptID, _ := o["prompt_id"].(string)
+			choiceID, _ := o["choice_id"].(string)
+			promptID = strings.TrimSpace(promptID)
+			choiceID = strings.TrimSpace(choiceID)
+			if promptID == "" || choiceID == "" {
+				continue
+			}
+			pairs = append(pairs, promptID+":"+choiceID)
+		}
+		sort.Strings(pairs)
+		return strings.Join(pairs, "|")
 	default:
 		return ""
 	}
@@ -5433,6 +5618,30 @@ func formatAnswerKeyForResultsMatrix(questionType string, payload []byte) string
 			vals = append(vals, "F")
 		}
 		return strings.Join(vals, ",")
+	case "menjodohkan_drag_drop":
+		var obj struct {
+			Pairs []struct {
+				PromptID string `json:"prompt_id"`
+				ChoiceID string `json:"choice_id"`
+			} `json:"pairs"`
+		}
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return ""
+		}
+		if len(obj.Pairs) == 0 {
+			return ""
+		}
+		pairs := make([]string, 0, len(obj.Pairs))
+		for _, pair := range obj.Pairs {
+			promptID := strings.TrimSpace(pair.PromptID)
+			choiceID := strings.TrimSpace(pair.ChoiceID)
+			if promptID == "" || choiceID == "" {
+				continue
+			}
+			pairs = append(pairs, promptID+":"+choiceID)
+		}
+		sort.Strings(pairs)
+		return strings.Join(pairs, "|")
 	default:
 		return ""
 	}
