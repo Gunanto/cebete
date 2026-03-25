@@ -7,6 +7,7 @@
   var manuscriptOptionQuillByRow = new WeakMap();
   var manuscriptStimulusTabQuillByRow = new WeakMap();
   var manuscriptDraggingStimulusTabRow = null;
+  var manuscriptFormMessageTimer = null;
   var currentManuscriptQuestionType = "";
   var manuscriptEditingQuestionID = 0;
   var manuscriptEditSnapshot = null;
@@ -22,6 +23,31 @@
 
   function setMsg(value) {
     if (deps && typeof deps.setMsg === "function") deps.setMsg(value);
+  }
+
+  function showFormMessage(value, durationMs) {
+    if (!deps || !deps.manuscriptFormMessage) return;
+    const message = String(value || "").trim();
+    if (manuscriptFormMessageTimer) {
+      clearTimeout(manuscriptFormMessageTimer);
+      manuscriptFormMessageTimer = null;
+    }
+    deps.manuscriptFormMessage.textContent = message;
+    deps.manuscriptFormMessage.hidden = message === "";
+    if (!message) return;
+    deps.manuscriptFormMessage.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+    if (durationMs && durationMs > 0) {
+      manuscriptFormMessageTimer = setTimeout(function () {
+        if (deps && deps.manuscriptFormMessage) {
+          deps.manuscriptFormMessage.hidden = true;
+          deps.manuscriptFormMessage.textContent = "";
+        }
+        manuscriptFormMessageTimer = null;
+      }, durationMs);
+    }
   }
 
   function syncHiddenInputs() {
@@ -53,6 +79,7 @@
     if (deps && deps.manuscriptStimulusTabsWrap) {
       deps.manuscriptStimulusTabsWrap.innerHTML = "";
     }
+    showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
     syncHiddenInputs();
@@ -1311,7 +1338,10 @@
         const method = isEditMode ? "PUT" : "POST";
         await deps.api(endpoint, method, payload);
       } else if (!blueprintChanged) {
-        setMsg("Tidak ada perubahan pada naskah untuk disimpan.");
+        showFormMessage(
+          "Tidak ada perubahan pada naskah untuk disimpan.",
+          4000,
+        );
         return;
       }
       if (blueprintChanged && typeof deps.loadBlueprints === "function") {
@@ -1351,12 +1381,24 @@
       applyStimulusTypeUI();
       applyTypeUI(true);
       clearEditMode();
+      showFormMessage(
+        isEditMode
+          ? "Naskah soal berhasil diperbarui."
+          : "Naskah soal berhasil disimpan.",
+        4000,
+      );
       setMsg(
         isEditMode
           ? "Naskah soal berhasil diperbarui."
           : "Naskah soal berhasil disimpan.",
       );
     } catch (err) {
+      showFormMessage(
+        (isEditMode
+          ? "Simpan perubahan naskah gagal: "
+          : "Simpan naskah gagal: ") + err.message,
+        5000,
+      );
       setMsg(
         (isEditMode
           ? "Simpan perubahan naskah gagal: "
@@ -1394,6 +1436,7 @@
     if (!deps || !deps.manuscriptForm) return;
     clearEditMode();
     deps.manuscriptForm.reset();
+    showFormMessage("", 0);
     if (typeof deps.syncManuscriptSubjectState === "function") {
       deps.syncManuscriptSubjectState();
     }
@@ -1408,6 +1451,7 @@
 
   function onQuestionSelectChange() {
     clearEditMode();
+    showFormMessage("", 0);
     if (typeof deps.syncManuscriptSubjectState === "function") {
       deps.syncManuscriptSubjectState();
     }
@@ -1416,6 +1460,7 @@
 
   function onSubjectSelectChange() {
     clearEditMode();
+    showFormMessage("", 0);
     if (deps.manuscriptQuestionSelect && deps.manuscriptQuestionSelect.value) {
       return;
     }

@@ -5462,6 +5462,9 @@
     const manuscriptPageInfo = document.getElementById(
       "guru-manuscript-page-info",
     );
+    const manuscriptFormMessage = document.getElementById(
+      "guru-manuscript-form-message",
+    );
     const manuscriptMessage = document.getElementById(
       "guru-manuscript-message",
     );
@@ -7267,6 +7270,7 @@
         manuscriptPreviewTitle: manuscriptPreviewTitle,
         manuscriptPreviewContent: manuscriptPreviewContent,
         manuscriptRefreshBtn: manuscriptRefreshBtn,
+        manuscriptFormMessage: manuscriptFormMessage,
       });
     }
 
