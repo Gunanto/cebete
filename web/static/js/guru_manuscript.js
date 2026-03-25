@@ -657,6 +657,33 @@
     };
   }
 
+  function collectSelectedMatchPairsFromUI() {
+    const rows = Array.from(
+      (deps &&
+        deps.manuscriptMatchPairsWrap &&
+        deps.manuscriptMatchPairsWrap.querySelectorAll(
+          "[data-match-pair-row]",
+        )) ||
+        [],
+    );
+    return rows
+      .map(function (row) {
+        const select = row.querySelector("select");
+        const promptID = String(
+          (select && select.getAttribute("data-match-pair-prompt")) || "",
+        ).trim();
+        const choiceID = String((select && select.value) || "").trim();
+        if (!promptID) return null;
+        return {
+          prompt_id: promptID,
+          choice_id: choiceID,
+        };
+      })
+      .filter(function (pair) {
+        return pair && pair.prompt_id;
+      });
+  }
+
   function collectAnswerKey() {
     const qType = String(currentManuscriptQuestionType || "").toLowerCase();
     if (qType === "pg_tunggal") {
@@ -721,7 +748,7 @@
     }
     if (qType === "menjodohkan_drag_drop") {
       const content = collectMatchQuestionContent();
-      renderMatchPairRows();
+      renderMatchPairRows(collectSelectedMatchPairsFromUI());
       const rows = Array.from(
         (deps &&
           deps.manuscriptMatchPairsWrap &&
