@@ -2249,67 +2249,17 @@
           );
           return;
         }
-        const existing = {};
-        if (Array.isArray(payload.pairs)) {
-          payload.pairs.forEach(function (pair) {
-            if (!pair || typeof pair !== "object") return;
-            const promptID = String(pair.prompt_id || "").trim();
-            const choiceID = String(pair.choice_id || "").trim();
-            if (promptID && choiceID) existing[promptID] = choiceID;
-          });
-        }
-        const rows = content.prompts.map(function (prompt) {
+        const selectionMap = readMatchingSelectionMap(payload);
+        const firstEmptyPrompt = content.prompts.find(function (prompt) {
           const promptID = String((prompt && prompt.id) || "").trim();
-          const promptHTML = String((prompt && prompt.html) || "").trim();
-          const options = ['<option value="">Pilih jawaban</option>'].concat(
-            content.choices.map(function (choice) {
-              const choiceID = String((choice && choice.id) || "").trim();
-              const selectedAttr =
-                existing[promptID] === choiceID ? " selected" : "";
-              return (
-                '<option value="' +
-                escapeHtml(choiceID) +
-                '"' +
-                selectedAttr +
-                ">" +
-                escapeHtml(choiceID) +
-                "</option>"
-              );
-            }),
-          );
-          return (
-            '<div class="panel mt matching-row">' +
-            '<div class="matching-prompt">' +
-            (promptHTML || '<span class="muted">Prompt kosong.</span>') +
-            "</div>" +
-            '<label class="mt">Jawaban<select data-match-prompt="' +
-            escapeHtml(promptID) +
-            '">' +
-            options.join("") +
-            "</select></label>" +
-            "</div>"
-          );
+          return promptID && !selectionMap[promptID];
         });
-        const choiceBank =
-          '<div class="mt"><strong>Bank Jawaban</strong><div class="mt">' +
-          content.choices
-            .map(function (choice) {
-              return (
-                '<div class="mt"><span class="chip">' +
-                escapeHtml(String((choice && choice.id) || "").trim()) +
-                "</span> " +
-                String((choice && choice.html) || "") +
-                "</div>"
-              );
-            })
-            .join("") +
-          "</div></div>";
-        const noteSection = content.note_html
-          ? '<div class="mt"><strong>Catatan</strong><div class="box mt">' +
-            content.note_html +
-            "</div></div>"
-          : "";
-        html(optionsBox, rows.join("") + choiceBank + noteSection);
+        renderMatchingAttemptUI(
+          content,
+          selectionMap,
+          (firstEmptyPrompt && firstEmptyPrompt.id) ||
+            String((content.prompts[0] && content.prompts[0].id) || "").trim(),
+        );
         return;
       }
 
@@ -2368,6 +2318,208 @@
           content && Array.isArray(content.choices) ? content.choices : [],
         note_html: String((content && content.note_html) || "").trim(),
       };
+    }
+
+    function readMatchingSelectionMap(payload) {
+      const out = {};
+      const pairs = Array.isArray(payload && payload.pairs)
+        ? payload.pairs
+        : [];
+      pairs.forEach(function (pair) {
+        if (!pair || typeof pair !== "object") return;
+        const promptID = String(pair.prompt_id || "").trim();
+        const choiceID = String(pair.choice_id || "").trim();
+        if (!promptID || !choiceID) return;
+        out[promptID] = choiceID;
+      });
+      return out;
+    }
+
+    function readMatchingSelectionsFromUI() {
+      const out = {};
+      optionsBox.querySelectorAll("[data-match-slot]").forEach(function (slot) {
+        const promptID = String(
+          slot.getAttribute("data-match-prompt-id") || "",
+        ).trim();
+        const choiceID = String(
+          slot.getAttribute("data-match-choice-id") || "",
+        ).trim();
+        if (!promptID || !choiceID) return;
+        out[promptID] = choiceID;
+      });
+      return out;
+    }
+
+    function buildMatchingChoiceLookup(content) {
+      const out = {};
+      (Array.isArray(content && content.choices)
+        ? content.choices
+        : []
+      ).forEach(function (choice) {
+        const choiceID = String((choice && choice.id) || "").trim();
+        if (!choiceID) return;
+        out[choiceID] = choice;
+      });
+      return out;
+    }
+
+    function findMatchingPromptIDByChoice(selectionMap, choiceID) {
+      const targetChoiceID = String(choiceID || "").trim();
+      const promptIDs = Object.keys(selectionMap || {});
+      for (let i = 0; i < promptIDs.length; i += 1) {
+        const promptID = promptIDs[i];
+        if (String(selectionMap[promptID] || "").trim() === targetChoiceID) {
+          return promptID;
+        }
+      }
+      return "";
+    }
+
+    function renderMatchingAttemptUI(content, selectionMap, activePromptID) {
+      const prompts = Array.isArray(content && content.prompts)
+        ? content.prompts
+        : [];
+      const choices = Array.isArray(content && content.choices)
+        ? content.choices
+        : [];
+      const choiceLookup = buildMatchingChoiceLookup(content);
+      const activeID = String(activePromptID || "").trim();
+      const assignedChoices = new Set(
+        Object.keys(selectionMap || {})
+          .map(function (promptID) {
+            return String(selectionMap[promptID] || "").trim();
+          })
+          .filter(Boolean),
+      );
+      const rows = prompts.map(function (prompt) {
+        const promptID = String((prompt && prompt.id) || "").trim();
+        const promptHTML = String((prompt && prompt.html) || "").trim();
+        const choiceID = String(
+          (selectionMap && selectionMap[promptID]) || "",
+        ).trim();
+        const choice = choiceLookup[choiceID] || null;
+        const slotClass = [
+          "matching-dropzone",
+          activeID === promptID ? "is-active" : "",
+          choiceID ? "is-filled" : "is-empty",
+        ]
+          .join(" ")
+          .trim();
+        return (
+          '<div class="panel mt matching-row">' +
+          '<div class="matching-prompt">' +
+          (promptHTML || '<span class="muted">Prompt kosong.</span>') +
+          "</div>" +
+          '<div class="matching-answer-label">Jawaban</div>' +
+          '<button type="button" class="' +
+          slotClass +
+          '" data-match-slot="1" data-match-prompt-id="' +
+          escapeHtml(promptID) +
+          '" data-match-choice-id="' +
+          escapeHtml(choiceID) +
+          '">' +
+          (choice
+            ? '<span class="matching-slot-chip"><span class="chip">' +
+              escapeHtml(choiceID) +
+              "</span> " +
+              String((choice && choice.html) || "") +
+              "</span>"
+            : '<span class="matching-slot-placeholder">Tarik choice ke sini atau klik prompt lalu klik choice.</span>') +
+          "</button>" +
+          '<div class="matching-row-actions">' +
+          '<button type="button" class="btn btn-secondary btn-inline" data-match-clear-prompt="' +
+          escapeHtml(promptID) +
+          '"' +
+          (choiceID ? "" : " disabled") +
+          ">Kosongkan</button>" +
+          "</div>" +
+          "</div>"
+        );
+      });
+      const choiceBank =
+        '<div class="mt"><strong>Bank Jawaban</strong><div class="matching-bank mt">' +
+        choices
+          .map(function (choice) {
+            const choiceID = String((choice && choice.id) || "").trim();
+            const ownerPromptID = findMatchingPromptIDByChoice(
+              selectionMap,
+              choiceID,
+            );
+            const chipClass = [
+              "matching-choice-chip",
+              assignedChoices.has(choiceID) ? "is-used" : "",
+              ownerPromptID ? "is-assigned" : "",
+            ]
+              .join(" ")
+              .trim();
+            return (
+              '<button type="button" class="' +
+              chipClass +
+              '" draggable="true" data-match-bank-choice="' +
+              escapeHtml(choiceID) +
+              '">' +
+              '<span class="chip">' +
+              escapeHtml(choiceID) +
+              "</span>" +
+              '<span class="matching-choice-html">' +
+              String((choice && choice.html) || "") +
+              "</span>" +
+              (ownerPromptID
+                ? '<span class="matching-choice-state">Dipakai ' +
+                  escapeHtml(ownerPromptID) +
+                  "</span>"
+                : "") +
+              "</button>"
+            );
+          })
+          .join("") +
+        "</div></div>";
+      const noteSection = content.note_html
+        ? '<div class="mt"><strong>Catatan</strong><div class="box mt">' +
+          content.note_html +
+          "</div></div>"
+        : "";
+      html(optionsBox, rows.join("") + choiceBank + noteSection);
+      if (activeID) {
+        optionsBox.setAttribute("data-match-active-prompt", activeID);
+      } else {
+        optionsBox.removeAttribute("data-match-active-prompt");
+      }
+    }
+
+    function setMatchingSelection(promptID, choiceID) {
+      const targetPromptID = String(promptID || "").trim();
+      const targetChoiceID = String(choiceID || "").trim();
+      if (!targetPromptID || !currentQuestion) return false;
+      const content = readMatchingContent(currentQuestion);
+      const validPromptIDs = new Set(
+        (Array.isArray(content.prompts) ? content.prompts : [])
+          .map(function (prompt) {
+            return String((prompt && prompt.id) || "").trim();
+          })
+          .filter(Boolean),
+      );
+      if (!validPromptIDs.has(targetPromptID)) return false;
+      const validChoiceIDs = new Set(
+        (Array.isArray(content.choices) ? content.choices : [])
+          .map(function (choice) {
+            return String((choice && choice.id) || "").trim();
+          })
+          .filter(Boolean),
+      );
+      if (targetChoiceID && !validChoiceIDs.has(targetChoiceID)) return false;
+      const selectionMap = readMatchingSelectionsFromUI();
+      Object.keys(selectionMap).forEach(function (existingPromptID) {
+        if (selectionMap[existingPromptID] !== targetChoiceID) return;
+        delete selectionMap[existingPromptID];
+      });
+      if (targetChoiceID) {
+        selectionMap[targetPromptID] = targetChoiceID;
+      } else {
+        delete selectionMap[targetPromptID];
+      }
+      renderMatchingAttemptUI(content, selectionMap, targetPromptID);
+      return true;
     }
 
     function renderMathInContainer(el) {
@@ -2580,13 +2732,15 @@
       }
       if (qType === "menjodohkan_drag_drop") {
         const pairs = Array.from(
-          optionsBox.querySelectorAll("select[data-match-prompt]"),
+          optionsBox.querySelectorAll("[data-match-slot]"),
         )
           .map(function (el) {
             const promptID = String(
-              el.getAttribute("data-match-prompt") || "",
+              el.getAttribute("data-match-prompt-id") || "",
             ).trim();
-            const choiceID = String(el.value || "").trim();
+            const choiceID = String(
+              el.getAttribute("data-match-choice-id") || "",
+            ).trim();
             if (!promptID || !choiceID) return null;
             return { prompt_id: promptID, choice_id: choiceID };
           })
@@ -2898,6 +3052,85 @@
           return;
         }
         text(message, "Autosave gagal: " + err.message);
+      }
+    });
+
+    optionsBox.addEventListener("click", function (e) {
+      if (!attemptEditable) return;
+      const clearBtn = e.target.closest("[data-match-clear-prompt]");
+      if (clearBtn) {
+        e.preventDefault();
+        if (
+          setMatchingSelection(
+            clearBtn.getAttribute("data-match-clear-prompt"),
+            "",
+          )
+        ) {
+          optionsBox.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        return;
+      }
+      const slot = e.target.closest("[data-match-slot]");
+      if (slot) {
+        e.preventDefault();
+        const promptID = String(
+          slot.getAttribute("data-match-prompt-id") || "",
+        ).trim();
+        if (!promptID) return;
+        renderMatchingAttemptUI(
+          readMatchingContent(currentQuestion),
+          readMatchingSelectionsFromUI(),
+          promptID,
+        );
+        return;
+      }
+      const chip = e.target.closest("[data-match-bank-choice]");
+      if (chip) {
+        e.preventDefault();
+        const choiceID = String(
+          chip.getAttribute("data-match-bank-choice") || "",
+        ).trim();
+        const activePromptID = String(
+          optionsBox.getAttribute("data-match-active-prompt") || "",
+        ).trim();
+        if (!choiceID || !activePromptID) return;
+        if (setMatchingSelection(activePromptID, choiceID)) {
+          optionsBox.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+    });
+
+    optionsBox.addEventListener("dragstart", function (e) {
+      const chip = e.target.closest("[data-match-bank-choice]");
+      if (!chip || !attemptEditable) return;
+      const choiceID = String(
+        chip.getAttribute("data-match-bank-choice") || "",
+      ).trim();
+      if (!choiceID || !e.dataTransfer) return;
+      e.dataTransfer.setData("text/plain", choiceID);
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    optionsBox.addEventListener("dragover", function (e) {
+      const slot = e.target.closest("[data-match-slot]");
+      if (!slot || !attemptEditable) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    });
+
+    optionsBox.addEventListener("drop", function (e) {
+      const slot = e.target.closest("[data-match-slot]");
+      if (!slot || !attemptEditable) return;
+      e.preventDefault();
+      const promptID = String(
+        slot.getAttribute("data-match-prompt-id") || "",
+      ).trim();
+      const choiceID = e.dataTransfer
+        ? String(e.dataTransfer.getData("text/plain") || "").trim()
+        : "";
+      if (!promptID || !choiceID) return;
+      if (setMatchingSelection(promptID, choiceID)) {
+        optionsBox.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
 
