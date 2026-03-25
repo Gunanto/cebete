@@ -2481,9 +2481,7 @@
           escapeHtml(choiceID) +
           '">' +
           (choice
-            ? '<span class="matching-slot-chip"><span class="chip">' +
-              escapeHtml(choiceID) +
-              "</span> " +
+            ? '<span class="matching-slot-chip">' +
               String((choice && choice.html) || "") +
               "</span>"
             : '<span class="matching-slot-placeholder">Tarik choice ke sini atau klik prompt lalu klik choice.</span>') +
@@ -2520,9 +2518,6 @@
               '" draggable="true" data-match-bank-choice="' +
               escapeHtml(choiceID) +
               '">' +
-              '<span class="chip">' +
-              escapeHtml(choiceID) +
-              "</span>" +
               '<span class="matching-choice-html">' +
               String((choice && choice.html) || "") +
               "</span>" +
