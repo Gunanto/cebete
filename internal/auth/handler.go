@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -929,6 +930,7 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrRegistrationState):
 			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: err.Error()})
 		default:
+			log.Printf("approve registration failed registration_id=%d reviewer_id=%d err=%v", id, admin.ID, err)
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		}
 		return

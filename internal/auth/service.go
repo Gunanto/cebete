@@ -1783,7 +1783,7 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			return 0, fmt.Errorf("lookup school by code: %w", err)
 		}
 	}
-	if !foundExisting && code == "" {
+	if !foundExisting {
 		err = tx.QueryRowContext(ctx, `
 			SELECT id
 			FROM schools
@@ -1815,9 +1815,13 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 	}
 
 	if id > 0 {
-		sets := []string{"address = COALESCE(NULLIF($1,''), address)"}
-		args := []interface{}{address}
-		nextArg := 2
+		sets := []string{
+			"name = COALESCE(NULLIF($1,''), name)",
+			"code = COALESCE(NULLIF($2,''), code)",
+			"address = COALESCE(NULLIF($3,''), address)",
+		}
+		args := []interface{}{name, code, address}
+		nextArg := 4
 		if optionalCols["city"] {
 			sets = append(sets, fmt.Sprintf("city = COALESCE(NULLIF($%d,''), city)", nextArg))
 			args = append(args, kabupaten)

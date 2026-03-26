@@ -26,6 +26,9 @@ func TestUpsertSchoolTxInsertWorksWithLegacySchema(t *testing.T) {
 	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE code = \$1\s+LIMIT 1`).
 		WithArgs("12345678").
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE LOWER\(name\) = LOWER\(\$1\)\s+LIMIT 1`).
+		WithArgs("SMP Contoh").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery(`SELECT column_name\s+FROM information_schema\.columns`).
 		WillReturnRows(sqlmock.NewRows([]string{"column_name"}))
 	mock.ExpectQuery(`INSERT INTO schools \(\s*name, code, address, is_active, created_at, updated_at\s*\)`).
@@ -87,8 +90,8 @@ func TestUpsertSchoolTxUpdatesExistingSchool(t *testing.T) {
 			AddRow("jenjang").
 			AddRow("status_sekolah").
 			AddRow("school_email"))
-	mock.ExpectExec(`UPDATE schools\s+SET address = COALESCE\(NULLIF\(\$1,''\), address\),\s*city = COALESCE\(NULLIF\(\$2,''\), city\),\s*province = COALESCE\(NULLIF\(\$3,''\), province\),\s*kecamatan = COALESCE\(NULLIF\(\$4,''\), kecamatan\),\s*jenjang = COALESCE\(NULLIF\(\$5,''\), jenjang\),\s*status_sekolah = COALESCE\(NULLIF\(\$6,''\), status_sekolah\),\s*school_email = COALESCE\(NULLIF\(\$7,''\), school_email\),\s*updated_at = now\(\)\s*WHERE id = \$8`).
-		WithArgs("Jl. Melati", "Bandung", "Jawa Barat", "Coblong", "SMP", "swasta", "admin@smpcontoh.sch.id", int64(55)).
+	mock.ExpectExec(`UPDATE schools\s+SET name = COALESCE\(NULLIF\(\$1,''\), name\),\s*code = COALESCE\(NULLIF\(\$2,''\), code\),\s*address = COALESCE\(NULLIF\(\$3,''\), address\),\s*city = COALESCE\(NULLIF\(\$4,''\), city\),\s*province = COALESCE\(NULLIF\(\$5,''\), province\),\s*kecamatan = COALESCE\(NULLIF\(\$6,''\), kecamatan\),\s*jenjang = COALESCE\(NULLIF\(\$7,''\), jenjang\),\s*status_sekolah = COALESCE\(NULLIF\(\$8,''\), status_sekolah\),\s*school_email = COALESCE\(NULLIF\(\$9,''\), school_email\),\s*updated_at = now\(\)\s*WHERE id = \$10`).
+		WithArgs("SMP Contoh", "12345678", "Jl. Melati", "Bandung", "Jawa Barat", "Coblong", "SMP", "swasta", "admin@smpcontoh.sch.id", int64(55)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
@@ -110,6 +113,62 @@ func TestUpsertSchoolTxUpdatesExistingSchool(t *testing.T) {
 	}
 	if id != 55 {
 		t.Fatalf("expected school id 55, got %d", id)
+	}
+
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestUpsertSchoolTxFallsBackToNameWhenCodeNotFound(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+
+	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE code = \$1\s+LIMIT 1`).
+		WithArgs("40203583").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE LOWER\(name\) = LOWER\(\$1\)\s+LIMIT 1`).
+		WithArgs("SMP NEGERI 6 PALU").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(81))
+	mock.ExpectQuery(`SELECT column_name\s+FROM information_schema\.columns`).
+		WillReturnRows(sqlmock.NewRows([]string{"column_name"}))
+	mock.ExpectExec(`UPDATE schools\s+SET name = COALESCE\(NULLIF\(\$1,''\), name\),\s*code = COALESCE\(NULLIF\(\$2,''\), code\),\s*address = COALESCE\(NULLIF\(\$3,''\), address\),\s*updated_at = now\(\)\s*WHERE id = \$4`).
+		WithArgs("SMP NEGERI 6 PALU", "40203583", "Kota Palu, Prov. Sulawesi Tengah", int64(81)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectRollback()
+
+	id, err := upsertSchoolTx(
+		context.Background(),
+		tx,
+		"SMP NEGERI 6 PALU",
+		"40203583",
+		"Kota Palu",
+		"Prov. Sulawesi Tengah",
+		"",
+		"",
+		"",
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("upsertSchoolTx: %v", err)
+	}
+	if id != 81 {
+		t.Fatalf("expected school id 81, got %d", id)
 	}
 
 	if err := tx.Rollback(); err != nil {
