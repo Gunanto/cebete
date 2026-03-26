@@ -116,13 +116,14 @@
           deps.escapeHtml(String(deps.fmtDate(item.expires_at) || "-")) +
           "</td>",
         "<td>" + deps.escapeHtml(remainingLabel(item.expires_at)) + "</td>",
-        '<td class="actions">' +
+        '<td><div class="token-actions">' +
           '<button class="btn btn-secondary btn-inline" type="button" data-token-copy="' +
           deps.escapeHtml(String(item.token || "")) +
-          '">Salin</button> ' +
+          '">Salin</button>' +
           '<button class="btn btn-secondary btn-inline" type="button" data-token-remove="' +
           deps.escapeHtml(String(item.exam_id || 0)) +
           '">Hapus</button>' +
+          "</div>" +
           "</td>",
       ].join("");
       deps.tokenListBody.appendChild(tr);

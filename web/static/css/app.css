@@ -2572,6 +2572,20 @@ textarea:focus-visible {
     white-space: nowrap;
 }
 
+.token-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.token-actions .btn-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
 body[data-page="attempt_content"] .bs-table tbody tr {
     transition:
         background-color 0.15s ease,
