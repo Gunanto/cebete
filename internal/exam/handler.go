@@ -116,6 +116,7 @@ type startAttemptRequest struct {
 
 type previewExamByTokenRequest struct {
 	ExamToken string `json:"exam_token"`
+	ExamID    int64  `json:"exam_id"`
 }
 
 type saveAnswerRequest struct {
@@ -290,6 +291,10 @@ func (h *Handler) PreviewExamByToken(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		}
+		return
+	}
+	if req.ExamID > 0 && out != nil && out.ExamID != req.ExamID {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: ErrExamTokenInvalid.Error()})
 		return
 	}
 

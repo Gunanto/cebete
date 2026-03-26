@@ -1353,14 +1353,19 @@
       return d.toLocaleString("id-ID");
     }
 
-    async function previewExamByToken(token) {
+    async function previewExamByToken(token, examID) {
       const cleanToken = String(token || "").trim();
       if (!cleanToken) {
         throw new Error("Token ujian wajib diisi.");
       }
-      return api("/api/v1/attempts/token/preview", "POST", {
+      const payload = {
         exam_token: cleanToken,
-      });
+      };
+      const selectedExamID = Number(examID || 0);
+      if (selectedExamID > 0) {
+        payload.exam_id = selectedExamID;
+      }
+      return api("/api/v1/attempts/token/preview", "POST", payload);
     }
 
     async function showStudentProfileStep() {
@@ -1441,14 +1446,8 @@
 
     if (examTokenDialogCancelBtn) {
       examTokenDialogCancelBtn.addEventListener("click", function () {
-        if (isStudentRole && !isNonRegular) {
-          api("/api/v1/auth/logout", "POST")
-            .catch(function () {
-              // no-op
-            })
-            .finally(function () {
-              window.location.href = "/login";
-            });
+        if (isStudentRole) {
+          window.location.href = "/peserta";
           return;
         }
         pendingStartExamID = 0;
@@ -1543,7 +1542,7 @@
           examTokenDialogHelp.textContent = tokenDialogHelpDefault;
         }
         try {
-          const preview = await previewExamByToken(token);
+          const preview = await previewExamByToken(token, selectedExamID);
           const previewExamID = Number((preview && preview.exam_id) || 0);
           if (previewExamID <= 0) {
             throw new Error("Informasi ujian tidak valid.");
@@ -5027,11 +5026,13 @@
         setMsg: setMsg,
         msg: msg,
         text: text,
+        escapeHtml: escapeHtml,
         fmtDate: fmtDate,
         tokenForm: tokenForm,
         tokenExamSelect: tokenExamSelect,
         tokenTTLInput: tokenTTLInput,
         tokenResult: tokenResult,
+        tokenListBody: document.getElementById("proktor-token-list-body"),
       });
     }
 
