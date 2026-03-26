@@ -118,7 +118,13 @@
         "<td>" + deps.escapeHtml(remainingLabel(item.expires_at)) + "</td>",
         '<td><div class="token-actions">' +
           '<button class="btn btn-secondary btn-inline" type="button" data-token-copy="' +
-          deps.escapeHtml(String(item.token || "")) +
+          deps.escapeHtml(
+            JSON.stringify({
+              exam_label: String(item.exam_label || ""),
+              token: String(item.token || ""),
+              expires_at: String(item.expires_at || ""),
+            }),
+          ) +
           '">Salin</button>' +
           '<button class="btn btn-secondary btn-inline" type="button" data-token-remove="' +
           deps.escapeHtml(String(item.exam_id || 0)) +
@@ -141,21 +147,28 @@
     }, 30000);
   }
 
-  async function copyToken(value) {
-    var token = String(value || "").trim();
-    if (!token) {
-      throw new Error("Token kosong.");
+  async function copyToken(item) {
+    var examLabel = String((item && item.exam_label) || "").trim();
+    var token = String((item && item.token) || "").trim();
+    var expiresAt = String((item && item.expires_at) || "").trim();
+    if (!examLabel || !token || !expiresAt) {
+      throw new Error("Data token tidak lengkap.");
     }
+    var payload = [
+      "Nama Ujian : " + examLabel,
+      "Token: " + token,
+      "Berlaku Sampai : " + String(deps.fmtDate(expiresAt) || "-"),
+    ].join("\n");
     if (
       navigator.clipboard &&
       typeof navigator.clipboard.writeText === "function"
     ) {
-      await navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(payload);
       return;
     }
     var input = document.createElement("input");
     input.type = "text";
-    input.value = token;
+    input.value = payload;
     input.setAttribute("readonly", "readonly");
     input.style.position = "absolute";
     input.style.left = "-9999px";
@@ -218,7 +231,9 @@
         var copyBtn = e.target && e.target.closest("button[data-token-copy]");
         if (copyBtn) {
           try {
-            await copyToken(copyBtn.getAttribute("data-token-copy") || "");
+            await copyToken(
+              JSON.parse(copyBtn.getAttribute("data-token-copy") || "{}"),
+            );
             deps.setMsg("Token berhasil disalin.");
           } catch (err) {
             deps.setMsg("Gagal menyalin token: " + err.message);
