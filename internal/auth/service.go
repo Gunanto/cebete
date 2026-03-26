@@ -1936,7 +1936,7 @@ func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className st
 	if className == "" {
 		return 0, errors.New("class_name is required")
 	}
-	gradeLevel := className
+	gradeLevel := normalizeGradeLevel(className)
 
 	var id int64
 	err := tx.QueryRowContext(ctx, `
@@ -1960,6 +1960,32 @@ func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className st
 		return 0, fmt.Errorf("insert class: %w", err)
 	}
 	return id, nil
+}
+
+func normalizeGradeLevel(className string) string {
+	className = strings.Join(strings.Fields(strings.TrimSpace(className)), " ")
+	if className == "" {
+		return ""
+	}
+	if len(className) <= 20 {
+		return className
+	}
+	re := regexp.MustCompile(`(?i)\bkelas\s*([0-9]{1,2}|[ivxlcdm]+)\b`)
+	if m := re.FindStringSubmatch(className); len(m) == 2 {
+		return "Kelas " + strings.ToUpper(strings.TrimSpace(m[1]))
+	}
+	return truncateString(className, 20)
+}
+
+func truncateString(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }
 
 func upsertEnrollmentTx(ctx context.Context, tx *sql.Tx, userID, schoolID, classID int64) error {

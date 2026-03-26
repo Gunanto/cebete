@@ -178,3 +178,28 @@ func TestUpsertSchoolTxFallsBackToNameWhenCodeNotFound(t *testing.T) {
 		t.Fatalf("unmet sql expectations: %v", err)
 	}
 }
+
+func TestNormalizeGradeLevel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		className string
+		want      string
+	}{
+		{name: "short stays same", className: "Kelas 8", want: "Kelas 8"},
+		{name: "long class extracts grade", className: "Kelas 9.kihajar Dewantara", want: "Kelas 9"},
+		{name: "fallback truncates", className: "Rombel Program Khusus Sangat Panjang", want: "Rombel Program Khusu"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := normalizeGradeLevel(tc.className)
+			if got != tc.want {
+				t.Fatalf("normalizeGradeLevel(%q) = %q, want %q", tc.className, got, tc.want)
+			}
+		})
+	}
+}
