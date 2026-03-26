@@ -1146,7 +1146,7 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 				  AND ea.user_id = $2
 				  AND ea.status = 'active'
 			)
-		FROM exams
+		FROM exams e
 		WHERE id = $1 AND is_active = TRUE
 	`, examID, studentID).Scan(&startAt, &endAt, &allowNonRegular, &hasAssignment); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
