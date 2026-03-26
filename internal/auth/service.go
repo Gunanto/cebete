@@ -1768,6 +1768,7 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 
 	var id int64
 	var err error
+	foundExisting := false
 	if code != "" {
 		err = tx.QueryRowContext(ctx, `
 			SELECT id
@@ -1776,12 +1777,13 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			LIMIT 1
 		`, code).Scan(&id)
 		if err == nil {
-			return id, nil
+			foundExisting = true
 		}
-		if !errors.Is(err, sql.ErrNoRows) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return 0, fmt.Errorf("lookup school by code: %w", err)
 		}
-	} else {
+	}
+	if !foundExisting && code == "" {
 		err = tx.QueryRowContext(ctx, `
 			SELECT id
 			FROM schools
@@ -1789,9 +1791,9 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			LIMIT 1
 		`, name).Scan(&id)
 		if err == nil {
-			return id, nil
+			foundExisting = true
 		}
-		if !errors.Is(err, sql.ErrNoRows) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return 0, fmt.Errorf("lookup school by name: %w", err)
 		}
 	}
@@ -1807,40 +1809,119 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 		}
 	}
 
+	optionalCols, err := schoolOptionalColumnsTx(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+
 	if id > 0 {
-		if _, err := tx.ExecContext(ctx, `
+		sets := []string{"address = COALESCE(NULLIF($1,''), address)"}
+		args := []interface{}{address}
+		nextArg := 2
+		if optionalCols["city"] {
+			sets = append(sets, fmt.Sprintf("city = COALESCE(NULLIF($%d,''), city)", nextArg))
+			args = append(args, kabupaten)
+			nextArg++
+		}
+		if optionalCols["province"] {
+			sets = append(sets, fmt.Sprintf("province = COALESCE(NULLIF($%d,''), province)", nextArg))
+			args = append(args, provinsi)
+			nextArg++
+		}
+		if optionalCols["kecamatan"] {
+			sets = append(sets, fmt.Sprintf("kecamatan = COALESCE(NULLIF($%d,''), kecamatan)", nextArg))
+			args = append(args, kecamatan)
+			nextArg++
+		}
+		if optionalCols["jenjang"] {
+			sets = append(sets, fmt.Sprintf("jenjang = COALESCE(NULLIF($%d,''), jenjang)", nextArg))
+			args = append(args, jenjang)
+			nextArg++
+		}
+		if optionalCols["status_sekolah"] {
+			sets = append(sets, fmt.Sprintf("status_sekolah = COALESCE(NULLIF($%d,''), status_sekolah)", nextArg))
+			args = append(args, statusSekolah)
+			nextArg++
+		}
+		if optionalCols["school_email"] {
+			sets = append(sets, fmt.Sprintf("school_email = COALESCE(NULLIF($%d,''), school_email)", nextArg))
+			args = append(args, schoolEmail)
+			nextArg++
+		}
+		sets = append(sets, "updated_at = now()")
+		args = append(args, id)
+		query := fmt.Sprintf(`
 			UPDATE schools
-			SET address = COALESCE(NULLIF($1,''), address),
-				city = COALESCE(NULLIF($2,''), city),
-				province = COALESCE(NULLIF($3,''), province),
-				kecamatan = COALESCE(NULLIF($4,''), kecamatan),
-				jenjang = COALESCE(NULLIF($5,''), jenjang),
-				status_sekolah = COALESCE(NULLIF($6,''), status_sekolah),
-				school_email = COALESCE(NULLIF($7,''), school_email),
-				updated_at = now()
-			WHERE id = $8
-		`, address, kabupaten, provinsi, kecamatan, jenjang, statusSekolah, schoolEmail, id); err != nil {
+			SET %s
+			WHERE id = $%d
+		`, strings.Join(sets, ",\n\t\t\t\t"), nextArg)
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return 0, fmt.Errorf("update school: %w", err)
 		}
 		return id, nil
 	}
 
-	if err := tx.QueryRowContext(ctx, `
+	columns := []string{"name", "code", "address"}
+	values := []string{"$1", "NULLIF($2,'')", "NULLIF($3,'')"}
+	args := []interface{}{name, code, address}
+	nextArg := 4
+	appendOptional := func(column, valueExpr string, rawValue string) {
+		if !optionalCols[column] {
+			return
+		}
+		columns = append(columns, column)
+		values = append(values, fmt.Sprintf(valueExpr, nextArg))
+		args = append(args, rawValue)
+		nextArg++
+	}
+	appendOptional("city", "NULLIF($%d,'')", kabupaten)
+	appendOptional("province", "NULLIF($%d,'')", provinsi)
+	appendOptional("kecamatan", "NULLIF($%d,'')", kecamatan)
+	appendOptional("jenjang", "NULLIF($%d,'')", jenjang)
+	appendOptional("status_sekolah", "NULLIF($%d,'')", statusSekolah)
+	appendOptional("school_email", "NULLIF($%d,'')", schoolEmail)
+	columns = append(columns, "is_active", "created_at", "updated_at")
+	values = append(values, "TRUE", "now()", "now()")
+	query := fmt.Sprintf(`
 		INSERT INTO schools (
-			name, code, address, city, province, kecamatan,
-			jenjang, status_sekolah, school_email,
-			is_active, created_at, updated_at
+			%s
 		)
 		VALUES (
-			$1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''),
-			NULLIF($7,''), NULLIF($8,''), NULLIF($9,''),
-			TRUE, now(), now()
+			%s
 		)
 		RETURNING id
-	`, name, code, address, kabupaten, provinsi, kecamatan, jenjang, statusSekolah, schoolEmail).Scan(&id); err != nil {
+	`, strings.Join(columns, ", "), strings.Join(values, ", "))
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert school: %w", err)
 	}
 	return id, nil
+}
+
+func schoolOptionalColumnsTx(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+			AND table_name = 'schools'
+			AND column_name IN ('city', 'province', 'kecamatan', 'jenjang', 'status_sekolah', 'school_email')
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("load school columns: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan school column: %w", err)
+		}
+		out[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate school columns: %w", err)
+	}
+	return out, nil
 }
 
 func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className string) (int64, error) {
