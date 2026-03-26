@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"cbtlms/internal/auth"
 )
 
 var (
@@ -50,6 +52,115 @@ var (
 type Service struct {
 	db                 *sql.DB
 	defaultExamMinutes int
+}
+
+func currentScopedProktor(ctx context.Context) (*auth.User, bool) {
+	user, ok := auth.CurrentUser(ctx)
+	if !ok || user == nil || user.Role != "proktor" {
+		return nil, false
+	}
+	return user, true
+}
+
+func (s *Service) ensureProktorSchoolScope(ctx context.Context, schoolID int64) error {
+	user, ok := currentScopedProktor(ctx)
+	if !ok {
+		return nil
+	}
+	if schoolID <= 0 {
+		return ErrExamForbidden
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM user_school_scopes
+			WHERE user_id = $1
+			  AND school_id = $2
+		)
+	`, user.ID, schoolID).Scan(&allowed); err != nil {
+		return fmt.Errorf("check proktor school scope: %w", err)
+	}
+	if !allowed {
+		return ErrExamForbidden
+	}
+	return nil
+}
+
+func (s *Service) ensureProktorStudentScope(ctx context.Context, studentID int64) error {
+	user, ok := currentScopedProktor(ctx)
+	if !ok {
+		return nil
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM enrollments e
+			JOIN user_school_scopes uss ON uss.school_id = e.school_id
+			WHERE e.user_id = $2
+			  AND e.status = 'active'
+			  AND uss.user_id = $1
+		)
+	`, user.ID, studentID).Scan(&allowed); err != nil {
+		return fmt.Errorf("check proktor student scope: %w", err)
+	}
+	if !allowed {
+		return ErrExamForbidden
+	}
+	return nil
+}
+
+func (s *Service) ensureProktorExamScope(ctx context.Context, examID int64) error {
+	user, ok := currentScopedProktor(ctx)
+	if !ok {
+		return nil
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM exam_assignments ea
+			JOIN enrollments e ON e.user_id = ea.user_id AND e.status = 'active'
+			JOIN user_school_scopes uss ON uss.school_id = e.school_id
+			WHERE ea.exam_id = $2
+			  AND ea.status = 'active'
+			  AND uss.user_id = $1
+		)
+	`, user.ID, examID).Scan(&allowed); err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return ErrAssignmentFeature
+		}
+		return fmt.Errorf("check proktor exam scope: %w", err)
+	}
+	if !allowed {
+		return ErrExamForbidden
+	}
+	return nil
+}
+
+func (s *Service) ensureProktorAttemptScope(ctx context.Context, attemptID int64) error {
+	user, ok := currentScopedProktor(ctx)
+	if !ok {
+		return nil
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM attempts a
+			JOIN enrollments e ON e.user_id = a.student_id AND e.status = 'active'
+			JOIN user_school_scopes uss ON uss.school_id = e.school_id
+			WHERE a.id = $2
+			  AND uss.user_id = $1
+		)
+	`, user.ID, attemptID).Scan(&allowed); err != nil {
+		return fmt.Errorf("check proktor attempt scope: %w", err)
+	}
+	if !allowed {
+		return ErrExamForbidden
+	}
+	return nil
 }
 
 type Attempt struct {
@@ -490,6 +601,12 @@ func NewService(db *sql.DB, defaultExamMinutes int) *Service {
 }
 
 func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureProktorStudentScope(ctx, studentID); err != nil {
+		return nil, err
+	}
 	isSimulation, err := s.isSimulationStudent(ctx, studentID)
 	if err != nil {
 		return nil, err
@@ -773,6 +890,9 @@ func (s *Service) PreviewExamByTokenForStaff(ctx context.Context, examToken stri
 	if err != nil {
 		return nil, err
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
 	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
 		return nil, err
 	}
@@ -970,6 +1090,7 @@ func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool)
 }
 
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
+	user, isProktor := currentScopedProktor(ctx)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			e.id,
@@ -983,8 +1104,25 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 		FROM exams e
 		JOIN subjects s ON s.id = e.subject_id
 		WHERE e.is_active = TRUE
+		  AND (
+			$1 = 0
+			OR EXISTS (
+				SELECT 1
+				FROM exam_assignments ea
+				JOIN enrollments en ON en.user_id = ea.user_id AND en.status = 'active'
+				JOIN user_school_scopes uss ON uss.school_id = en.school_id
+				WHERE ea.exam_id = e.id
+				  AND ea.status = 'active'
+				  AND uss.user_id = $1
+			)
+		  )
 		ORDER BY e.created_at DESC, e.id DESC
-	`)
+	`, func() int64 {
+		if isProktor {
+			return user.ID
+		}
+		return 0
+	}())
 	if err != nil {
 		return nil, fmt.Errorf("query exams for token: %w", err)
 	}
@@ -1194,6 +1332,9 @@ func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int
 	if ttlMinutes > 1440 {
 		ttlMinutes = 1440
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
 
 	token, err := randomExamToken(6)
 	if err != nil {
@@ -1241,6 +1382,7 @@ func (s *Service) ListAdminExamsByOwner(ctx context.Context, ownerID int64, incl
 }
 
 func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, ownerID *int64) ([]ExamAdminRecord, error) {
+	user, isProktor := currentScopedProktor(ctx)
 	query := `
 		SELECT
 			e.id,
@@ -1285,6 +1427,18 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 	if ownerID != nil {
 		clauses = append(clauses, fmt.Sprintf("e.created_by = $%d", len(args)+1))
 		args = append(args, *ownerID)
+	}
+	if isProktor {
+		clauses = append(clauses, fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM exam_assignments ea2
+			JOIN enrollments en2 ON en2.user_id = ea2.user_id AND en2.status = 'active'
+			JOIN user_school_scopes uss ON uss.school_id = en2.school_id
+			WHERE ea2.exam_id = e.id
+			  AND ea2.status = 'active'
+			  AND uss.user_id = $%d
+		)`, len(args)+1))
+		args = append(args, user.ID)
 	}
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
@@ -1396,6 +1550,9 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if in.MaxAttempts <= 0 {
 		in.MaxAttempts = 1
 	}
+	if _, isProktor := currentScopedProktor(ctx); isProktor {
+		return nil, ErrExamForbidden
+	}
 	insertOnce := func(code string) (int64, error) {
 		var outID int64
 		if err := s.db.QueryRowContext(ctx, `
@@ -1480,6 +1637,9 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 	if in.MaxAttempts <= 0 {
 		in.MaxAttempts = 1
 	}
+	if err := s.ensureProktorExamScope(ctx, in.ID); err != nil {
+		return nil, err
+	}
 	var outID int64
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE exams
@@ -1516,6 +1676,9 @@ func (s *Service) DeleteExam(ctx context.Context, examID int64) error {
 	if examID <= 0 {
 		return ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return err
+	}
 	var outID int64
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE exams
@@ -1534,6 +1697,9 @@ func (s *Service) DeleteExam(ctx context.Context, examID int64) error {
 func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdminRecord, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -1661,6 +1827,9 @@ func (s *Service) ResetExamAttempt(ctx context.Context, examID, studentID, actor
 	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
 		return 0, err
 	}
+	if err := s.ensureProktorStudentScope(ctx, studentID); err != nil {
+		return 0, err
+	}
 
 	var attemptID int64
 	if err := s.db.QueryRowContext(ctx, `
@@ -1699,6 +1868,9 @@ func (s *Service) DeleteExamAttempt(ctx context.Context, examID, attemptID, acto
 	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
 		return 0, err
 	}
+	if err := s.ensureProktorAttemptScope(ctx, attemptID); err != nil {
+		return 0, err
+	}
 
 	var status string
 	if err := s.db.QueryRowContext(ctx, `
@@ -1732,6 +1904,9 @@ func (s *Service) DeleteExamAttempt(ctx context.Context, examID, attemptID, acto
 func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
 		return nil, err
@@ -1916,6 +2091,9 @@ func (s *Service) SetUserPhotoDataURL(ctx context.Context, userID int64, dataURL
 	if userID <= 0 {
 		return "", ErrInvalidInput
 	}
+	if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
+		return "", err
+	}
 	dataURL = strings.TrimSpace(dataURL)
 	if dataURL == "" {
 		return "", ErrInvalidInput
@@ -1945,6 +2123,9 @@ func (s *Service) ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 	if userID <= 0 {
 		return ErrInvalidInput
 	}
+	if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
+		return err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE users
 		SET photo_data_url = NULL,
@@ -1965,6 +2146,9 @@ func (s *Service) ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
 		return nil, err
@@ -2341,6 +2525,11 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
+	for _, userID := range ids {
+		if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -2404,6 +2593,9 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
+	if err := s.ensureProktorSchoolScope(ctx, in.SchoolID); err != nil {
+		return nil, err
+	}
 
 	var classValid bool
 	if err := s.db.QueryRowContext(ctx, `
@@ -2463,6 +2655,9 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 		return nil, ErrInvalidInput
 	}
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureProktorSchoolScope(ctx, in.SchoolID); err != nil {
 		return nil, err
 	}
 
@@ -2553,6 +2748,9 @@ func (s *Service) RemoveExamAssignment(ctx context.Context, examID, userID, acto
 	if _, err := s.GetExamAdminByID(ctx, examID); err != nil {
 		return err
 	}
+	if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
+		return err
+	}
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE exam_assignments
 		SET status = 'inactive',
@@ -2572,6 +2770,9 @@ func (s *Service) RemoveExamAssignment(ctx context.Context, examID, userID, acto
 func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -2646,6 +2847,9 @@ func (s *Service) ListExamQuestionCodeRules(ctx context.Context, examID int64) (
 	if examID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			r.exam_id,
@@ -2700,6 +2904,9 @@ func (s *Service) ListExamQuestionCodeRules(ctx context.Context, examID int64) (
 func (s *Service) UpsertExamQuestionCodeRule(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error) {
 	if in.ExamID <= 0 || in.QuestionCodeID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, in.ExamID); err != nil {
+		return nil, err
 	}
 	if in.Weight <= 0 {
 		in.Weight = 1
@@ -2812,6 +3019,9 @@ func (s *Service) DeleteExamQuestionCodeRule(ctx context.Context, examID, questi
 	if examID <= 0 || questionCodeID <= 0 {
 		return ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return err
+	}
 	var deletedExamID int64
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE exam_question_code_rules
@@ -2833,6 +3043,9 @@ func (s *Service) DeleteExamQuestionCodeRule(ctx context.Context, examID, questi
 func (s *Service) SyncExamQuestionsByCode(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error) {
 	if in.ExamID <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, in.ExamID); err != nil {
+		return nil, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -2997,6 +3210,9 @@ func (s *Service) UpsertExamQuestion(ctx context.Context, in UpsertExamQuestionI
 	if in.ExamID <= 0 || in.QuestionID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, in.ExamID); err != nil {
+		return nil, err
+	}
 	if in.Weight <= 0 {
 		in.Weight = 1
 	}
@@ -3064,6 +3280,9 @@ func (s *Service) DeleteExamQuestion(ctx context.Context, examID, questionID int
 	if examID <= 0 || questionID <= 0 {
 		return ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		DELETE FROM exam_questions
 		WHERE exam_id = $1
@@ -3082,6 +3301,9 @@ func (s *Service) DeleteExamQuestion(ctx context.Context, examID, questionID int
 func (s *Service) UpsertExamQuestionIncident(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error) {
 	if in.ExamID <= 0 || in.QuestionID <= 0 || in.DecidedBy <= 0 {
 		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, in.ExamID); err != nil {
+		return nil, err
 	}
 	policy := normalizeIncidentPolicy(in.Policy)
 	if policy == "" {
@@ -3200,6 +3422,9 @@ func (s *Service) RegradeExamAttempts(ctx context.Context, examID, actorID int64
 		if !owned {
 			return nil, ErrExamForbidden
 		}
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 
 	var exists bool
@@ -4032,6 +4257,9 @@ func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID 
 	if examID <= 0 || questionID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
 
 	r := s.db.QueryRowContext(ctx, `
 		SELECT
@@ -4377,6 +4605,9 @@ func (s *Service) ListAttemptEvents(ctx context.Context, attemptID int64, limit 
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
+	if err := s.ensureProktorAttemptScope(ctx, attemptID); err != nil {
+		return nil, err
+	}
 
 	if _, err := s.loadAttemptRow(ctx, s.db, attemptID); err != nil {
 		return nil, err
@@ -4416,6 +4647,9 @@ func (s *Service) ListExamEvents(ctx context.Context, examID int64, limit int) (
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 200
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
 	}
 	var exists bool
 	if err := s.db.QueryRowContext(ctx, `
@@ -4463,6 +4697,23 @@ func (s *Service) ListExamClassEvents(ctx context.Context, examID int64, classID
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 200
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
+	var schoolID int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT school_id
+		FROM classes
+		WHERE id = $1
+	`, classID).Scan(&schoolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrInvalidInput
+		}
+		return nil, fmt.Errorf("load class school: %w", err)
+	}
+	if err := s.ensureProktorSchoolScope(ctx, schoolID); err != nil {
+		return nil, err
 	}
 	var exists bool
 	if err := s.db.QueryRowContext(ctx, `

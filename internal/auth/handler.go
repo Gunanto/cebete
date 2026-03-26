@@ -96,26 +96,28 @@ type rejectRegistrationRequest struct {
 }
 
 type adminCreateUserRequest struct {
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	FullName      string `json:"full_name"`
-	Role          string `json:"role"`
-	ParticipantNo string `json:"participant_no"`
-	NISN          string `json:"nisn"`
-	SchoolID      *int64 `json:"school_id"`
-	ClassID       *int64 `json:"class_id"`
+	Username         string  `json:"username"`
+	Email            string  `json:"email"`
+	Password         string  `json:"password"`
+	FullName         string  `json:"full_name"`
+	Role             string  `json:"role"`
+	ParticipantNo    string  `json:"participant_no"`
+	NISN             string  `json:"nisn"`
+	SchoolID         *int64  `json:"school_id"`
+	ClassID          *int64  `json:"class_id"`
+	ManagedSchoolIDs []int64 `json:"managed_school_ids"`
 }
 
 type adminUpdateUserRequest struct {
-	FullName      string `json:"full_name"`
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	Role          string `json:"role"`
-	ParticipantNo string `json:"participant_no"`
-	NISN          string `json:"nisn"`
-	SchoolID      *int64 `json:"school_id"`
-	ClassID       *int64 `json:"class_id"`
+	FullName         string  `json:"full_name"`
+	Email            string  `json:"email"`
+	Password         string  `json:"password"`
+	Role             string  `json:"role"`
+	ParticipantNo    string  `json:"participant_no"`
+	NISN             string  `json:"nisn"`
+	SchoolID         *int64  `json:"school_id"`
+	ClassID          *int64  `json:"class_id"`
+	ManagedSchoolIDs []int64 `json:"managed_school_ids"`
 }
 
 type userClassPlacementRequest struct {
@@ -716,15 +718,16 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := h.svc.CreateUserByAdmin(r.Context(), admin.ID, AdminCreateUserInput{
-		Username:      req.Username,
-		Email:         req.Email,
-		Password:      req.Password,
-		FullName:      req.FullName,
-		Role:          req.Role,
-		ParticipantNo: req.ParticipantNo,
-		NISN:          req.NISN,
-		SchoolID:      req.SchoolID,
-		ClassID:       req.ClassID,
+		Username:         req.Username,
+		Email:            req.Email,
+		Password:         req.Password,
+		FullName:         req.FullName,
+		Role:             req.Role,
+		ParticipantNo:    req.ParticipantNo,
+		NISN:             req.NISN,
+		SchoolID:         req.SchoolID,
+		ClassID:          req.ClassID,
+		ManagedSchoolIDs: req.ManagedSchoolIDs,
 	})
 	if err != nil {
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
@@ -753,14 +756,15 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out, err := h.svc.UpdateUserByAdmin(r.Context(), admin.ID, id, AdminUpdateUserInput{
-		FullName:      req.FullName,
-		Email:         req.Email,
-		Password:      req.Password,
-		Role:          req.Role,
-		ParticipantNo: req.ParticipantNo,
-		NISN:          req.NISN,
-		SchoolID:      req.SchoolID,
-		ClassID:       req.ClassID,
+		FullName:         req.FullName,
+		Email:            req.Email,
+		Password:         req.Password,
+		Role:             req.Role,
+		ParticipantNo:    req.ParticipantNo,
+		NISN:             req.NISN,
+		SchoolID:         req.SchoolID,
+		ClassID:          req.ClassID,
+		ManagedSchoolIDs: req.ManagedSchoolIDs,
 	})
 	if err != nil {
 		switch {

@@ -82,14 +82,15 @@ type ServiceConfig struct {
 }
 
 type User struct {
-	ID            int64      `json:"id"`
-	Username      string     `json:"username"`
-	Email         *string    `json:"email,omitempty"`
-	FullName      string     `json:"full_name"`
-	Role          string     `json:"role"`
-	AccountStatus string     `json:"account_status"`
-	ApprovedAt    *time.Time `json:"approved_at,omitempty"`
-	IsNonRegular  bool       `json:"is_non_regular"`
+	ID               int64      `json:"id"`
+	Username         string     `json:"username"`
+	Email            *string    `json:"email,omitempty"`
+	FullName         string     `json:"full_name"`
+	Role             string     `json:"role"`
+	AccountStatus    string     `json:"account_status"`
+	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
+	IsNonRegular     bool       `json:"is_non_regular"`
+	ManagedSchoolIDs []int64    `json:"managed_school_ids,omitempty"`
 }
 
 type RegistrationInput struct {
@@ -171,30 +172,32 @@ type RegistrationFormPayload struct {
 }
 
 type AdminUserRecord struct {
-	ID              int64      `json:"id"`
-	Username        string     `json:"username"`
-	Email           *string    `json:"email,omitempty"`
-	FullName        string     `json:"full_name"`
-	Role            string     `json:"role"`
-	ParticipantNo   *string    `json:"participant_no,omitempty"`
-	NISN            *string    `json:"nisn,omitempty"`
-	SchoolID        *int64     `json:"school_id,omitempty"`
-	SchoolName      *string    `json:"school_name,omitempty"`
-	SchoolCode      *string    `json:"school_code,omitempty"`
-	SchoolCity      *string    `json:"school_city,omitempty"`
-	SchoolProvince  *string    `json:"school_province,omitempty"`
-	SchoolAddress   *string    `json:"school_address,omitempty"`
-	SchoolKecamatan *string    `json:"school_kecamatan,omitempty"`
-	SchoolJenjang   *string    `json:"school_jenjang,omitempty"`
-	SchoolStatus    *string    `json:"school_status,omitempty"`
-	SchoolEmail     *string    `json:"school_email,omitempty"`
-	ClassID         *int64     `json:"class_id,omitempty"`
-	ClassGrade      *string    `json:"class_grade_level,omitempty"`
-	ClassName       *string    `json:"class_name,omitempty"`
-	IsActive        bool       `json:"is_active"`
-	AccountStatus   string     `json:"account_status"`
-	ApprovedAt      *time.Time `json:"approved_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                 int64      `json:"id"`
+	Username           string     `json:"username"`
+	Email              *string    `json:"email,omitempty"`
+	FullName           string     `json:"full_name"`
+	Role               string     `json:"role"`
+	ParticipantNo      *string    `json:"participant_no,omitempty"`
+	NISN               *string    `json:"nisn,omitempty"`
+	SchoolID           *int64     `json:"school_id,omitempty"`
+	SchoolName         *string    `json:"school_name,omitempty"`
+	SchoolCode         *string    `json:"school_code,omitempty"`
+	SchoolCity         *string    `json:"school_city,omitempty"`
+	SchoolProvince     *string    `json:"school_province,omitempty"`
+	SchoolAddress      *string    `json:"school_address,omitempty"`
+	SchoolKecamatan    *string    `json:"school_kecamatan,omitempty"`
+	SchoolJenjang      *string    `json:"school_jenjang,omitempty"`
+	SchoolStatus       *string    `json:"school_status,omitempty"`
+	SchoolEmail        *string    `json:"school_email,omitempty"`
+	ClassID            *int64     `json:"class_id,omitempty"`
+	ClassGrade         *string    `json:"class_grade_level,omitempty"`
+	ClassName          *string    `json:"class_name,omitempty"`
+	ManagedSchoolIDs   []int64    `json:"managed_school_ids,omitempty"`
+	ManagedSchoolNames []string   `json:"managed_school_names,omitempty"`
+	IsActive           bool       `json:"is_active"`
+	AccountStatus      string     `json:"account_status"`
+	ApprovedAt         *time.Time `json:"approved_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type AdminDashboardStats struct {
@@ -216,26 +219,28 @@ type StudentExamProfile struct {
 }
 
 type AdminCreateUserInput struct {
-	Username      string
-	Email         string
-	Password      string
-	FullName      string
-	Role          string
-	ParticipantNo string
-	NISN          string
-	SchoolID      *int64
-	ClassID       *int64
+	Username         string
+	Email            string
+	Password         string
+	FullName         string
+	Role             string
+	ParticipantNo    string
+	NISN             string
+	SchoolID         *int64
+	ClassID          *int64
+	ManagedSchoolIDs []int64
 }
 
 type AdminUpdateUserInput struct {
-	FullName      string
-	Email         string
-	Role          string
-	Password      string
-	ParticipantNo string
-	NISN          string
-	SchoolID      *int64
-	ClassID       *int64
+	FullName         string
+	Email            string
+	Role             string
+	Password         string
+	ParticipantNo    string
+	NISN             string
+	SchoolID         *int64
+	ClassID          *int64
+	ManagedSchoolIDs []int64
 }
 
 type UserClassPlacementInput struct {
@@ -326,6 +331,154 @@ func NewService(db *sql.DB, cfg ServiceConfig) *Service {
 	}
 }
 
+type dbQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+func loadManagedSchoolScope(ctx context.Context, q dbQueryer, userID int64) ([]int64, []string, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT s.id, s.name
+		FROM user_school_scopes uss
+		JOIN schools s ON s.id = uss.school_id
+		WHERE uss.user_id = $1
+		ORDER BY s.name ASC, s.id ASC
+	`, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load managed school scope: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0)
+	names := make([]string, 0)
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, fmt.Errorf("scan managed school scope: %w", err)
+		}
+		ids = append(ids, id)
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate managed school scope: %w", err)
+	}
+	return ids, names, nil
+}
+
+func loadManagedSchoolIDs(ctx context.Context, q dbQueryer, userID int64) ([]int64, error) {
+	ids, _, err := loadManagedSchoolScope(ctx, q, userID)
+	return ids, err
+}
+
+func replaceUserSchoolScopesTx(ctx context.Context, tx *sql.Tx, userID int64, role string, schoolIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM user_school_scopes
+		WHERE user_id = $1
+	`, userID); err != nil {
+		return fmt.Errorf("clear user school scopes: %w", err)
+	}
+	if strings.ToLower(strings.TrimSpace(role)) != "proktor" {
+		return nil
+	}
+	clean := uniquePositiveIDs(schoolIDs)
+	for _, schoolID := range clean {
+		var valid bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1
+				FROM schools
+				WHERE id = $1
+				  AND is_active = TRUE
+			)
+		`, schoolID).Scan(&valid); err != nil {
+			return fmt.Errorf("validate scoped school: %w", err)
+		}
+		if !valid {
+			return errors.New("scope sekolah proktor mengandung sekolah tidak valid")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO user_school_scopes (user_id, school_id, created_at)
+			VALUES ($1, $2, now())
+		`, userID, schoolID); err != nil {
+			return fmt.Errorf("insert user school scope: %w", err)
+		}
+	}
+	return nil
+}
+
+func uniquePositiveIDs(ids []int64) []int64 {
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func scopeContainsSchool(scope []int64, schoolID int64) bool {
+	if schoolID <= 0 {
+		return false
+	}
+	for _, id := range scope {
+		if id == schoolID {
+			return true
+		}
+	}
+	return false
+}
+
+func fillAdminUsersManagedSchoolScope(ctx context.Context, q dbQueryer, items []AdminUserRecord) error {
+	if len(items) == 0 {
+		return nil
+	}
+	args := make([]interface{}, 0, len(items))
+	placeholders := make([]string, 0, len(items))
+	indexByUserID := make(map[int64]int, len(items))
+	for i, item := range items {
+		args = append(args, item.ID)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		indexByUserID[item.ID] = i
+	}
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+		SELECT uss.user_id, s.id, s.name
+		FROM user_school_scopes uss
+		JOIN schools s ON s.id = uss.school_id
+		WHERE uss.user_id IN (%s)
+		ORDER BY s.name ASC, s.id ASC
+	`, strings.Join(placeholders, ", ")), args...)
+	if err != nil {
+		return fmt.Errorf("load managed school scopes batch: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID, schoolID int64
+		var schoolName string
+		if err := rows.Scan(&userID, &schoolID, &schoolName); err != nil {
+			return fmt.Errorf("scan managed school scope batch: %w", err)
+		}
+		idx, ok := indexByUserID[userID]
+		if !ok {
+			continue
+		}
+		items[idx].ManagedSchoolIDs = append(items[idx].ManagedSchoolIDs, schoolID)
+		items[idx].ManagedSchoolNames = append(items[idx].ManagedSchoolNames, schoolName)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate managed school scope batch: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) GoogleOAuthEnabled() bool {
 	return s.googleOAuth != nil
 }
@@ -378,6 +531,13 @@ func (s *Service) AuthenticatePassword(ctx context.Context, identifier, password
 	}
 	if approvedAt.Valid {
 		u.ApprovedAt = &approvedAt.Time
+	}
+	if u.Role == "proktor" {
+		managedSchoolIDs, err := loadManagedSchoolIDs(ctx, s.db, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		u.ManagedSchoolIDs = managedSchoolIDs
 	}
 
 	if u.AccountStatus != "active" {
@@ -985,6 +1145,13 @@ func (s *Service) LoginWithGoogle(ctx context.Context, info GoogleUserInfo) (*Us
 		if approvedAt.Valid {
 			u.ApprovedAt = &approvedAt.Time
 		}
+		if u.Role == "proktor" {
+			managedSchoolIDs, err := loadManagedSchoolIDs(ctx, s.db, u.ID)
+			if err != nil {
+				return nil, err
+			}
+			u.ManagedSchoolIDs = managedSchoolIDs
+		}
 		if u.AccountStatus != "active" {
 			return nil, ErrForbidden
 		}
@@ -1022,6 +1189,13 @@ func (s *Service) LoginWithGoogle(ctx context.Context, info GoogleUserInfo) (*Us
 	}
 	if approvedAt.Valid {
 		u.ApprovedAt = &approvedAt.Time
+	}
+	if u.Role == "proktor" {
+		managedSchoolIDs, err := loadManagedSchoolIDs(ctx, s.db, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		u.ManagedSchoolIDs = managedSchoolIDs
 	}
 	if u.AccountStatus != "active" {
 		return nil, ErrForbidden
@@ -1462,6 +1636,13 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	if offset < 0 {
 		offset = 0
 	}
+	actor, _ := CurrentUser(ctx)
+	actorID := int64(0)
+	restrictBySchoolScope := false
+	if actor != nil && actor.Role == "proktor" {
+		restrictBySchoolScope = true
+		actorID = actor.ID
+	}
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, role_requested, email, full_name, phone, institution_name, form_payload,
@@ -1469,10 +1650,23 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		       status, review_note, reviewed_by, reviewed_at, created_at
 		FROM registration_requests
 		WHERE ($1 = '' OR status = $1)
+		  AND (
+			NOT $4
+			OR EXISTS (
+				SELECT 1
+				FROM user_school_scopes uss
+				JOIN schools s ON s.id = uss.school_id
+				WHERE uss.user_id = $5
+				  AND (
+					(NULLIF(registration_requests.npsn, '') IS NOT NULL AND s.code = registration_requests.npsn)
+					OR LOWER(s.name) = LOWER(COALESCE(registration_requests.school_name, ''))
+				  )
+			)
+		  )
 		ORDER BY created_at DESC, id DESC
 		LIMIT $2
 		OFFSET $3
-	`, status, limit, offset)
+	`, status, limit, offset, restrictBySchoolScope, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("list registrations: %w", err)
 	}
@@ -2082,6 +2276,13 @@ func (s *Service) GetSessionUser(ctx context.Context, token string) (*User, erro
 	if approvedAt.Valid {
 		u.ApprovedAt = &approvedAt.Time
 	}
+	if u.Role == "proktor" {
+		managedSchoolIDs, err := loadManagedSchoolIDs(ctx, s.db, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		u.ManagedSchoolIDs = managedSchoolIDs
+	}
 	if u.AccountStatus != "active" {
 		return nil, ErrUnauthorized
 	}
@@ -2228,6 +2429,13 @@ func (s *Service) getActiveUserTx(ctx context.Context, tx *sql.Tx, userID int64)
 	if approvedAt.Valid {
 		u.ApprovedAt = &approvedAt.Time
 	}
+	if u.Role == "proktor" {
+		managedSchoolIDs, err := loadManagedSchoolIDs(ctx, tx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		u.ManagedSchoolIDs = managedSchoolIDs
+	}
 	if u.AccountStatus != "active" {
 		return nil, ErrForbidden
 	}
@@ -2254,6 +2462,13 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 	}
 	if offset < 0 {
 		offset = 0
+	}
+	actor, _ := CurrentUser(ctx)
+	actorID := int64(0)
+	restrictBySchoolScope := false
+	if actor != nil && actor.Role == "proktor" {
+		restrictBySchoolScope = true
+		actorID = actor.ID
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -2308,6 +2523,23 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		WHERE ($1 = '' OR u.role = $1)
 		  AND ($5 OR u.is_active = TRUE)
 		  AND (
+			NOT $6
+			OR EXISTS (
+				SELECT 1
+				FROM user_school_scopes actor_scope
+				WHERE actor_scope.user_id = $7
+				  AND (
+					actor_scope.school_id = sch.school_id
+					OR EXISTS (
+						SELECT 1
+						FROM user_school_scopes scoped
+						WHERE scoped.user_id = u.id
+						  AND scoped.school_id = actor_scope.school_id
+					)
+				  )
+			)
+		  )
+		  AND (
 			$2 = ''
 			OR u.username ILIKE '%' || $2 || '%'
 			OR u.full_name ILIKE '%' || $2 || '%'
@@ -2319,7 +2551,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		ORDER BY u.created_at DESC, u.id DESC
 		LIMIT $3
 		OFFSET $4
-	`, role, q, limit, offset, includeInactive)
+	`, role, q, limit, offset, includeInactive, restrictBySchoolScope, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
@@ -2429,6 +2661,9 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate users: %w", err)
 	}
+	if err := fillAdminUsersManagedSchoolScope(ctx, s.db, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -2495,6 +2730,10 @@ func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in Admin
 			return nil, errors.New("untuk role siswa, nomor peserta dan NISN wajib diisi")
 		}
 	}
+	managedSchoolIDs := uniquePositiveIDs(in.ManagedSchoolIDs)
+	if role != "proktor" {
+		managedSchoolIDs = nil
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), s.bcryptCost)
 	if err != nil {
@@ -2558,9 +2797,16 @@ func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in Admin
 	if err := upsertUserEnrollmentTx(ctx, tx, out.ID, in.SchoolID, in.ClassID); err != nil {
 		return nil, err
 	}
+	if err := replaceUserSchoolScopesTx(ctx, tx, out.ID, role, managedSchoolIDs); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit create user: %w", err)
+	}
+	out.ManagedSchoolIDs, out.ManagedSchoolNames, err = loadManagedSchoolScope(ctx, s.db, out.ID)
+	if err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
@@ -2587,6 +2833,10 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 		if participantNo == "" || nisn == "" {
 			return nil, errors.New("untuk role siswa, nomor peserta dan NISN wajib diisi")
 		}
+	}
+	managedSchoolIDs := uniquePositiveIDs(in.ManagedSchoolIDs)
+	if role != "proktor" {
+		managedSchoolIDs = nil
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -2663,15 +2913,21 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 	if err := upsertUserEnrollmentTx(ctx, tx, userID, in.SchoolID, in.ClassID); err != nil {
 		return nil, err
 	}
+	if err := replaceUserSchoolScopesTx(ctx, tx, userID, role, managedSchoolIDs); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit update user: %w", err)
+	}
+	out.ManagedSchoolIDs, out.ManagedSchoolNames, err = loadManagedSchoolScope(ctx, s.db, out.ID)
+	if err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
 
 func (s *Service) AssignUserClassByAdminOrProktor(ctx context.Context, actorID int64, in UserClassPlacementInput) (*AdminUserRecord, error) {
-	_ = actorID
 	if in.UserID <= 0 {
 		return nil, errors.New("invalid user id")
 	}
@@ -2681,6 +2937,11 @@ func (s *Service) AssignUserClassByAdminOrProktor(ctx context.Context, actorID i
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	actor, err := s.getActiveUserTx(ctx, tx, actorID)
+	if err != nil {
+		return nil, err
+	}
 
 	var role string
 	var participantNoCurrent sql.NullString
@@ -2698,6 +2959,14 @@ func (s *Service) AssignUserClassByAdminOrProktor(ctx context.Context, actorID i
 	}
 	if role != "guru" && role != "siswa" {
 		return nil, errors.New("hanya pengguna role guru/siswa yang bisa ditempatkan ke kelas")
+	}
+	if actor.Role == "proktor" {
+		if in.SchoolID == nil || *in.SchoolID <= 0 {
+			return nil, errors.New("proktor hanya bisa menempatkan pengguna ke sekolah dalam scope")
+		}
+		if !scopeContainsSchool(actor.ManagedSchoolIDs, *in.SchoolID) {
+			return nil, errors.New("sekolah di luar scope proktor")
+		}
 	}
 	if role == "siswa" {
 		if in.SchoolID == nil || in.ClassID == nil || *in.SchoolID <= 0 || *in.ClassID <= 0 {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,6 +80,15 @@ type response struct {
 	OK    bool        `json:"ok"`
 	Data  interface{} `json:"data,omitempty"`
 	Error string      `json:"error,omitempty"`
+}
+
+func writeExamForbidden(w http.ResponseWriter, r *http.Request, user *auth.User, err error) {
+	if user != nil && strings.EqualFold(user.Role, "proktor") {
+		log.Printf("proktor scope denied user_id=%d path=%s err=%v", user.ID, r.URL.Path, err)
+		writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "akses ditolak: di luar scope sekolah"})
+		return
+	}
+	writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
 }
 
 func (h *Handler) ensureGuruExamOwner(ctx context.Context, user *auth.User, examID int64) error {
@@ -642,7 +652,7 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -752,7 +762,7 @@ func (h *Handler) DeleteExam(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -788,7 +798,7 @@ func (h *Handler) ListExamAssignments(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -908,7 +918,7 @@ func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Requ
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -950,7 +960,7 @@ func (h *Handler) DeleteExamAttempt(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -969,7 +979,7 @@ func (h *Handler) DeleteExamAttempt(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrAttemptNotFinal):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "attempt masih berjalan"})
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -997,7 +1007,7 @@ func (h *Handler) ExportExamParticipantResultsExcel(w http.ResponseWriter, r *ht
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1045,7 +1055,7 @@ func (h *Handler) ReplaceExamAssignments(w http.ResponseWriter, r *http.Request)
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1093,7 +1103,7 @@ func (h *Handler) ReplaceExamAssignmentsByClass(w http.ResponseWriter, r *http.R
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1143,7 +1153,7 @@ func (h *Handler) AppendExamAssignmentsByClass(w http.ResponseWriter, r *http.Re
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1193,7 +1203,7 @@ func (h *Handler) RemoveExamAssignment(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1235,7 +1245,7 @@ func (h *Handler) ListExamQuestions(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1274,7 +1284,7 @@ func (h *Handler) GetExamQuestionDetail(w http.ResponseWriter, r *http.Request) 
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1311,7 +1321,7 @@ func (h *Handler) UpsertExamQuestion(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1358,7 +1368,7 @@ func (h *Handler) ListExamQuestionCodeRules(w http.ResponseWriter, r *http.Reque
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1395,7 +1405,7 @@ func (h *Handler) UpsertExamQuestionCodeRule(w http.ResponseWriter, r *http.Requ
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1450,7 +1460,7 @@ func (h *Handler) DeleteExamQuestionCodeRule(w http.ResponseWriter, r *http.Requ
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1486,7 +1496,7 @@ func (h *Handler) SyncExamQuestionsByCode(w http.ResponseWriter, r *http.Request
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1530,7 +1540,7 @@ func (h *Handler) DeleteExamQuestion(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1566,7 +1576,7 @@ func (h *Handler) RegradeExam(w http.ResponseWriter, r *http.Request) {
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:
@@ -1583,7 +1593,7 @@ func (h *Handler) RegradeExam(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: err.Error()})
 		}
@@ -1613,7 +1623,7 @@ func (h *Handler) UpsertExamQuestionIncident(w http.ResponseWriter, r *http.Requ
 	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
 		switch {
 		case errors.Is(err, ErrExamForbidden):
-			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:

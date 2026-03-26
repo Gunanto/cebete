@@ -32,6 +32,14 @@
     );
   }
 
+  function isProktorRole(role) {
+    return (
+      String(role || "")
+        .trim()
+        .toLowerCase() === "proktor"
+    );
+  }
+
   function schoolLabel(it) {
     const name = String((it && it.name) || "").trim();
     const code = String((it && it.code) || "").trim();
@@ -71,6 +79,37 @@
       if (selected > 0 && Number(it.id) === selected) opt.selected = true;
       selectEl.appendChild(opt);
     });
+  }
+
+  function fillManagedSchoolSelect(selectEl, selectedIDs) {
+    if (!selectEl) return;
+    const selected = Array.isArray(selectedIDs)
+      ? selectedIDs.map(function (it) {
+          return String(it);
+        })
+      : [];
+    selectEl.innerHTML = "";
+    schoolsCache.forEach(function (it) {
+      const opt = document.createElement("option");
+      opt.value = String(it.id);
+      opt.textContent = schoolLabel(it);
+      if (selected.indexOf(String(it.id)) >= 0) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+  }
+
+  function getMultiSelectValues(selectEl) {
+    if (!selectEl || !selectEl.options) return [];
+    return Array.from(selectEl.options)
+      .filter(function (opt) {
+        return opt.selected && String(opt.value || "").trim() !== "";
+      })
+      .map(function (opt) {
+        return Number(opt.value);
+      })
+      .filter(function (n) {
+        return Number.isFinite(n) && n > 0;
+      });
   }
 
   function schoolCodeByID(schoolID) {
@@ -116,6 +155,7 @@
     const classEl = formEl.elements.namedItem("class_id");
     const participantNoEl = formEl.elements.namedItem("participant_no");
     const nisnEl = formEl.elements.namedItem("nisn");
+    const managedSchoolsEl = formEl.elements.namedItem("managed_school_ids");
     if (!roleEl || !schoolEl || !classEl) return;
 
     const mustHaveClass = isStudentRole(roleEl.value);
@@ -123,6 +163,8 @@
     classEl.required = mustHaveClass;
     if (participantNoEl) participantNoEl.required = mustHaveClass;
     if (nisnEl) nisnEl.required = mustHaveClass;
+    if (managedSchoolsEl)
+      managedSchoolsEl.required = isProktorRole(roleEl.value);
 
     const schoolLabel = schoolEl.closest("label");
     const classLabel = classEl.closest("label");
@@ -132,6 +174,9 @@
     const nisnLabel = nisnEl ? nisnEl.closest("label") : null;
     const schoolCodeEl = formEl.elements.namedItem("school_code_display");
     const schoolCodeLabel = schoolCodeEl ? schoolCodeEl.closest("label") : null;
+    const managedSchoolsLabel = managedSchoolsEl
+      ? managedSchoolsEl.closest("label")
+      : null;
     if (schoolLabel) {
       schoolLabel.dataset.requiredRole = mustHaveClass ? "siswa" : "";
     }
@@ -146,6 +191,12 @@
     }
     if (schoolCodeLabel) {
       schoolCodeLabel.dataset.requiredRole = mustHaveClass ? "siswa" : "";
+    }
+    if (managedSchoolsLabel) {
+      managedSchoolsLabel.hidden = !isProktorRole(roleEl.value);
+      managedSchoolsLabel.dataset.requiredRole = isProktorRole(roleEl.value)
+        ? "proktor"
+        : "";
     }
   }
 
@@ -449,6 +500,10 @@
           deps.userCreateForm.reset();
           applyUserFormRoleRequirements(deps.userCreateForm);
           fillSchoolSelect(deps.userCreateForm.elements.namedItem("school_id"));
+          fillManagedSchoolSelect(
+            deps.userCreateForm.elements.namedItem("managed_school_ids"),
+            [],
+          );
           syncSchoolCodeDisplay(deps.userCreateForm);
           resetClassSelect(
             deps.userCreateForm.elements.namedItem("class_id"),
@@ -623,6 +678,10 @@
               deps.userUpdateForm.elements.namedItem("school_id"),
               userItem.school_id,
             );
+            fillManagedSchoolSelect(
+              deps.userUpdateForm.elements.namedItem("managed_school_ids"),
+              userItem.managed_school_ids || [],
+            );
             syncSchoolCodeDisplay(deps.userUpdateForm);
             const schoolID = Number(userItem.school_id || 0);
             const classID = Number(userItem.class_id || 0);
@@ -713,6 +772,9 @@
         try {
           const schoolID = toNullableNumber(fd.get("school_id"));
           const classID = toNullableNumber(fd.get("class_id"));
+          const managedSchoolIDs = getMultiSelectValues(
+            deps.userCreateForm.elements.namedItem("managed_school_ids"),
+          );
           const role = String(fd.get("role") || "")
             .trim()
             .toLowerCase();
@@ -739,6 +801,12 @@
             deps.setMsg("Jika memilih sekolah, kelas wajib dipilih.");
             return;
           }
+          if (isProktorRole(role) && !managedSchoolIDs.length) {
+            deps.setMsg(
+              "Untuk role proktor, pilih minimal satu sekolah kelolaan.",
+            );
+            return;
+          }
           const out = await deps.api("/api/v1/admin/users", "POST", {
             username: String(fd.get("username") || "").trim(),
             full_name: String(fd.get("full_name") || "").trim(),
@@ -749,6 +817,7 @@
             nisn: nisn,
             school_id: schoolID,
             class_id: classID,
+            managed_school_ids: managedSchoolIDs,
           });
           pretty(deps.regOut, out);
           deps.setMsg("Pengguna berhasil dibuat.");
@@ -811,6 +880,9 @@
         try {
           const schoolID = toNullableNumber(fd.get("school_id"));
           const classID = toNullableNumber(fd.get("class_id"));
+          const managedSchoolIDs = getMultiSelectValues(
+            deps.userUpdateForm.elements.namedItem("managed_school_ids"),
+          );
           const role = String(fd.get("role") || "")
             .trim()
             .toLowerCase();
@@ -837,6 +909,12 @@
             deps.setMsg("Jika memilih sekolah, kelas wajib dipilih.");
             return;
           }
+          if (isProktorRole(role) && !managedSchoolIDs.length) {
+            deps.setMsg(
+              "Untuk role proktor, pilih minimal satu sekolah kelolaan.",
+            );
+            return;
+          }
           const out = await deps.api("/api/v1/admin/users/" + id, "PUT", {
             full_name: String(fd.get("full_name") || "").trim(),
             email: String(fd.get("email") || "").trim(),
@@ -846,6 +924,7 @@
             nisn: nisn,
             school_id: schoolID === null ? 0 : schoolID,
             class_id: classID === null ? 0 : classID,
+            managed_school_ids: managedSchoolIDs,
           });
           pretty(deps.regOut, out);
           deps.setMsg("Pengguna berhasil diperbarui.");

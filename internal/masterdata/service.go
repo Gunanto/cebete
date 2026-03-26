@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"cbtlms/internal/auth"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -381,17 +383,35 @@ func (s *Service) DeleteClass(ctx context.Context, actorID, id int64) error {
 }
 
 func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, error) {
+	user, _ := auth.CurrentUser(ctx)
+	restrictByScope := user != nil && user.Role == "proktor"
 	query := `
 		SELECT id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,''),
 		       COALESCE(kecamatan,''), COALESCE(jenjang,''), COALESCE(status_sekolah,''), COALESCE(school_email,'')
 		FROM schools
 	`
+	conditions := make([]string, 0, 2)
 	if activeOnly {
-		query += " WHERE is_active = TRUE"
+		conditions = append(conditions, "is_active = TRUE")
+	}
+	if restrictByScope {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1
+			FROM user_school_scopes uss
+			WHERE uss.user_id = $1
+			  AND uss.school_id = schools.id
+		)`)
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += " ORDER BY name ASC, id ASC"
 
-	rows, err := s.db.QueryContext(ctx, query)
+	args := []interface{}{}
+	if restrictByScope {
+		args = append(args, user.ID)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list schools: %w", err)
 	}
@@ -412,6 +432,8 @@ func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, e
 }
 
 func (s *Service) ListClasses(ctx context.Context, schoolID int64, activeOnly bool) ([]ClassListItem, error) {
+	user, _ := auth.CurrentUser(ctx)
+	restrictByScope := user != nil && user.Role == "proktor"
 	query := `
 		SELECT
 			c.id,
@@ -425,13 +447,24 @@ func (s *Service) ListClasses(ctx context.Context, schoolID int64, activeOnly bo
 		LEFT JOIN users u ON u.id = e.user_id AND u.is_active = TRUE AND u.role = 'siswa'
 		WHERE ($1 <= 0 OR c.school_id = $1)
 	`
+	args := []interface{}{schoolID}
+	if restrictByScope {
+		query += `
+		  AND EXISTS (
+			SELECT 1
+			FROM user_school_scopes uss
+			WHERE uss.user_id = $2
+			  AND uss.school_id = c.school_id
+		  )`
+		args = append(args, user.ID)
+	}
 	if activeOnly {
 		query += " AND c.is_active = TRUE"
 	}
 	query += " GROUP BY c.id, c.school_id, c.name, c.grade_level, c.is_active"
 	query += " ORDER BY c.grade_level ASC, c.name ASC, c.id ASC"
 
-	rows, err := s.db.QueryContext(ctx, query, schoolID)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list classes: %w", err)
 	}
