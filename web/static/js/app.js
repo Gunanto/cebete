@@ -1967,10 +1967,15 @@
 
     async function loadSummary() {
       const sum = await api("/api/v1/attempts/" + attemptID, "GET");
-      const examTitle = String(sum.title || "").trim();
+      const examTitleParts = [
+        String(sum.exam_code || "").trim(),
+        String(sum.title || "").trim(),
+        String(sum.subject_name || "").trim(),
+      ].filter(Boolean);
+      const examTitle = examTitleParts.join(" | ");
       if (attemptPageTitle) {
         attemptPageTitle.textContent = examTitle
-          ? "Ujian " + examTitle
+          ? examTitle
           : "Ujian #" + String(attemptID);
       }
       totalQuestions = Number(sum.total_questions || 1);

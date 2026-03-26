@@ -178,6 +178,21 @@
     document.body.removeChild(input);
   }
 
+  function flashCopyButton(btn, label) {
+    if (!btn) return;
+    var original = btn.getAttribute("data-label-original");
+    if (!original) {
+      original = String(btn.textContent || "").trim() || "Salin";
+      btn.setAttribute("data-label-original", original);
+    }
+    btn.textContent = label;
+    btn.disabled = true;
+    window.setTimeout(function () {
+      btn.textContent = original;
+      btn.disabled = false;
+    }, 1200);
+  }
+
   function bindHandlers() {
     if (!deps || !deps.tokenForm) return;
     deps.tokenForm.addEventListener("submit", async function (e) {
@@ -234,8 +249,10 @@
             await copyToken(
               JSON.parse(copyBtn.getAttribute("data-token-copy") || "{}"),
             );
+            flashCopyButton(copyBtn, "✓ Tersalin");
             deps.setMsg("Token berhasil disalin.");
           } catch (err) {
+            flashCopyButton(copyBtn, "✕ Gagal");
             deps.setMsg("Gagal menyalin token: " + err.message);
           }
           return;
