@@ -951,6 +951,24 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 	return nil
 }
 
+func canStudentSeePublishedExam(hasAssignment, isNonRegular, allowNonRegular bool) bool {
+	if hasAssignment {
+		return true
+	}
+	return isNonRegular && allowNonRegular
+}
+
+func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool) bool {
+	if hasAssignment {
+		return true
+	}
+	if !isNonRegular {
+		// Preserve the legacy behavior for regular students.
+		return true
+	}
+	return allowNonRegular
+}
+
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -1007,6 +1025,22 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 	if studentID <= 0 {
 		return nil, ErrInvalidInput
 	}
+	var role string
+	var isNonRegular bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT role, COALESCE(is_non_regular, FALSE)
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, studentID).Scan(&role, &isNonRegular); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAttemptForbidden
+		}
+		return nil, fmt.Errorf("load student visibility profile: %w", err)
+	}
+	if strings.TrimSpace(strings.ToLower(role)) != "siswa" {
+		return nil, ErrAttemptForbidden
+	}
 	now := time.Now()
 	query := `
 		SELECT
@@ -1017,13 +1051,16 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 			s.name AS subject_name,
 			s.education_level,
 			s.subject_type,
-			e.end_at
-		FROM exam_assignments ea
-		JOIN exams e ON e.id = ea.exam_id
+			e.end_at,
+			CASE WHEN ea.user_id IS NULL THEN FALSE ELSE TRUE END AS has_assignment,
+			COALESCE(e.allow_non_regular_self_enroll, FALSE) AS allow_non_regular
+		FROM exams e
+		LEFT JOIN exam_assignments ea
+			ON ea.exam_id = e.id
+			AND ea.user_id = $1
+			AND ea.status = 'active'
 		JOIN subjects s ON s.id = e.subject_id
-		WHERE ea.user_id = $1
-		  AND ea.status = 'active'
-		  AND e.is_active = TRUE
+		WHERE e.is_active = TRUE
 		  AND (e.start_at IS NULL OR e.start_at <= $2)
 		  AND (e.end_at IS NULL OR e.end_at > $2)
 		ORDER BY e.created_at DESC, e.id DESC
@@ -1041,6 +1078,8 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 	for rows.Next() {
 		var it ExamTokenExam
 		var endAt sql.NullTime
+		var hasAssignment bool
+		var allowNonRegular bool
 		if err := rows.Scan(
 			&it.ID,
 			&it.Code,
@@ -1050,8 +1089,13 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 			&it.EducationLevel,
 			&it.SubjectType,
 			&endAt,
+			&hasAssignment,
+			&allowNonRegular,
 		); err != nil {
 			return nil, fmt.Errorf("scan published exams: %w", err)
+		}
+		if !canStudentSeePublishedExam(hasAssignment, isNonRegular, allowNonRegular) {
+			continue
 		}
 		if endAt.Valid {
 			it.EndAt = &endAt.Time
@@ -1070,12 +1114,13 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 	}
 
 	var role string
+	var isNonRegular bool
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT role
+		SELECT role, COALESCE(is_non_regular, FALSE)
 		FROM users
 		WHERE id = $1
 		  AND is_active = TRUE
-	`, studentID).Scan(&role); err != nil {
+	`, studentID).Scan(&role, &isNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrAttemptForbidden
 		}
@@ -1087,11 +1132,23 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 
 	var startAt sql.NullTime
 	var endAt sql.NullTime
+	var allowNonRegular bool
+	var hasAssignment bool
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT start_at, end_at
+		SELECT
+			e.start_at,
+			e.end_at,
+			COALESCE(e.allow_non_regular_self_enroll, FALSE),
+			EXISTS(
+				SELECT 1
+				FROM exam_assignments ea
+				WHERE ea.exam_id = e.id
+				  AND ea.user_id = $2
+				  AND ea.status = 'active'
+			)
 		FROM exams
 		WHERE id = $1 AND is_active = TRUE
-	`, examID).Scan(&startAt, &endAt); err != nil {
+	`, examID, studentID).Scan(&startAt, &endAt, &allowNonRegular, &hasAssignment); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrExamNotFound
 		}
@@ -1099,6 +1156,9 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 	}
 	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
 		return err
+	}
+	if !canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular) {
+		return ErrAttemptForbidden
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
