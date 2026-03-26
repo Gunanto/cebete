@@ -337,6 +337,18 @@ type dbQueryer interface {
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
+func isUndefinedTableErr(err error, table string) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if table == "" {
+		return strings.Contains(lower, "does not exist") || strings.Contains(lower, "undefined_table")
+	}
+	return strings.Contains(lower, "relation \""+strings.ToLower(table)+"\" does not exist") ||
+		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
+}
+
 func loadManagedSchoolScope(ctx context.Context, q dbQueryer, userID int64) ([]int64, []string, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT s.id, s.name
@@ -456,6 +468,9 @@ func fillAdminUsersManagedSchoolScope(ctx context.Context, q dbQueryer, items []
 		ORDER BY s.name ASC, s.id ASC
 	`, strings.Join(placeholders, ", ")), args...)
 	if err != nil {
+		if isUndefinedTableErr(err, "user_school_scopes") {
+			return nil
+		}
 		return fmt.Errorf("load managed school scopes batch: %w", err)
 	}
 	defer rows.Close()
@@ -2471,7 +2486,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		actorID = actor.ID
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	query := `
 		SELECT
 			u.id,
 			u.username,
@@ -2551,7 +2566,79 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		ORDER BY u.created_at DESC, u.id DESC
 		LIMIT $3
 		OFFSET $4
-	`, role, q, limit, offset, includeInactive, restrictBySchoolScope, actorID)
+	`
+	rows, err := s.db.QueryContext(ctx, query, role, q, limit, offset, includeInactive, restrictBySchoolScope, actorID)
+	if err != nil {
+		if isUndefinedTableErr(err, "user_school_scopes") {
+			if restrictBySchoolScope {
+				return []AdminUserRecord{}, nil
+			}
+			rows, err = s.db.QueryContext(ctx, `
+				SELECT
+					u.id,
+					u.username,
+					u.email,
+					u.full_name,
+					u.role,
+					u.participant_no,
+					u.nisn,
+					sch.school_id,
+					sch.name AS school_name,
+					sch.code AS school_code,
+					sch.city AS school_city,
+					sch.province AS school_province,
+					sch.address AS school_address,
+					sch.kecamatan AS school_kecamatan,
+					sch.jenjang AS school_jenjang,
+					sch.status_sekolah AS school_status,
+					sch.school_email AS school_email,
+					sch.class_id,
+					sch.grade_level,
+					sch.class_name,
+					u.is_active,
+					u.account_status,
+					u.approved_at,
+					u.created_at
+				FROM users u
+				LEFT JOIN LATERAL (
+					SELECT
+						s.name,
+						s.code,
+						s.city,
+						s.province,
+						s.address,
+						s.kecamatan,
+						s.jenjang,
+						s.status_sekolah,
+						s.school_email,
+						e.school_id,
+						e.class_id,
+						c.grade_level,
+						c.name AS class_name
+					FROM enrollments e
+					JOIN schools s ON s.id = e.school_id
+					LEFT JOIN classes c ON c.id = e.class_id
+					WHERE e.user_id = u.id
+					ORDER BY e.enrolled_at DESC, e.id DESC
+					LIMIT 1
+				) sch ON TRUE
+				WHERE ($1 = '' OR u.role = $1)
+				  AND ($5 OR u.is_active = TRUE)
+				  AND (
+					$2 = ''
+					OR u.username ILIKE '%' || $2 || '%'
+					OR u.full_name ILIKE '%' || $2 || '%'
+					OR COALESCE(u.email,'') ILIKE '%' || $2 || '%'
+					OR COALESCE(u.participant_no,'') ILIKE '%' || $2 || '%'
+					OR COALESCE(u.nisn,'') ILIKE '%' || $2 || '%'
+					OR COALESCE(sch.name,'') ILIKE '%' || $2 || '%'
+				  )
+				ORDER BY u.created_at DESC, u.id DESC
+				LIMIT $3
+				OFFSET $4
+			`, role, q, limit, offset, includeInactive)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
