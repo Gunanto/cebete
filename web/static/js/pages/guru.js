@@ -1489,15 +1489,39 @@
           guide: guidePanel,
         },
         getMenuInfo: getGuruMenuInfo,
-        onMenuActivated: function (menuKey) {
+        onMenuActivated: async function (menuKey) {
           if (menuKey === "subjects") {
             refreshGuruSummaryStats();
             return;
           }
+          if (menuKey === "exams") {
+            try {
+              await Promise.all([
+                loadGuruExamManageTable(),
+                loadGuruExamSubjectOptions(),
+              ]);
+            } catch (_) {
+              // error already surfaced by the module
+            }
+            return;
+          }
+          if (menuKey === "enroll") {
+            try {
+              await Promise.all([
+                loadGuruEnrollExamManageTable(),
+                loadGuruEnrollSchoolsAndClasses(),
+              ]);
+            } catch (_) {
+              // error already surfaced by the module
+            }
+            return;
+          }
           if (menuKey === "results") {
-            loadGuruResultExamOptions().catch(function () {
-              // error will be surfaced when user explicitly loads results
-            });
+            try {
+              await loadGuruResultExamOptions();
+            } catch (_) {
+              // error already surfaced by the module
+            }
           }
         },
       });
