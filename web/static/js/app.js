@@ -4575,11 +4575,39 @@
       }
     }
 
+    function sanitizeFilenamePart(value) {
+      return String(value || "")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
     function exportResultDialogPDF() {
       if (!resultDialog) return;
       const title = String(
         resultDialogTitle && resultDialogTitle.textContent,
       ).trim();
+      const school = String(
+        (resultDialogSchoolName && resultDialogSchoolName.textContent) || "",
+      ).trim();
+      const examName = String(
+        (resultDialogExamTitle && resultDialogExamTitle.textContent) || "",
+      ).trim();
+      const userIDPart = currentUserID ? String(currentUserID) : "";
+      const userNamePart = currentUserName || "-";
+      const datePart = new Date().toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+      const filename = [userIDPart, userNamePart, school, examName, datePart]
+        .filter(function (v) {
+          return String(v || "").trim();
+        })
+        .map(sanitizeFilenamePart)
+        .join(" ")
+        .trim();
+      const docTitle = filename ? filename + ".pdf" : "hasil_ujian.pdf";
       const metaRows = [
         [
           "Nama Ujian",
@@ -4625,7 +4653,7 @@
         : "";
       const htmlDoc = [
         '<!doctype html><html><head><meta charset="utf-8"/>',
-        "<title>" + escapeHtml(title || "Hasil Ujian") + "</title>",
+        "<title>" + escapeHtml(docTitle) + "</title>",
         "<style>",
         "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;padding:24px;}",
         "h1{font-size:20px;margin:0 0 12px;}",
@@ -4654,6 +4682,7 @@
       win.document.open();
       win.document.write(htmlDoc);
       win.document.close();
+      win.document.title = docTitle;
       win.focus();
       win.print();
     }
@@ -4687,9 +4716,16 @@
       if (window.innerWidth > 900) setSidebarOpen(false);
     });
 
+    let currentUserID = 0;
+    let currentUserName = "";
     try {
       const profile = await api("/api/v1/auth/me/student-profile", "GET");
       const fullName = profile && profile.full_name;
+      const me = await meOrNull().catch(function () {
+        return null;
+      });
+      currentUserID = Number((me && me.id) || 0);
+      currentUserName = String(fullName || "").trim();
       setCell(profileName, fullName);
       setCell(profileParticipantNo, profile && profile.participant_no);
       setCell(profileNISN, profile && profile.nisn);
