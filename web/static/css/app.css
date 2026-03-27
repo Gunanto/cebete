@@ -545,14 +545,25 @@ body[data-page="login_content"] .landing-footer small {
     justify-content: center;
     gap: 8px;
     text-decoration: none;
-    background: #ffffff;
-    color: #111827;
-    border: 1px solid #e5e7eb;
+    background: #8fd7df;
+    color: #0b3a4a;
+    border: 1px solid #7ac8d1;
 }
 
 .login-google-btn:hover {
-    background: #f8fafc;
-    border-color: #d1d5db;
+    background: #7ccdd6;
+    border-color: #66bcc6;
+}
+
+#login-show-signup-btn {
+    background: #facc15;
+    color: #3a2f00;
+    border: 1px solid #eab308;
+}
+
+#login-show-signup-btn:hover {
+    background: #fbbf24;
+    border-color: #d99a07;
 }
 
 .login-secondary-btn-icon {
