@@ -1130,6 +1130,12 @@
           fillSubjectSelect(blueprintFilterSubject, true);
           fillSubjectSelect(manuscriptSubjectSelect, false);
           fillSubjectSelect(examSubjectSelect, false);
+          if (
+            LearningGoals &&
+            typeof LearningGoals.fillSubjectSelect === "function"
+          ) {
+            LearningGoals.fillSubjectSelect();
+          }
           fillQuestionCodeSubjectSelect(
             Number(
               (QuestionCodes && QuestionCodes.getSelectedSubjectID

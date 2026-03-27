@@ -387,6 +387,7 @@
 
   function fillSubjectSelect() {
     if (!deps || !deps.learningGoalMapelInput) return;
+    const current = String(deps.learningGoalMapelInput.value || "");
     deps.learningGoalMapelInput.innerHTML =
       '<option value="">Pilih Mata Pelajaran</option>';
     const subjects =
@@ -400,8 +401,12 @@
         : String((it && it.name) || "");
       opt.value = String(it.name || "");
       opt.textContent = labelText;
+      if (current && current === opt.value) opt.selected = true;
       deps.learningGoalMapelInput.appendChild(opt);
     });
+    if (!deps.learningGoalMapelInput.value) {
+      deps.learningGoalMapelInput.selectedIndex = 0;
+    }
   }
 
   async function load() {
