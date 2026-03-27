@@ -1313,7 +1313,7 @@
         examQuestionCodeRuleExamIDInput: examQuestionCodeRuleExamIDInput,
         questionExamIDInput: questionExamIDInput,
         loadBlueprints: loadBlueprints,
-        blueprintFilterSubjectSelect: blueprintFilterSubjectSelect,
+        blueprintFilterSubjectSelect: blueprintFilterSubject,
       });
     }
 
