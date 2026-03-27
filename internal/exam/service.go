@@ -182,6 +182,8 @@ type AttemptSummary struct {
 	SubjectName     string     `json:"subject_name,omitempty"`
 	TeacherName     string     `json:"teacher_name,omitempty"`
 	StudentID       int64      `json:"student_id"`
+	ClassName       string     `json:"class_name,omitempty"`
+	SchoolName      string     `json:"school_name,omitempty"`
 	Status          string     `json:"status"`
 	StartedAt       time.Time  `json:"started_at"`
 	ExpiresAt       time.Time  `json:"expires_at"`
@@ -191,6 +193,7 @@ type AttemptSummary struct {
 	RemainingSecs   int64      `json:"remaining_secs"`
 	TotalQuestions  int        `json:"total_questions"`
 	TotalWeight     float64    `json:"total_weight"`
+	ClassAvgScore   float64    `json:"class_average_score,omitempty"`
 	Answered        int        `json:"answered"`
 	Doubt           int        `json:"doubt"`
 	TotalCorrect    int        `json:"total_correct"`
@@ -5862,6 +5865,10 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	if err != nil {
 		return nil, err
 	}
+	classID, className, schoolName, err := s.loadStudentClassInfo(ctx, q, row.StudentID)
+	if err != nil {
+		return nil, err
+	}
 
 	totalQuestions, answered, doubt, err := s.countProgress(ctx, q, row.ID, row.ExamID)
 	if err != nil {
@@ -5880,6 +5887,8 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 		SubjectName:    subjectName,
 		TeacherName:    teacherName,
 		StudentID:      row.StudentID,
+		ClassName:      className,
+		SchoolName:     schoolName,
 		Status:         row.Status,
 		StartedAt:      row.StartedAt,
 		ExpiresAt:      row.ExpiresAt,
@@ -5890,6 +5899,13 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 		Answered:       answered,
 		Doubt:          doubt,
 		RemainingSecs:  remainingSeconds(row.Status, row.ExpiresAt),
+	}
+	if classID > 0 {
+		avgScore, err := s.loadClassAverageScore(ctx, q, row.ExamID, classID)
+		if err != nil {
+			return nil, err
+		}
+		summary.ClassAvgScore = avgScore
 	}
 
 	if row.SubmittedAt.Valid {
@@ -5917,6 +5933,68 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	}
 
 	return summary, nil
+}
+
+func (s *Service) loadStudentClassInfo(ctx context.Context, q queryable, studentID int64) (int64, string, string, error) {
+	if studentID <= 0 {
+		return 0, "", "", ErrInvalidInput
+	}
+	var (
+		classID    sql.NullInt64
+		className  sql.NullString
+		schoolName sql.NullString
+	)
+	if err := q.QueryRowContext(ctx, `
+		SELECT
+			c.id,
+			COALESCE(c.name, ''),
+			COALESCE(s.name, '')
+		FROM enrollments e
+		JOIN classes c ON c.id = e.class_id
+		JOIN schools s ON s.id = e.school_id
+		WHERE e.user_id = $1
+		  AND e.status = 'active'
+		ORDER BY e.enrolled_at DESC, e.id DESC
+		LIMIT 1
+	`, studentID).Scan(&classID, &className, &schoolName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", "", nil
+		}
+		return 0, "", "", fmt.Errorf("load student class info: %w", err)
+	}
+	if !classID.Valid {
+		return 0, "", "", nil
+	}
+	return classID.Int64, strings.TrimSpace(className.String), strings.TrimSpace(schoolName.String), nil
+}
+
+func (s *Service) loadClassAverageScore(ctx context.Context, q queryable, examID, classID int64) (float64, error) {
+	if examID <= 0 || classID <= 0 {
+		return 0, ErrInvalidInput
+	}
+	var avg sql.NullFloat64
+	if err := q.QueryRowContext(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (a.student_id)
+				a.student_id,
+				a.score
+			FROM attempts a
+			JOIN enrollments e ON e.user_id = a.student_id
+			WHERE a.exam_id = $1
+			  AND e.class_id = $2
+			  AND e.status = 'active'
+			  AND a.score IS NOT NULL
+			ORDER BY a.student_id, a.started_at DESC, a.id DESC
+		)
+		SELECT COALESCE(AVG(score), 0)
+		FROM latest
+	`, examID, classID).Scan(&avg); err != nil {
+		return 0, fmt.Errorf("load class average score: %w", err)
+	}
+	if !avg.Valid {
+		return 0, nil
+	}
+	return avg.Float64, nil
 }
 
 func (s *Service) loadAttemptSummaryMeta(ctx context.Context, q queryable, examID int64) (examCode, title, subjectName, teacherName string, examStartAt, examEndAt *time.Time, err error) {

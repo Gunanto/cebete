@@ -4159,6 +4159,9 @@
     const resultDialogExamTitle = document.getElementById(
       "peserta-result-dialog-exam-title",
     );
+    const resultDialogSchoolName = document.getElementById(
+      "peserta-result-dialog-school-name",
+    );
     const resultDialogSubject = document.getElementById(
       "peserta-result-dialog-subject",
     );
@@ -4168,11 +4171,17 @@
     const resultDialogExamScore = document.getElementById(
       "peserta-result-dialog-exam-score",
     );
+    const resultDialogClassAverage = document.getElementById(
+      "peserta-result-dialog-class-average",
+    );
     const resultDialogItems = document.getElementById(
       "peserta-result-dialog-items",
     );
     const resultDialogLearningGoal = document.getElementById(
       "peserta-result-dialog-learning-goal",
+    );
+    const resultDialogExportBtn = document.getElementById(
+      "peserta-result-dialog-export-btn",
     );
     const menuButtons = Array.from(
       document.querySelectorAll("[data-peserta-menu]"),
@@ -4398,9 +4407,12 @@
           }, 0) / items.length
         : 0;
       const rows = items
-        .map(function (it) {
+        .map(function (it, idx) {
+          const statusClass = it && it.achieved ? "accepted" : "revision";
+          const statusLabel = it && it.achieved ? "Tercapai" : "Belum Tercapai";
           return [
             "<tr>",
+            "<td>" + escapeHtml(String(idx + 1)) + "</td>",
             "<td>" +
               escapeHtml(String(it.learning_goal_text || "Tanpa TP")) +
               "</td>",
@@ -4416,16 +4428,18 @@
             "<td>" +
               escapeHtml(Number((it && it.percent) || 0).toFixed(2) + "%") +
               "</td>",
-            "<td>" +
-              escapeHtml(it && it.achieved ? "Tercapai" : "Belum Tercapai") +
-              "</td>",
+            '<td><span class="analysis-status analysis-status-' +
+              escapeHtml(statusClass) +
+              '">' +
+              escapeHtml(statusLabel) +
+              "</span></td>",
             "</tr>",
           ].join("");
         })
         .join("");
       html(
         resultDialogLearningGoal,
-        '<div class="result-learning-goal-head"><strong>Analisis TP Anda</strong><div class="muted mt">KKTP: ' +
+        '<div class="result-learning-goal-head"><strong>Analisis Ketercapaian Tujuan Pembelajaran</strong><div class="muted mt">KKTP: ' +
           escapeHtml(Number(out.kktp || 0).toFixed(2) + "%") +
           " | TP Tercapai: " +
           escapeHtml(String(achievedCount)) +
@@ -4435,10 +4449,11 @@
           escapeHtml(Number(averagePercent || 0).toFixed(2) + "%") +
           "</div></div>" +
           '<div class="table-wrap mt"><table class="bs-table"><thead><tr>' +
-          "<th>TP</th>" +
+          "<th>No</th>" +
+          "<th>Tujuan Pembelajaran</th>" +
           "<th>Materi</th>" +
           "<th>Bobot Dicapai</th>" +
-          "<th>Total Bobot</th>" +
+          "<th>Bobot Soal</th>" +
           "<th>Persentase</th>" +
           "<th>Status</th>" +
           "</tr></thead><tbody>" +
@@ -4453,12 +4468,18 @@
     async function showResultDialog(attemptID, subjectLabel) {
       if (!resultDialog || !attemptID) return;
       if (resultDialogTitle) resultDialogTitle.textContent = "Hasil Ujian";
-      if (resultDialogSummary) text(resultDialogSummary, "Memuat ringkasan...");
+      if (resultDialogSummary) {
+        resultDialogSummary.hidden = true;
+        text(resultDialogSummary, "");
+      }
       if (resultDialogExamTitle) resultDialogExamTitle.textContent = "-";
+      if (resultDialogSchoolName) resultDialogSchoolName.textContent = "-";
       if (resultDialogSubject)
         resultDialogSubject.textContent = subjectLabel || "-";
       if (resultDialogStatus) resultDialogStatus.textContent = "-";
       if (resultDialogExamScore) resultDialogExamScore.textContent = "0.00";
+      if (resultDialogClassAverage)
+        resultDialogClassAverage.textContent = "0.00";
       if (resultDialogItems) {
         resultDialogItems.classList.add("muted");
         text(resultDialogItems, "Memuat detail jawaban...");
@@ -4503,23 +4524,26 @@
             ? "Hasil " + examTitle
             : "Hasil Ujian";
         }
-        if (resultDialogSummary) {
-          html(
-            resultDialogSummary,
-            "<strong>Status:</strong> " +
-              escapeHtml(s && s.status) +
-              " | <strong>Nilai Akhir:</strong> " +
-              escapeHtml(String(scoreLabel)),
-          );
-        }
+        if (resultDialogSummary) resultDialogSummary.hidden = true;
         if (resultDialogExamTitle)
           resultDialogExamTitle.textContent = examTitleDisplay;
+        if (resultDialogSchoolName)
+          resultDialogSchoolName.textContent = String(
+            (s && s.school_name) || "-",
+          );
         if (resultDialogSubject)
           resultDialogSubject.textContent = subjectLabel || "-";
         if (resultDialogStatus)
           resultDialogStatus.textContent = String((s && s.status) || "-");
         if (resultDialogExamScore)
           resultDialogExamScore.textContent = scoreLabel;
+        if (resultDialogClassAverage)
+          resultDialogClassAverage.textContent = Number(
+            (s && s.class_average_score) || 0,
+          ).toLocaleString("id-ID", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
         renderResultItems(out);
       } catch (err) {
         if (resultDialogSummary)
@@ -4549,6 +4573,89 @@
           );
         }
       }
+    }
+
+    function exportResultDialogPDF() {
+      if (!resultDialog) return;
+      const title = String(
+        resultDialogTitle && resultDialogTitle.textContent,
+      ).trim();
+      const metaRows = [
+        [
+          "Nama Ujian",
+          resultDialogExamTitle && resultDialogExamTitle.textContent,
+        ],
+        [
+          "Nama Sekolah",
+          resultDialogSchoolName && resultDialogSchoolName.textContent,
+        ],
+        ["Mapel", resultDialogSubject && resultDialogSubject.textContent],
+        ["Status", resultDialogStatus && resultDialogStatus.textContent],
+        [
+          "Nilai Akhir (Skala 100)",
+          resultDialogExamScore && resultDialogExamScore.textContent,
+        ],
+        [
+          "Nilai Rata-rata Kelas",
+          resultDialogClassAverage && resultDialogClassAverage.textContent,
+        ],
+      ];
+      const metaTable = [
+        "<table>",
+        "<tbody>",
+        metaRows
+          .map(function (row) {
+            return (
+              "<tr><td>" +
+              escapeHtml(String(row[0] || "")) +
+              "</td><td>: " +
+              escapeHtml(String(row[1] || "-").trim() || "-") +
+              "</td></tr>"
+            );
+          })
+          .join(""),
+        "</tbody>",
+        "</table>",
+      ].join("");
+      const itemsHTML = resultDialogItems
+        ? String(resultDialogItems.innerHTML || "")
+        : "";
+      const learningGoalHTML = resultDialogLearningGoal
+        ? String(resultDialogLearningGoal.innerHTML || "")
+        : "";
+      const htmlDoc = [
+        '<!doctype html><html><head><meta charset="utf-8"/>',
+        "<title>" + escapeHtml(title || "Hasil Ujian") + "</title>",
+        "<style>",
+        "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;padding:24px;}",
+        "h1{font-size:20px;margin:0 0 12px;}",
+        "table{width:100%;border-collapse:collapse;font-size:12px;}",
+        "td,th{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;}",
+        "th{background:#f3f4f6;text-align:left;}",
+        ".table-wrap{margin-top:12px;}",
+        ".muted{color:#64748b;}",
+        ".analysis-status{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;}",
+        ".analysis-status-accepted{background:#dcfce7;color:#166534;}",
+        ".analysis-status-revision{background:#fef3c7;color:#92400e;}",
+        "</style></head><body>",
+        "<h1>" + escapeHtml(title || "Hasil Ujian") + "</h1>",
+        metaTable,
+        '<div class="table-wrap">',
+        itemsHTML || '<div class="muted">Detail jawaban tidak tersedia.</div>',
+        "</div>",
+        '<div class="table-wrap">',
+        learningGoalHTML ||
+          '<div class="muted">Analisis tujuan pembelajaran tidak tersedia.</div>',
+        "</div>",
+        "</body></html>",
+      ].join("");
+      const win = window.open("", "_blank");
+      if (!win) return;
+      win.document.open();
+      win.document.write(htmlDoc);
+      win.document.close();
+      win.focus();
+      win.print();
     }
 
     menuButtons.forEach(function (btn) {
@@ -4756,6 +4863,11 @@
           btn.getAttribute("data-result-subject") || "-",
         );
         if (attemptID > 0) showResultDialog(attemptID, subjectLabel);
+      });
+    }
+    if (resultDialogExportBtn) {
+      resultDialogExportBtn.addEventListener("click", function () {
+        exportResultDialogPDF();
       });
     }
 

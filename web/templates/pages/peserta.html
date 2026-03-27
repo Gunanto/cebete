@@ -284,15 +284,17 @@
 <dialog id="peserta-result-dialog" class="admin-dialog admin-dialog-wide">
     <form id="peserta-result-dialog-form" class="form-grid" method="dialog">
         <h3 id="peserta-result-dialog-title">Hasil Ujian</h3>
-        <p id="peserta-result-dialog-summary" class="muted">
-            Memuat ringkasan...
-        </p>
+        <p id="peserta-result-dialog-summary" class="muted" hidden></p>
         <div class="table-wrap">
             <table class="bs-table">
                 <tbody>
                     <tr>
                         <th>Nama Ujian</th>
                         <td id="peserta-result-dialog-exam-title">-</td>
+                    </tr>
+                    <tr>
+                        <th>Nama Sekolah</th>
+                        <td id="peserta-result-dialog-school-name">-</td>
                     </tr>
                     <tr>
                         <th>Mapel</th>
@@ -305,6 +307,10 @@
                     <tr>
                         <th>Nilai Akhir (Skala 100)</th>
                         <td id="peserta-result-dialog-exam-score">0.00</td>
+                    </tr>
+                    <tr>
+                        <th>Nilai Rata-rata Kelas</th>
+                        <td id="peserta-result-dialog-class-average">0.00</td>
                     </tr>
                 </tbody>
             </table>
@@ -326,6 +332,13 @@
             Analisis tujuan pembelajaran akan ditampilkan di sini.
         </div>
         <div class="actions">
+            <button
+                id="peserta-result-dialog-export-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Export PDF
+            </button>
             <button class="btn btn-secondary" type="submit">Tutup</button>
         </div>
     </form>
