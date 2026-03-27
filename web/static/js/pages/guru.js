@@ -643,19 +643,38 @@
     let guruCompletedExamCount = 0;
 
     function refreshGuruSummaryStats() {
-      const count = Number(guruUniqueParticipantCount || 0).toLocaleString(
-        "id-ID",
-      );
-      if (statSubjects) statSubjects.textContent = String(statSubjectsCount);
-      if (statLevels) statLevels.textContent = String(statLevelsCount);
-      if (statLearningGoals)
-        statLearningGoals.textContent = String(statLearningGoalsCount);
-      if (statManuscripts)
-        statManuscripts.textContent = String(statManuscriptsCount);
-      if (statExams) statExams.textContent = String(statExamsCount);
-      if (statCompletedExams)
-        statCompletedExams.textContent = String(guruCompletedExamCount);
-      if (statResults) statResults.textContent = String(count);
+      if (statLearningGoals) {
+        const count =
+          LearningGoals && typeof LearningGoals.getCount === "function"
+            ? LearningGoals.getCount()
+            : 0;
+        statLearningGoals.textContent = String(Number(count || 0));
+      }
+      if (statManuscripts) {
+        const count =
+          ManuscriptTable &&
+          typeof ManuscriptTable.getQuestionCount === "function"
+            ? ManuscriptTable.getQuestionCount()
+            : 0;
+        statManuscripts.textContent = String(Number(count || 0));
+      }
+      if (statExams) {
+        const total =
+          GuruExams && typeof GuruExams.getExamCount === "function"
+            ? GuruExams.getExamCount()
+            : 0;
+        statExams.textContent = String(Number(total || 0));
+      }
+      if (statCompletedExams) {
+        statCompletedExams.textContent = String(
+          Number(guruCompletedExamCount || 0),
+        );
+      }
+      if (statResults) {
+        statResults.textContent = String(
+          Number(guruUniqueParticipantCount || 0),
+        );
+      }
     }
 
     const setMsg = function (value) {
