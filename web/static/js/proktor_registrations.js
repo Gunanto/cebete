@@ -16,7 +16,7 @@
     if (!deps.regBody) return items;
     if (!items.length) {
       deps.regBody.innerHTML =
-        '<tr><td colspan="6" class="muted">Tidak ada pendaftaran pending.</td></tr>';
+        '<tr><td colspan="8" class="muted">Tidak ada pendaftaran pending.</td></tr>';
       return items;
     }
     deps.regBody.innerHTML = "";
@@ -61,6 +61,8 @@
         "<td>" + deps.escapeHtml(String(it.full_name || "")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.email || "")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.role_requested || "")) + "</td>",
+        "<td>" + deps.escapeHtml(String(schoolName || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(kabupaten || "-")) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.created_at)) + "</td>",
         '<td><span class="action-icons">' +
           '<button class="icon-only-btn" type="button" data-action="detail" data-detail="' +
