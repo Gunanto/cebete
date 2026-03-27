@@ -539,18 +539,10 @@
     );
     const resultsSummary = document.getElementById("guru-results-summary");
     const resultsExtra = document.getElementById("guru-results-extra");
-    const resultsReportBtn = document.getElementById(
-      "guru-results-report-btn",
-    );
-    const resultsStatsBtn = document.getElementById(
-      "guru-results-stats-btn",
-    );
-    const resultsChartBtn = document.getElementById(
-      "guru-results-chart-btn",
-    );
-    const resultsExportBtn = document.getElementById(
-      "guru-results-export-btn",
-    );
+    const resultsReportBtn = document.getElementById("guru-results-report-btn");
+    const resultsStatsBtn = document.getElementById("guru-results-stats-btn");
+    const resultsChartBtn = document.getElementById("guru-results-chart-btn");
+    const resultsExportBtn = document.getElementById("guru-results-export-btn");
     const itemAnalysisBtn = document.getElementById(
       "guru-results-item-analysis-btn",
     );
@@ -952,11 +944,14 @@
       kelas,
       semester,
     ) {
-      if (
-        LearningGoals &&
-        typeof LearningGoals.findByDetails === "function"
-      ) {
-        return LearningGoals.findByDetails(subjectID, tujuan, materi, kelas, semester);
+      if (LearningGoals && typeof LearningGoals.findByDetails === "function") {
+        return LearningGoals.findByDetails(
+          subjectID,
+          tujuan,
+          materi,
+          kelas,
+          semester,
+        );
       }
       return null;
     }
@@ -979,7 +974,13 @@
         LearningGoals &&
         typeof LearningGoals.ensureForImport === "function"
       ) {
-        return LearningGoals.ensureForImport(subjectID, tujuan, materi, kelas, semester);
+        return LearningGoals.ensureForImport(
+          subjectID,
+          tujuan,
+          materi,
+          kelas,
+          semester,
+        );
       }
       return null;
     }
@@ -1181,7 +1182,10 @@
     }
 
     async function loadGuruEnrollSchoolsAndClasses() {
-      if (GuruEnroll && typeof GuruEnroll.loadSchoolsAndClasses === "function") {
+      if (
+        GuruEnroll &&
+        typeof GuruEnroll.loadSchoolsAndClasses === "function"
+      ) {
         return GuruEnroll.loadSchoolsAndClasses();
       }
       return [];
@@ -1263,7 +1267,10 @@
           }
         },
         getResultsCount: function () {
-          if (GuruResults && typeof GuruResults.getResultsCount === "function") {
+          if (
+            GuruResults &&
+            typeof GuruResults.getResultsCount === "function"
+          ) {
             return GuruResults.getResultsCount();
           }
           return 0;
@@ -1802,6 +1809,20 @@
       fillSubjectEducationLevelSelect("");
       refreshGuruSummaryStats();
     }
+
+    initGuruSubjectsModule();
+    initLearningGoalsModule();
+    initGuruBlueprintsModule();
+    initBlueprintsModule();
+    initQuestionCodesModule();
+    initManuscriptImportModule();
+    initManuscriptTransferExportModule();
+    initGuruExamsModule();
+    initGuruEnrollModule();
+    initGuruResultsModule();
+    initGuruDashboardModule();
+    initGuruManuscriptModule();
+    initManuscriptTableModule();
 
     try {
       await ensureQuillReady();
