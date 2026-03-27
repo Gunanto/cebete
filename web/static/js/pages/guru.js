@@ -776,12 +776,11 @@
       return [];
     }
 
-    function findQuestionCodeByID(codeID) {
-      const codeIDNum = Number(codeID || 0);
-      if (!codeIDNum) return null;
-      return getQuestionCodesCache().find(function (it) {
-        return Number(it.id || 0) === codeIDNum;
-      });
+    function findQuestionCodeByID(questionCodeID) {
+      if (QuestionCodes && typeof QuestionCodes.findByID === "function") {
+        return QuestionCodes.findByID(questionCodeID);
+      }
+      return null;
     }
 
     function fillQuestionCodeSubjectSelect(subjectID) {
@@ -793,9 +792,9 @@
       }
     }
 
-    function fillQuestionCodeSelect() {
-      if (QuestionCodes && typeof QuestionCodes.fillCodeSelect === "function") {
-        QuestionCodes.fillCodeSelect();
+    function fillQuestionCodeSelect(selectEl, subjectID, includeEmpty) {
+      if (QuestionCodes && typeof QuestionCodes.fillSelect === "function") {
+        QuestionCodes.fillSelect(selectEl, subjectID, includeEmpty);
       }
     }
 
@@ -803,6 +802,7 @@
       if (QuestionCodes && typeof QuestionCodes.load === "function") {
         return QuestionCodes.load(subjectID);
       }
+      return [];
     }
 
     async function ensureQuestionCodeForImport(subjectID, codeRaw, nameRaw) {
@@ -847,104 +847,101 @@
       });
     }
 
-    function fillBlueprintSelect() {
-      if (Blueprints && typeof Blueprints.fillSelect === "function") {
-        Blueprints.fillSelect();
+    function fillBlueprintSelect(selectEl) {
+      if (GuruBlueprints && typeof GuruBlueprints.fillSelect === "function") {
+        GuruBlueprints.fillSelect(selectEl);
       }
     }
 
     function getCurrentManuscriptQuestionType() {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.getCurrentQuestionType === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.getCurrentManuscriptQuestionType === "function"
       ) {
-        return GuruManuscript.getCurrentQuestionType();
+        return GuruBlueprints.getCurrentManuscriptQuestionType();
       }
       return "";
     }
 
     function findQuestionByID(questionID) {
-      if (
-        GuruManuscript &&
-        typeof GuruManuscript.findQuestionByID === "function"
-      ) {
-        return GuruManuscript.findQuestionByID(questionID);
+      if (GuruBlueprints && typeof GuruBlueprints.findByID === "function") {
+        return GuruBlueprints.findByID(questionID);
       }
       return null;
     }
 
     function syncManuscriptSubjectState() {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.syncSubjectState === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.syncManuscriptSubjectState === "function"
       ) {
-        GuruManuscript.syncSubjectState();
+        return GuruBlueprints.syncManuscriptSubjectState();
       }
     }
 
     function getManuscriptTargetSubjectID() {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.getTargetSubjectID === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.getManuscriptTargetSubjectID === "function"
       ) {
-        return GuruManuscript.getTargetSubjectID();
+        return GuruBlueprints.getManuscriptTargetSubjectID();
       }
       return 0;
     }
 
     function getManuscriptTargetLearningGoalID() {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.getTargetLearningGoalID === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.getManuscriptTargetLearningGoalID === "function"
       ) {
-        return GuruManuscript.getTargetLearningGoalID();
+        return GuruBlueprints.getManuscriptTargetLearningGoalID();
       }
       return 0;
     }
 
-    function resolveManuscriptQuestionType(raw) {
+    function resolveManuscriptQuestionType(item) {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.resolveQuestionType === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.resolveManuscriptQuestionType === "function"
       ) {
-        return GuruManuscript.resolveQuestionType(raw);
+        return GuruBlueprints.resolveManuscriptQuestionType(item);
       }
       return "";
     }
 
-    function resolveManuscriptQuestionCode(raw) {
+    function resolveManuscriptQuestionCode(item) {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.resolveQuestionCode === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.resolveManuscriptQuestionCode === "function"
       ) {
-        return GuruManuscript.resolveQuestionCode(raw);
+        return GuruBlueprints.resolveManuscriptQuestionCode(item);
       }
       return "";
     }
 
-    function resolveManuscriptLearningGoal(raw) {
+    function resolveManuscriptLearningGoal(item) {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.resolveLearningGoal === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.resolveManuscriptLearningGoal === "function"
       ) {
-        return GuruManuscript.resolveLearningGoal(raw);
+        return GuruBlueprints.resolveManuscriptLearningGoal(item);
       }
       return "";
     }
 
     async function loadAllManuscriptVersionsFromBlueprints() {
       if (
-        GuruManuscript &&
-        typeof GuruManuscript.loadAllVersionsFromBlueprints === "function"
+        GuruBlueprints &&
+        typeof GuruBlueprints.loadAllManuscriptVersions === "function"
       ) {
-        return GuruManuscript.loadAllVersionsFromBlueprints();
+        return GuruBlueprints.loadAllManuscriptVersions();
       }
       return [];
     }
 
     async function loadBlueprints(subjectID) {
-      if (Blueprints && typeof Blueprints.load === "function") {
-        return Blueprints.load(subjectID);
+      if (GuruBlueprints && typeof GuruBlueprints.load === "function") {
+        return GuruBlueprints.load(subjectID);
       }
       return [];
     }
@@ -963,18 +960,18 @@
       return null;
     }
 
-    function fillLearningGoalSelect() {
+    function fillLearningGoalSelect(selectEl, subjectID) {
       if (LearningGoals && typeof LearningGoals.fillSelect === "function") {
-        LearningGoals.fillSelect();
+        LearningGoals.fillSelect(selectEl, subjectID);
       }
     }
 
     function resolveDefaultLearningGoalID(subjectID) {
       if (
         LearningGoals &&
-        typeof LearningGoals.resolveDefaultID === "function"
+        typeof LearningGoals.resolveDefaultLearningGoalID === "function"
       ) {
-        return LearningGoals.resolveDefaultID(subjectID);
+        return LearningGoals.resolveDefaultLearningGoalID(subjectID);
       }
       return 0;
     }
@@ -982,27 +979,21 @@
     function resolveLearningGoalIDByCode(subjectID, code) {
       if (
         LearningGoals &&
-        typeof LearningGoals.resolveIDByCode === "function"
+        typeof LearningGoals.resolveLearningGoalIDByCode === "function"
       ) {
-        return LearningGoals.resolveIDByCode(subjectID, code);
+        return LearningGoals.resolveLearningGoalIDByCode(subjectID, code);
       }
       return 0;
     }
 
-    function findLearningGoalByDetails(
-      subjectID,
-      tujuan,
-      materi,
-      kelas,
-      semester,
-    ) {
+    function findLearningGoalByDetails(mapel, kelas, semester, tujuan, materi) {
       if (LearningGoals && typeof LearningGoals.findByDetails === "function") {
         return LearningGoals.findByDetails(
-          subjectID,
-          tujuan,
-          materi,
+          mapel,
           kelas,
           semester,
+          tujuan,
+          materi,
         );
       }
       return null;
@@ -1015,26 +1006,36 @@
       return [];
     }
 
-    async function ensureLearningGoalForImport(
-      subjectID,
-      tujuan,
-      materi,
-      kelas,
-      semester,
-    ) {
-      if (
-        LearningGoals &&
-        typeof LearningGoals.ensureForImport === "function"
-      ) {
-        return LearningGoals.ensureForImport(
-          subjectID,
-          tujuan,
-          materi,
-          kelas,
-          semester,
-        );
+    async function ensureLearningGoalForImport(subjectID, parsed) {
+      const subject = findSubjectByID(subjectID);
+      if (!subject) return 0;
+      const tujuan = String(parsed.learning_goal_text || "").trim();
+      const materi = String(parsed.learning_goal_materi || "").trim();
+      if (!tujuan || !materi) return 0;
+      const kelas =
+        String(parsed.learning_goal_kelas || "").trim() ||
+        String(subject.education_level || "").trim();
+      const semester = Number(parsed.learning_goal_semester || 0) || 0;
+      if (semester <= 0) return 0;
+      const existing = findLearningGoalByDetails(
+        String(subject.name || "").trim(),
+        kelas,
+        String(semester),
+        tujuan,
+        materi,
+      );
+      if (existing && Number(existing.id || 0) > 0) {
+        return Number(existing.id || 0);
       }
-      return null;
+      const created = await api("/api/v1/learning-goals", "POST", {
+        mata_pelajaran: String(subject.name || "").trim(),
+        kelas: kelas,
+        semester: semester,
+        tujuan_pembelajaran: tujuan,
+        materi: materi,
+      });
+      await loadLearningGoals();
+      return Number((created && created.id) || 0) || 0;
     }
 
     async function loadClassesForLearningGoal() {
@@ -1113,16 +1114,34 @@
         subjectDeleteLabel: subjectDeleteLabel,
         subjectDeleteCancelBtn: subjectDeleteCancelBtn,
         onSubjectsUpdated: function () {
-          const defaultSubject = getSubjectsCache()[0];
-          if (defaultSubject) {
-            fillQuestionCodeSubjectSelect(defaultSubject.id);
-            fillQuestionCodeSelect();
-            fillLearningGoalSelect();
+          fillSubjectSelect(blueprintSubjectSelect, false);
+          fillSubjectSelect(blueprintFilterSubject, true);
+          fillSubjectSelect(manuscriptSubjectSelect, false);
+          fillSubjectSelect(examSubjectSelect, false);
+          fillQuestionCodeSubjectSelect(
+            Number(
+              (QuestionCodes && QuestionCodes.getSelectedSubjectID
+                ? QuestionCodes.getSelectedSubjectID()
+                : 0) ||
+                (manuscriptSubjectSelect && manuscriptSubjectSelect.value) ||
+                0,
+            ),
+          );
+          fillLearningGoalSelect(
+            manuscriptLearningGoalSelect,
+            getManuscriptTargetSubjectID(),
+          );
+          if (learningGoalMapelInput || learningGoalKelasInput) {
+            const defaultSubject = findSubjectByID(
+              Number(
+                (manuscriptSubjectSelect && manuscriptSubjectSelect.value) || 0,
+              ),
+            );
+            if (defaultSubject && learningGoalMapelInput) {
+              learningGoalMapelInput.value = String(defaultSubject.name || "");
+            }
           }
-          refreshGuruSummaryStats();
-          if (GuruExams && typeof GuruExams.refreshStats === "function") {
-            GuruExams.refreshStats();
-          }
+          syncManuscriptSubjectState();
         },
       });
     }
