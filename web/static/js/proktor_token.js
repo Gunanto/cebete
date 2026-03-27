@@ -126,6 +126,9 @@
             }),
           ) +
           '">Salin</button>' +
+          '<button class="btn btn-secondary btn-inline" type="button" data-token-publish="' +
+          deps.escapeHtml(String(item.exam_id || 0)) +
+          '">Kirim ke Peserta</button>' +
           '<button class="btn btn-secondary btn-inline" type="button" data-token-remove="' +
           deps.escapeHtml(String(item.exam_id || 0)) +
           '">Hapus</button>' +
@@ -259,6 +262,32 @@
         }
         var removeBtn =
           e.target && e.target.closest("button[data-token-remove]");
+        var publishBtn =
+          e.target && e.target.closest("button[data-token-publish]");
+        if (publishBtn) {
+          var publishExamID = Number(
+            publishBtn.getAttribute("data-token-publish") || 0,
+          );
+          if (publishExamID <= 0) return;
+          var done = deps.beginBusy(
+            publishBtn,
+            deps.msg,
+            "Mengirim token ke peserta...",
+          );
+          try {
+            await deps.api(
+              "/api/v1/admin/exams/" + publishExamID + "/token/publish",
+              "POST",
+              {},
+            );
+            deps.setMsg("Token berhasil dikirim ke peserta.");
+          } catch (err) {
+            deps.setMsg("Gagal mengirim token: " + err.message);
+          } finally {
+            done();
+          }
+          return;
+        }
         if (!removeBtn) return;
         var examID = Number(removeBtn.getAttribute("data-token-remove") || 0);
         renderTokenTable(removeStoredToken(examID));

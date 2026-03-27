@@ -338,6 +338,8 @@ type ExamTokenExam struct {
 	EducationLevel string     `json:"education_level"`
 	SubjectType    string     `json:"subject_type"`
 	EndAt          *time.Time `json:"end_at,omitempty"`
+	Token          string     `json:"token,omitempty"`
+	TokenExpiresAt *time.Time `json:"token_expires_at,omitempty"`
 }
 
 type ExamAccessToken struct {
@@ -347,6 +349,12 @@ type ExamAccessToken struct {
 	GeneratedAt time.Time `json:"generated_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	GeneratedBy int64     `json:"generated_by"`
+}
+
+type ExamTokenPublish struct {
+	ExamID      int64     `json:"exam_id"`
+	PublishedAt time.Time `json:"published_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 type ExamTokenPreview struct {
@@ -1259,6 +1267,9 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 			s.education_level,
 			s.subject_type,
 			e.end_at,
+			e.exam_token_plain,
+			e.exam_token_expires_at,
+			e.exam_token_published_at,
 			CASE WHEN ea.user_id IS NULL THEN FALSE ELSE TRUE END AS has_assignment,
 			COALESCE(e.allow_non_regular_self_enroll, FALSE) AS allow_non_regular
 		FROM exams e
@@ -1285,6 +1296,9 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 	for rows.Next() {
 		var it ExamTokenExam
 		var endAt sql.NullTime
+		var tokenPlain sql.NullString
+		var tokenExpiresAt sql.NullTime
+		var tokenPublishedAt sql.NullTime
 		var hasAssignment bool
 		var allowNonRegular bool
 		if err := rows.Scan(
@@ -1296,6 +1310,9 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 			&it.EducationLevel,
 			&it.SubjectType,
 			&endAt,
+			&tokenPlain,
+			&tokenExpiresAt,
+			&tokenPublishedAt,
 			&hasAssignment,
 			&allowNonRegular,
 		); err != nil {
@@ -1306,6 +1323,12 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 		}
 		if endAt.Valid {
 			it.EndAt = &endAt.Time
+		}
+		if tokenPublishedAt.Valid && tokenExpiresAt.Valid && tokenPlain.Valid {
+			if tokenExpiresAt.Time.After(now) {
+				it.Token = strings.TrimSpace(tokenPlain.String)
+				it.TokenExpiresAt = &tokenExpiresAt.Time
+			}
 		}
 		items = append(items, it)
 	}
@@ -1416,13 +1439,16 @@ func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int
 	if err := s.db.QueryRowContext(ctx, `
 		UPDATE exams
 		SET exam_token_hash = $2,
-			exam_token_expires_at = now() + make_interval(mins => $3),
+			exam_token_plain = $3,
+			exam_token_expires_at = now() + make_interval(mins => $4),
 			exam_token_generated_at = now(),
-			exam_token_generated_by = $4
+			exam_token_generated_by = $5,
+			exam_token_published_at = NULL,
+			exam_token_published_by = NULL
 		WHERE id = $1
 		  AND is_active = TRUE
 		RETURNING exam_token_generated_at, exam_token_expires_at
-	`, examID, tokenHash, ttlMinutes, generatedBy).Scan(&generatedAt, &expiresAt); err != nil {
+	`, examID, tokenHash, token, ttlMinutes, generatedBy).Scan(&generatedAt, &expiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrExamNotFound
 		}
@@ -1436,6 +1462,63 @@ func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int
 		GeneratedAt: generatedAt,
 		ExpiresAt:   expiresAt,
 		GeneratedBy: generatedBy,
+	}, nil
+}
+
+func (s *Service) PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if publishedBy <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
+
+	var tokenPlain sql.NullString
+	var expiresAt sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT exam_token_plain, exam_token_expires_at
+		FROM exams
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, examID).Scan(&tokenPlain, &expiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam token: %w", err)
+	}
+
+	if !tokenPlain.Valid || strings.TrimSpace(tokenPlain.String) == "" {
+		return nil, ErrExamTokenUnavailable
+	}
+	if !expiresAt.Valid {
+		return nil, ErrExamTokenExpired
+	}
+	if time.Now().After(expiresAt.Time) {
+		return nil, ErrExamTokenExpired
+	}
+
+	var publishedAt time.Time
+	var expires time.Time
+	if err := s.db.QueryRowContext(ctx, `
+		UPDATE exams
+		SET exam_token_published_at = now(),
+			exam_token_published_by = $2
+		WHERE id = $1
+		RETURNING exam_token_published_at, exam_token_expires_at
+	`, examID, publishedBy).Scan(&publishedAt, &expires); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("publish exam token: %w", err)
+	}
+
+	return &ExamTokenPublish{
+		ExamID:      examID,
+		PublishedAt: publishedAt,
+		ExpiresAt:   expires,
 	}, nil
 }
 

@@ -41,6 +41,7 @@ type examService interface {
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
 	ListPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
+	PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
 	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
@@ -1846,6 +1847,37 @@ func (h *Handler) GenerateExamToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: token})
+}
+
+func (h *Handler) PublishExamToken(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	out, err := h.svc.PublishExamToken(r.Context(), examID, user.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamTokenUnavailable):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: ErrExamTokenUnavailable.Error()})
+		case errors.Is(err, ErrExamTokenExpired):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: ErrExamTokenExpired.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
 }
 
 func (h *Handler) GetAttempt(w http.ResponseWriter, r *http.Request) {

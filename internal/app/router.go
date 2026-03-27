@@ -268,6 +268,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 				admin.Get("/admin/dashboard/stats", authHandler.DashboardStats)
 				admin.Get("/admin/exams", examHandler.ListExamsForToken)
 				admin.Post("/admin/exams/{id}/token", examHandler.GenerateExamToken)
+				admin.Post("/admin/exams/{id}/token/publish", examHandler.PublishExamToken)
 				admin.Post("/admin/users/{id}/photo", examHandler.UploadUserPhoto)
 				admin.Delete("/admin/users/{id}/photo", examHandler.DeleteUserPhoto)
 				admin.Put("/admin/users/{id}/class-placement", authHandler.AssignUserClass)

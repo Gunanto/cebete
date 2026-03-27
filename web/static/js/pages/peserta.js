@@ -658,7 +658,7 @@
         const items = Array.isArray(list) ? list : [];
         if (!items.length) {
           examsBody.innerHTML =
-            '<tr><td colspan="5" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
+            '<tr><td colspan="6" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
         } else {
           examsBody.innerHTML = "";
           items.forEach(function (it) {
@@ -667,7 +667,8 @@
               "<td>" + escapeHtml(String(it.code || "-")) + "</td>",
               "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
               "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
-              "<td>" + escapeHtml(fmtShortDate(it.end_at)) + "</td>",
+              "<td>" + escapeHtml(String(it.token || "-")) + "</td>",
+              "<td>" + escapeHtml(fmtShortDate(it.token_expires_at)) + "</td>",
               '<td><a class="btn btn-secondary btn-inline" href="/ujian">Buka Ujian</a></td>',
             ].join("");
             examsBody.appendChild(tr);
@@ -675,7 +676,7 @@
         }
       } catch (err) {
         examsBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Gagal memuat daftar ujian aktif.</td></tr>';
+          '<tr><td colspan="6" class="muted">Gagal memuat daftar ujian aktif.</td></tr>';
       }
     }
 
