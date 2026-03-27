@@ -786,6 +786,39 @@
       }
     }
 
+    async function ensureQuestionCodeForImport(subjectID, codeRaw, nameRaw) {
+      const code = String(codeRaw || "").trim();
+      const name = String(nameRaw || "").trim();
+      if (!code && !name) return null;
+      if (!code) {
+        throw new Error("Kode Soal wajib diisi jika Nama Kode tersedia.");
+      }
+      const codeNorm = code.toLowerCase();
+      const existing = getQuestionCodesCache().find(function (it) {
+        return (
+          Number((it && it.subject_id) || 0) === Number(subjectID || 0) &&
+          String((it && it.code) || "")
+            .trim()
+            .toLowerCase() === codeNorm
+        );
+      });
+      if (existing && Number((existing && existing.id) || 0) > 0) {
+        return Number(existing.id || 0);
+      }
+      const created = await api("/api/v1/question-codes", "POST", {
+        subject_id: Number(subjectID || 0),
+        code: code,
+        name: name || code,
+      });
+      const id = Number((created && created.id) || 0);
+      if (id > 0) {
+        if (QuestionCodes && typeof QuestionCodes.addToCache === "function") {
+          QuestionCodes.addToCache(created);
+        }
+      }
+      return id > 0 ? id : null;
+    }
+
     function initGuruBlueprintsModule() {
       if (!GuruBlueprints || typeof GuruBlueprints.init !== "function") {
         return;
