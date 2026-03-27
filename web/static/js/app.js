@@ -4678,14 +4678,6 @@
     }
   }
 
-  window.AppPagesShared = window.AppPagesShared || {};
-  window.AppPagesShared.shortQuestionType = shortQuestionType;
-  window.AppPagesShared.cleanStemPreview = cleanStemPreview;
-  window.AppPagesShared.createQuillEditor = createQuillEditor;
-  window.AppPagesShared.getQuillHTML = getQuillHTML;
-  window.AppPagesShared.ensureQuillReady = ensureQuillReady;
-  window.AppPagesShared.previewText = previewText;
-
   initTopbarAuth();
   if (pages.initLoginPage) pages.initLoginPage();
   initHomePage();
