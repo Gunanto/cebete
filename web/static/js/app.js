@@ -3653,6 +3653,16 @@
     const statProktor = document.getElementById("admin-stat-proktor");
     const statGuru = document.getElementById("admin-stat-guru");
     const statSiswa = document.getElementById("admin-stat-siswa");
+    const statActiveUsers = document.getElementById("admin-stat-active-users");
+    const statActiveUsersDaily = document.getElementById(
+      "admin-stat-active-users-daily",
+    );
+    const statActiveUsersWeekly = document.getElementById(
+      "admin-stat-active-users-weekly",
+    );
+    const statActiveUsersMonthly = document.getElementById(
+      "admin-stat-active-users-monthly",
+    );
     const statSekolah = document.getElementById("admin-stat-sekolah");
     const exportUsersBtn = document.getElementById("admin-user-export-btn");
     const importUsersBtn = document.getElementById("admin-user-import-btn");
@@ -4029,6 +4039,22 @@
       if (statProktor) statProktor.textContent = String(out.proktor_count || 0);
       if (statGuru) statGuru.textContent = String(out.guru_count || 0);
       if (statSiswa) statSiswa.textContent = String(out.siswa_count || 0);
+      if (statActiveUsers)
+        statActiveUsers.textContent = String(
+          out.active_user_count_monthly || 0,
+        );
+      if (statActiveUsersDaily)
+        statActiveUsersDaily.textContent = String(
+          out.active_user_count_daily || 0,
+        );
+      if (statActiveUsersWeekly)
+        statActiveUsersWeekly.textContent = String(
+          out.active_user_count_weekly || 0,
+        );
+      if (statActiveUsersMonthly)
+        statActiveUsersMonthly.textContent = String(
+          out.active_user_count_monthly || 0,
+        );
       if (statSekolah) statSekolah.textContent = String(out.school_count || 0);
     }
 
@@ -4144,6 +4170,9 @@
     );
     const resultDialogItems = document.getElementById(
       "peserta-result-dialog-items",
+    );
+    const resultDialogLearningGoal = document.getElementById(
+      "peserta-result-dialog-learning-goal",
     );
     const menuButtons = Array.from(
       document.querySelectorAll("[data-peserta-menu]"),
@@ -4340,7 +4369,86 @@
       );
     }
 
+    function renderLearningGoalItems(out) {
+      if (!resultDialogLearningGoal) return;
+      if (!out) {
+        resultDialogLearningGoal.classList.add("muted");
+        html(
+          resultDialogLearningGoal,
+          "Analisis tujuan pembelajaran belum tersedia.",
+        );
+        return;
+      }
+      const items = Array.isArray(out.items) ? out.items : [];
+      if (!items.length) {
+        resultDialogLearningGoal.classList.add("muted");
+        html(
+          resultDialogLearningGoal,
+          "Analisis tujuan pembelajaran belum tersedia untuk attempt ini.",
+        );
+        return;
+      }
+      resultDialogLearningGoal.classList.remove("muted");
+      const achievedCount = items.filter(function (it) {
+        return !!(it && it.achieved);
+      }).length;
+      const averagePercent = items.length
+        ? items.reduce(function (acc, it) {
+            return acc + Number((it && it.percent) || 0);
+          }, 0) / items.length
+        : 0;
+      const rows = items
+        .map(function (it) {
+          return [
+            "<tr>",
+            "<td>" +
+              escapeHtml(String(it.learning_goal_text || "Tanpa TP")) +
+              "</td>",
+            "<td>" +
+              escapeHtml(String(it.learning_goal_materi || "-")) +
+              "</td>",
+            "<td>" +
+              escapeHtml(Number((it && it.earned_weight) || 0).toFixed(2)) +
+              "</td>",
+            "<td>" +
+              escapeHtml(Number((it && it.total_weight) || 0).toFixed(2)) +
+              "</td>",
+            "<td>" +
+              escapeHtml(Number((it && it.percent) || 0).toFixed(2) + "%") +
+              "</td>",
+            "<td>" +
+              escapeHtml(it && it.achieved ? "Tercapai" : "Belum Tercapai") +
+              "</td>",
+            "</tr>",
+          ].join("");
+        })
+        .join("");
+      html(
+        resultDialogLearningGoal,
+        '<div class="result-learning-goal-head"><strong>Analisis TP Anda</strong><div class="muted mt">KKTP: ' +
+          escapeHtml(Number(out.kktp || 0).toFixed(2) + "%") +
+          " | TP Tercapai: " +
+          escapeHtml(String(achievedCount)) +
+          "/" +
+          escapeHtml(String(items.length)) +
+          " | Rata-rata: " +
+          escapeHtml(Number(averagePercent || 0).toFixed(2) + "%") +
+          "</div></div>" +
+          '<div class="table-wrap mt"><table class="bs-table"><thead><tr>' +
+          "<th>TP</th>" +
+          "<th>Materi</th>" +
+          "<th>Bobot Dicapai</th>" +
+          "<th>Total Bobot</th>" +
+          "<th>Persentase</th>" +
+          "<th>Status</th>" +
+          "</tr></thead><tbody>" +
+          rows +
+          "</tbody></table></div>",
+      );
+    }
+
     const resultCache = new Map();
+    const learningGoalResultCache = new Map();
 
     async function showResultDialog(attemptID, subjectLabel) {
       if (!resultDialog || !attemptID) return;
@@ -4354,6 +4462,13 @@
       if (resultDialogItems) {
         resultDialogItems.classList.add("muted");
         text(resultDialogItems, "Memuat detail jawaban...");
+      }
+      if (resultDialogLearningGoal) {
+        resultDialogLearningGoal.classList.add("muted");
+        text(
+          resultDialogLearningGoal,
+          "Memuat analisis tujuan pembelajaran...",
+        );
       }
       if (typeof resultDialog.showModal === "function") {
         resultDialog.showModal();
@@ -4408,6 +4523,26 @@
         if (resultDialogItems) {
           resultDialogItems.classList.add("muted");
           text(resultDialogItems, "Gagal memuat detail jawaban.");
+        }
+        return;
+      }
+      try {
+        let learningGoalOut = learningGoalResultCache.get(attemptID);
+        if (!learningGoalOut) {
+          learningGoalOut = await api(
+            "/api/v1/attempts/" + attemptID + "/learning-goal-result",
+            "GET",
+          );
+          learningGoalResultCache.set(attemptID, learningGoalOut);
+        }
+        renderLearningGoalItems(learningGoalOut);
+      } catch (_) {
+        if (resultDialogLearningGoal) {
+          resultDialogLearningGoal.classList.add("muted");
+          text(
+            resultDialogLearningGoal,
+            "Analisis tujuan pembelajaran tidak tersedia untuk attempt ini.",
+          );
         }
       }
     }
@@ -5723,6 +5858,9 @@
     );
     const statManuscripts = document.getElementById("guru-stat-manuscripts");
     const statExams = document.getElementById("guru-stat-exams");
+    const statCompletedExams = document.getElementById(
+      "guru-stat-completed-exams",
+    );
     const statResults = document.getElementById("guru-stat-results");
     const subjectRefreshBtn = document.getElementById(
       "guru-subjects-refresh-btn",
@@ -6295,9 +6433,31 @@
     const learningGoalAnalysisKKTP = document.getElementById(
       "guru-learning-goal-kktp",
     );
+    const learningGoalStudentDialog = document.getElementById(
+      "guru-learning-goal-student-dialog",
+    );
+    const learningGoalStudentBody = document.getElementById(
+      "guru-learning-goal-student-body",
+    );
+    const learningGoalStudentSummary = document.getElementById(
+      "guru-learning-goal-student-summary",
+    );
+    const learningGoalStudentIdentity = document.getElementById(
+      "guru-learning-goal-student-identity",
+    );
+    const learningGoalStudentDetail = document.getElementById(
+      "guru-learning-goal-student-detail",
+    );
+    const learningGoalStudentSubtitle = document.getElementById(
+      "guru-learning-goal-student-subtitle",
+    );
+    const learningGoalStudentKKTP = document.getElementById(
+      "guru-learning-goal-student-kktp",
+    );
 
     const tabQuillByWrap = new WeakMap();
     let guruUniqueParticipantCount = 0;
+    let guruCompletedExamCount = 0;
 
     function refreshGuruSummaryStats() {
       if (statLearningGoals) {
@@ -6321,6 +6481,11 @@
             ? GuruExams.getExamCount()
             : 0;
         statExams.textContent = String(Number(total || 0));
+      }
+      if (statCompletedExams) {
+        statCompletedExams.textContent = String(
+          Number(guruCompletedExamCount || 0),
+        );
       }
       if (statResults) {
         statResults.textContent = String(
@@ -7889,6 +8054,13 @@
         learningGoalExportBtn: learningGoalAnalysisExportBtn,
         learningGoalPrintBtn: learningGoalAnalysisPrintBtn,
         learningGoalKKTP: learningGoalAnalysisKKTP,
+        learningGoalStudentDialog: learningGoalStudentDialog,
+        learningGoalStudentBody: learningGoalStudentBody,
+        learningGoalStudentSummary: learningGoalStudentSummary,
+        learningGoalStudentIdentity: learningGoalStudentIdentity,
+        learningGoalStudentDetail: learningGoalStudentDetail,
+        learningGoalStudentSubtitle: learningGoalStudentSubtitle,
+        learningGoalStudentKKTP: learningGoalStudentKKTP,
         meOrNull: meOrNull,
         refreshExams: loadGuruExamManageTable,
       });
@@ -8117,6 +8289,9 @@
       const dashboardStats = await api("/api/v1/admin/dashboard/stats", "GET");
       guruUniqueParticipantCount = Number(
         (dashboardStats && dashboardStats.unique_participant_count) || 0,
+      );
+      guruCompletedExamCount = Number(
+        (dashboardStats && dashboardStats.completed_exam_count) || 0,
       );
       await Promise.all([
         loadEducationLevelsForGuruSubjectForm(),

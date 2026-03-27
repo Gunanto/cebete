@@ -45,7 +45,7 @@
                                     />
                                 </svg>
                             </span>
-                            Mapel Aktif
+                            Mapel Tersedia
                         </button>
                     </div>
                 </section>
@@ -64,7 +64,7 @@
                                     <path d="M8 9h8M8 13h6M8 17h4" />
                                 </svg>
                             </span>
-                            Kelola Ujian
+                            Ujian Tersedia
                         </button>
                         <button
                             type="button"
@@ -231,7 +231,7 @@
                 </div>
                 <div class="proktor-stats-grid mt">
                     <article class="admin-stat-card stat-guru">
-                        <div class="stat-label">Mapel Aktif</div>
+                        <div class="stat-label">Mapel Tersedia</div>
                         <div id="guru-stat-subjects" class="stat-value">0</div>
                     </article>
                     <article class="admin-stat-card stat-admin">
@@ -251,8 +251,14 @@
                         </div>
                     </article>
                     <article class="admin-stat-card stat-admin">
-                        <div class="stat-label">Kelola Ujian</div>
+                        <div class="stat-label">Ujian Tersedia</div>
                         <div id="guru-stat-exams" class="stat-value">0</div>
+                    </article>
+                    <article class="admin-stat-card stat-proktor">
+                        <div class="stat-label">Ujian Telah Diikuti</div>
+                        <div id="guru-stat-completed-exams" class="stat-value">
+                            0
+                        </div>
                     </article>
                     <article class="admin-stat-card stat-siswa">
                         <div class="stat-label">Peserta Sudah Mengerjakan</div>
@@ -1215,7 +1221,7 @@
 
             <section id="guru-subjects-panel" class="panel" hidden>
                 <div class="admin-section-head">
-                    <h3>Mapel Aktif</h3>
+                    <h3>Mapel Tersedia</h3>
                     <div class="action-icons">
                         <button
                             id="guru-subjects-add-btn"
@@ -1594,14 +1600,14 @@
                             </p>
                         </li>
                         <li>
-                            <strong>Mapel Aktif</strong>
+                            <strong>Mapel Tersedia</strong>
                             <p class="mt">
                                 Kelola mata pelajaran yang Anda ampu. Tambah,
                                 ubah, atau nonaktifkan mapel sesuai kebutuhan.
                             </p>
                         </li>
                         <li>
-                            <strong>Kelola Ujian</strong>
+                            <strong>Ujian Tersedia</strong>
                             <p class="mt">
                                 Membuat dan mengelola ujian: judul, mapel,
                                 durasi, aturan, serta keterkaitannya dengan
@@ -1839,6 +1845,70 @@
         <div class="actions">
             <button class="btn btn-secondary" type="submit">Tutup</button>
         </div>
+    </form>
+</dialog>
+
+<dialog
+    id="guru-learning-goal-student-dialog"
+    class="admin-dialog admin-dialog-wide"
+>
+    <form method="dialog" class="form-grid">
+        <div class="analysis-header">
+            <div>
+                <h3>Analisis TP Per Peserta</h3>
+                <p id="guru-learning-goal-student-subtitle" class="muted">
+                    Klik nama peserta pada tabel hasil ujian untuk melihat
+                    ketercapaian TP per peserta.
+                </p>
+            </div>
+            <div class="analysis-filter">
+                KKTP
+                <strong id="guru-learning-goal-student-kktp">70.00%</strong>
+            </div>
+        </div>
+
+        <div
+            id="guru-learning-goal-student-summary"
+            class="analysis-stats"
+        ></div>
+
+        <div
+            id="guru-learning-goal-student-identity"
+            class="analysis-identity"
+        ></div>
+
+        <div class="analysis-table-wrap">
+            <table class="bs-table analysis-table">
+                <thead>
+                    <tr>
+                        <th>TP</th>
+                        <th>Materi</th>
+                        <th>Bobot Dicapai</th>
+                        <th>Total Bobot</th>
+                        <th>Persentase</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="guru-learning-goal-student-body">
+                    <tr>
+                        <td colspan="6" class="muted">
+                            Klik nama peserta pada tabel hasil ujian.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div
+            id="guru-learning-goal-student-detail"
+            class="analysis-detail box muted"
+        >
+            Detail ketercapaian TP per peserta akan tampil di sini.
+        </div>
+
+        <menu class="dialog-actions">
+            <button class="btn" value="cancel">Tutup</button>
+        </menu>
     </form>
 </dialog>
 

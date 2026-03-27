@@ -13,6 +13,7 @@
   var latestLearningGoalByKey = {};
   var latestLearningGoalExamID = 0;
   var latestLearningGoalIdentity = null;
+  var latestLearningGoalStudentView = null;
   var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
 
@@ -110,6 +111,41 @@
   function setLearningGoalKKTP(value) {
     if (!deps || !deps.learningGoalKKTP) return;
     deps.learningGoalKKTP.textContent = String(value || "70.00%");
+  }
+
+  function setLearningGoalStudentSubtitle(value) {
+    if (!deps || !deps.learningGoalStudentSubtitle) return;
+    deps.text(deps.learningGoalStudentSubtitle, value);
+  }
+
+  function setLearningGoalStudentSummaryHTML(value) {
+    if (!deps || !deps.learningGoalStudentSummary) return;
+    deps.learningGoalStudentSummary.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalStudentBodyHTML(value) {
+    if (!deps || !deps.learningGoalStudentBody) return;
+    deps.learningGoalStudentBody.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalStudentDetailHTML(value, muted) {
+    if (!deps || !deps.learningGoalStudentDetail) return;
+    deps.learningGoalStudentDetail.innerHTML = String(value || "");
+    if (muted) {
+      deps.learningGoalStudentDetail.classList.add("muted");
+      return;
+    }
+    deps.learningGoalStudentDetail.classList.remove("muted");
+  }
+
+  function setLearningGoalStudentIdentityHTML(value) {
+    if (!deps || !deps.learningGoalStudentIdentity) return;
+    deps.learningGoalStudentIdentity.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalStudentKKTP(value) {
+    if (!deps || !deps.learningGoalStudentKKTP) return;
+    deps.learningGoalStudentKKTP.textContent = String(value || "70.00%");
   }
 
   function fillSelectOptions(selectEl, options, current, defaultLabel) {
@@ -948,9 +984,16 @@
           "</td>"
         );
       });
+      const participantCell = deps.learningGoalStudentDialog
+        ? '<td><button class="btn btn-secondary btn-inline" type="button" data-attempt-open-learning-goal="' +
+          deps.escapeHtml(String(it.attempt_id || 0)) +
+          '">' +
+          deps.escapeHtml(String(it.full_name || "-")) +
+          "</button></td>"
+        : "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>";
       const tr = document.createElement("tr");
       tr.innerHTML = [
-        "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>",
+        participantCell,
         "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.attempt_ke || 0)) + "</td>",
         "<td>" + deps.escapeHtml(String(scoreValue)) + "</td>",
@@ -1336,6 +1379,7 @@
       latestLearningGoalByKey = {};
       latestLearningGoalExamID = 0;
       latestLearningGoalIdentity = null;
+      latestLearningGoalStudentView = null;
       if (deps && typeof deps.refreshStats === "function") {
         deps.refreshStats();
       }
@@ -1365,6 +1409,7 @@
     latestLearningGoalByKey = {};
     latestLearningGoalExamID = Number(examID || 0);
     latestLearningGoalIdentity = null;
+    latestLearningGoalStudentView = null;
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
@@ -1825,6 +1870,335 @@
     };
   }
 
+  async function ensureLearningGoalResultLoaded(examID, filteredRows) {
+    const targetExamID = Number(examID || 0);
+    if (targetExamID <= 0) {
+      return { result: null, identity: null, items: [] };
+    }
+    const rows = Array.isArray(filteredRows) ? filteredRows : [];
+    const attemptFilter = getActiveAttemptFilter();
+    const classFilter = getActiveClassFilter();
+    const sameExam = Number(latestLearningGoalExamID || 0) === targetExamID;
+    const sameAttempt =
+      String(
+        (latestLearningGoalResult && latestLearningGoalResult.attempt_filter) ||
+          "",
+      ) === String(attemptFilter || "");
+    const sameClass =
+      String(
+        (latestLearningGoalResult && latestLearningGoalResult.class_filter) ||
+          "",
+      ) === String(classFilter || "");
+    if (latestLearningGoalResult && sameExam && sameAttempt && sameClass) {
+      return {
+        result: latestLearningGoalResult,
+        identity: latestLearningGoalIdentity,
+        items: Array.isArray(latestLearningGoalResult.items)
+          ? latestLearningGoalResult.items
+          : [],
+      };
+    }
+    const params = new URLSearchParams();
+    if (attemptFilter) params.set("attempt", attemptFilter);
+    if (classFilter) params.set("class", classFilter);
+    const query = params.toString();
+    const result = await deps.api(
+      "/api/v1/admin/exams/" +
+        targetExamID +
+        "/learning-goal-results" +
+        (query ? "?" + query : ""),
+      "GET",
+    );
+    latestLearningGoalResult = result || null;
+    latestLearningGoalExamID = targetExamID;
+    latestLearningGoalByKey = {};
+    const items = Array.isArray(result && result.items) ? result.items : [];
+    items.forEach(function (it, idx) {
+      const key =
+        String(
+          it.learning_goal_id != null ? it.learning_goal_id : "none-" + idx,
+        ) +
+        "::" +
+        String(it.learning_goal_text || "");
+      latestLearningGoalByKey[key] = it;
+    });
+    latestLearningGoalIdentity = await buildLearningGoalIdentity(
+      targetExamID,
+      rows,
+    );
+    return {
+      result: latestLearningGoalResult,
+      identity: latestLearningGoalIdentity,
+      items: items,
+    };
+  }
+
+  function buildLearningGoalStudentAnalysis(items, attemptID) {
+    const targetAttemptID = Number(attemptID || 0);
+    if (targetAttemptID <= 0) return null;
+    const source = Array.isArray(items) ? items : [];
+    const rows = [];
+    let participant = null;
+    source.forEach(function (item, idx) {
+      const students = Array.isArray(item && item.students)
+        ? item.students
+        : [];
+      const student = students.find(function (it) {
+        return Number((it && it.attempt_id) || 0) === targetAttemptID;
+      });
+      if (!student) return;
+      if (!participant) {
+        participant = {
+          userID: Number((student && student.user_id) || 0),
+          fullName: String((student && student.full_name) || "-"),
+          className: String((student && student.class_name) || "-"),
+          attemptID: targetAttemptID,
+          attemptKe: Number((student && student.attempt_ke) || 0),
+        };
+      }
+      rows.push({
+        key:
+          String(
+            item.learning_goal_id != null
+              ? item.learning_goal_id
+              : "none-" + idx,
+          ) +
+          "::" +
+          String(item.learning_goal_text || ""),
+        learning_goal_id: item.learning_goal_id,
+        learning_goal_text: String(item.learning_goal_text || "Tanpa TP"),
+        learning_goal_materi: String(item.learning_goal_materi || "-"),
+        earned_weight: Number((student && student.earned_weight) || 0),
+        total_weight: Number((student && student.total_weight) || 0),
+        percent: Number((student && student.percent) || 0),
+        achieved: !!(student && student.achieved),
+      });
+    });
+    if (!participant) return null;
+    rows.sort(function (a, b) {
+      return a.learning_goal_text.localeCompare(b.learning_goal_text);
+    });
+    const achievedCount = rows.filter(function (it) {
+      return it.achieved;
+    }).length;
+    const avgPercent = rows.length
+      ? rows.reduce(function (acc, it) {
+          return acc + Number(it.percent || 0);
+        }, 0) / rows.length
+      : 0;
+    const totalEarned = rows.reduce(function (acc, it) {
+      return acc + Number(it.earned_weight || 0);
+    }, 0);
+    const totalWeight = rows.reduce(function (acc, it) {
+      return acc + Number(it.total_weight || 0);
+    }, 0);
+    return {
+      participant: participant,
+      items: rows,
+      totalGoals: rows.length,
+      achievedGoals: achievedCount,
+      unachievedGoals: rows.length - achievedCount,
+      averagePercent: avgPercent,
+      totalEarnedWeight: totalEarned,
+      totalWeight: totalWeight,
+    };
+  }
+
+  function renderLearningGoalStudentSummary(view) {
+    const current = view || {};
+    return [
+      buildStatCard(
+        "Peserta",
+        String((current.participant && current.participant.fullName) || "-"),
+        "is-primary",
+      ),
+      buildStatCard("Total TP", String(current.totalGoals || 0), ""),
+      buildStatCard("TP Tercapai", String(current.achievedGoals || 0), ""),
+      buildStatCard(
+        "TP Belum Tercapai",
+        String(current.unachievedGoals || 0),
+        "",
+      ),
+      buildStatCard(
+        "Rata-rata Capaian",
+        percentText(current.averagePercent || 0),
+        "",
+      ),
+      buildStatCard(
+        "Bobot Dicapai",
+        Number(current.totalEarnedWeight || 0).toFixed(2) +
+          "/" +
+          Number(current.totalWeight || 0).toFixed(2),
+        "",
+      ),
+    ].join("");
+  }
+
+  function renderLearningGoalStudentRows(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      return '<tr><td colspan="6" class="muted">Belum ada data ketercapaian TP untuk peserta ini.</td></tr>';
+    }
+    return list
+      .map(function (it) {
+        return [
+          '<tr class="analysis-row ' +
+            (it.achieved ? "analysis-row-valid" : "analysis-row-invalid") +
+            '">',
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_text || "Tanpa TP")) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_materi || "-")) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(Number(it.earned_weight || 0).toFixed(2)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(Number(it.total_weight || 0).toFixed(2)) +
+            "</td>",
+          "<td>" + deps.escapeHtml(percentText(it.percent || 0)) + "</td>",
+          '<td><span class="analysis-status analysis-status-' +
+            learningGoalStatusClass(!!it.achieved) +
+            '">' +
+            deps.escapeHtml(learningGoalStatusLabel(!!it.achieved)) +
+            "</span></td>",
+          "</tr>",
+        ].join("");
+      })
+      .join("");
+  }
+
+  function renderLearningGoalStudentDetail(view, kktp) {
+    if (!view || !view.participant) {
+      return "Detail ketercapaian TP per peserta akan tampil di sini.";
+    }
+    const participant = view.participant || {};
+    return [
+      '<div class="analysis-detail-header">',
+      "<h4>" + deps.escapeHtml(String(participant.fullName || "-")) + "</h4>",
+      '<div class="analysis-detail-text">' +
+        "Kelas: " +
+        deps.escapeHtml(String(participant.className || "-")) +
+        " | Attempt: " +
+        deps.escapeHtml(String(participant.attemptKe || 0)) +
+        " | Attempt ID: " +
+        deps.escapeHtml(String(participant.attemptID || 0)) +
+        "</div>",
+      "</div>",
+      '<div class="analysis-detail-meta">',
+      "<div>KKTP: <strong>" +
+        deps.escapeHtml(percentText(kktp || 0)) +
+        "</strong></div>",
+      "<div>TP Tercapai: <strong>" +
+        deps.escapeHtml(
+          String(view.achievedGoals || 0) + "/" + String(view.totalGoals || 0),
+        ) +
+        "</strong></div>",
+      "<div>Rata-rata Capaian: <strong>" +
+        deps.escapeHtml(percentText(view.averagePercent || 0)) +
+        "</strong></div>",
+      "<div>Total Bobot Dicapai: <strong>" +
+        deps.escapeHtml(
+          Number(view.totalEarnedWeight || 0).toFixed(2) +
+            "/" +
+            Number(view.totalWeight || 0).toFixed(2),
+        ) +
+        "</strong></div>",
+      "</div>",
+    ].join("");
+  }
+
+  async function openLearningGoalStudentDialog(attemptID) {
+    if (!deps || !deps.learningGoalStudentDialog) return;
+    const matrix = latestResultsMatrix;
+    const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
+    const filteredRows = filterResultsRows(rows);
+    const examID = Number(
+      (matrix && matrix.exam_id) || latestLearningGoalExamID || 0,
+    );
+    const targetAttemptID = Number(attemptID || 0);
+    if (!matrix || !rows.length || examID <= 0 || targetAttemptID <= 0) {
+      setLearningGoalStudentSubtitle("Belum ada data hasil ujian.");
+      setLearningGoalStudentKKTP("70.00%");
+      setLearningGoalStudentSummaryHTML("");
+      setLearningGoalStudentIdentityHTML("");
+      setLearningGoalStudentBodyHTML(
+        '<tr><td colspan="6" class="muted">Muat hasil ujian peserta terlebih dahulu.</td></tr>',
+      );
+      setLearningGoalStudentDetailHTML(
+        "Tidak ada data untuk dianalisis. Pilih ujian lalu muat hasil ujian.",
+        true,
+      );
+      deps.learningGoalStudentDialog.showModal();
+      return;
+    }
+    const payload = await ensureLearningGoalResultLoaded(examID, filteredRows);
+    const result = payload.result || {};
+    const identityBase = payload.identity || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const view = buildLearningGoalStudentAnalysis(items, targetAttemptID);
+    if (!view) {
+      setLearningGoalStudentSubtitle("Data peserta tidak ditemukan.");
+      setLearningGoalStudentKKTP(percentText(result && result.kktp));
+      setLearningGoalStudentSummaryHTML("");
+      setLearningGoalStudentIdentityHTML(
+        renderIdentityHTML(identityBase, "ANALISIS TP PER PESERTA"),
+      );
+      setLearningGoalStudentBodyHTML(
+        '<tr><td colspan="6" class="muted">Data ketercapaian TP untuk peserta ini tidak ditemukan pada filter aktif.</td></tr>',
+      );
+      setLearningGoalStudentDetailHTML(
+        "Coba ubah filter Attempt/Kelas atau muat ulang hasil ujian.",
+        true,
+      );
+      deps.learningGoalStudentDialog.showModal();
+      return;
+    }
+    latestLearningGoalStudentView = view;
+    const participant = view.participant || {};
+    const studentIdentity = Object.assign({}, identityBase, {
+      examTitle:
+        String(identityBase.examTitle || "-") +
+        " | " +
+        String(participant.fullName || "-"),
+      startedAt: deps.fmtDate(
+        (
+          rows.find(function (it) {
+            return Number((it && it.attempt_id) || 0) === targetAttemptID;
+          }) || {}
+        ).started_at,
+      ),
+      endedAt: deps.fmtDate(
+        (
+          rows.find(function (it) {
+            return Number((it && it.attempt_id) || 0) === targetAttemptID;
+          }) || {}
+        ).ended_at,
+      ),
+    });
+    setLearningGoalStudentIdentityHTML(
+      renderIdentityHTML(studentIdentity, "ANALISIS TP PER PESERTA"),
+    );
+    setLearningGoalStudentKKTP(percentText(result && result.kktp));
+    setLearningGoalStudentSubtitle(
+      "Peserta: " +
+        String(participant.fullName || "-") +
+        " | Kelas: " +
+        String(participant.className || "-") +
+        " | Attempt: " +
+        String(participant.attemptKe || 0) +
+        (resultsFilterLabel() ? " | " + resultsFilterLabel() : ""),
+    );
+    setLearningGoalStudentSummaryHTML(renderLearningGoalStudentSummary(view));
+    setLearningGoalStudentBodyHTML(renderLearningGoalStudentRows(view.items));
+    setLearningGoalStudentDetailHTML(
+      renderLearningGoalStudentDetail(view, result && result.kktp),
+      false,
+    );
+    deps.learningGoalStudentDialog.showModal();
+  }
+
   async function openLearningGoalDialog() {
     if (!deps || !deps.learningGoalDialog) return;
     const matrix = latestResultsMatrix;
@@ -1863,39 +2237,10 @@
       return;
     }
 
-    const params = new URLSearchParams();
-    const attemptFilter = getActiveAttemptFilter();
-    const classFilter = getActiveClassFilter();
-    if (attemptFilter) params.set("attempt", attemptFilter);
-    if (classFilter) params.set("class", classFilter);
-    const query = params.toString();
-    const result = await deps.api(
-      "/api/v1/admin/exams/" +
-        examID +
-        "/learning-goal-results" +
-        (query ? "?" + query : ""),
-      "GET",
-    );
-
-    latestLearningGoalResult = result || null;
-    latestLearningGoalExamID = examID;
-    latestLearningGoalByKey = {};
-
-    const items = Array.isArray(result && result.items) ? result.items : [];
-    items.forEach(function (it, idx) {
-      const key =
-        String(
-          it.learning_goal_id != null ? it.learning_goal_id : "none-" + idx,
-        ) +
-        "::" +
-        String(it.learning_goal_text || "");
-      latestLearningGoalByKey[key] = it;
-    });
-
-    latestLearningGoalIdentity = await buildLearningGoalIdentity(
-      examID,
-      filteredRows,
-    );
+    const payload = await ensureLearningGoalResultLoaded(examID, filteredRows);
+    const result = payload.result || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    latestLearningGoalIdentity = payload.identity || null;
     setLearningGoalIdentityHTML(
       renderIdentityHTML(
         latestLearningGoalIdentity,
@@ -2216,6 +2561,24 @@
 
     if (deps.resultsAssignmentBody) {
       deps.resultsAssignmentBody.addEventListener("click", async function (e) {
+        const viewBtn =
+          e.target &&
+          e.target.closest("button[data-attempt-open-learning-goal]");
+        if (viewBtn) {
+          const attemptID = Number(
+            viewBtn.getAttribute("data-attempt-open-learning-goal") || 0,
+          );
+          if (attemptID > 0) {
+            try {
+              await openLearningGoalStudentDialog(attemptID);
+            } catch (err) {
+              deps.setMsg(
+                "Gagal menyiapkan analisis TP per peserta: " + err.message,
+              );
+            }
+          }
+          return;
+        }
         const btn = e.target && e.target.closest("button[data-attempt-delete]");
         if (!btn) return;
         const attemptID = Number(btn.getAttribute("data-attempt-delete") || 0);

@@ -431,6 +431,23 @@ type LearningGoalAchievementStudent struct {
 	Achieved     bool    `json:"achieved"`
 }
 
+type AttemptLearningGoalResult struct {
+	AttemptID int64                     `json:"attempt_id"`
+	ExamID    int64                     `json:"exam_id"`
+	KKTP      float64                   `json:"kktp"`
+	Items     []AttemptLearningGoalItem `json:"items"`
+}
+
+type AttemptLearningGoalItem struct {
+	LearningGoalID     *int64  `json:"learning_goal_id,omitempty"`
+	LearningGoalText   string  `json:"learning_goal_text"`
+	LearningGoalMateri string  `json:"learning_goal_materi,omitempty"`
+	EarnedWeight       float64 `json:"earned_weight"`
+	TotalWeight        float64 `json:"total_weight"`
+	Percent            float64 `json:"percent"`
+	Achieved           bool    `json:"achieved"`
+}
+
 type ExamParticipantResultRow struct {
 	UserID       int64      `json:"user_id"`
 	Username     string     `json:"username"`
@@ -2808,6 +2825,135 @@ func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64,
 	out.Items = items
 	out.TotalGoals = len(items)
 	out.UnachievedGoals = out.TotalGoals - out.AchievedGoals
+	return out, nil
+}
+
+func (s *Service) GetAttemptLearningGoalResult(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error) {
+	if attemptID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
+	if err != nil {
+		return nil, err
+	}
+
+	if row.Status == "in_progress" {
+		if time.Now().After(row.ExpiresAt) {
+			if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+				return nil, err
+			}
+			row, err = s.loadAttemptRow(ctx, s.db, attemptID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, ErrAttemptNotFinal
+		}
+	}
+
+	reviewPolicy, examEndAt, err := s.loadExamReviewPolicy(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	policy := normalizeReviewPolicy(reviewPolicy)
+	if !canViewResultByPolicy(policy, row.Status, examEndAt) {
+		return nil, ErrResultPolicyDenied
+	}
+
+	out := &AttemptLearningGoalResult{
+		AttemptID: attemptID,
+		ExamID:    row.ExamID,
+	}
+
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(kktp, 70)
+		FROM exams
+		WHERE id = $1
+	`, row.ExamID).Scan(&out.KKTP); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam kktp for attempt learning goal result: %w", err)
+	}
+	out.KKTP = normalizeKKTP(out.KKTP)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			q.learning_goal_id,
+			COALESCE(lg.tujuan_pembelajaran, ''),
+			COALESCE(lg.materi, ''),
+			eq.weight,
+			COALESCE(s.earned_score, 0)
+		FROM exam_questions eq
+		JOIN questions q ON q.id = eq.question_id
+		LEFT JOIN learning_goals lg ON lg.id = q.learning_goal_id
+		LEFT JOIN attempt_scores s
+			ON s.attempt_id = $2
+		   AND s.question_id = eq.question_id
+		WHERE eq.exam_id = $1
+		ORDER BY eq.seq_no ASC
+	`, row.ExamID, attemptID)
+	if err != nil {
+		return nil, fmt.Errorf("list attempt learning goal rows: %w", err)
+	}
+	defer rows.Close()
+
+	itemByKey := make(map[string]*AttemptLearningGoalItem)
+	order := make([]string, 0)
+	for rows.Next() {
+		var (
+			goalID   sql.NullInt64
+			goalText string
+			materi   string
+			weight   float64
+			earned   float64
+		)
+		if err := rows.Scan(&goalID, &goalText, &materi, &weight, &earned); err != nil {
+			return nil, fmt.Errorf("scan attempt learning goal row: %w", err)
+		}
+		goalText = strings.TrimSpace(goalText)
+		materi = strings.TrimSpace(materi)
+		key := "none"
+		var goalIDCopy *int64
+		if goalID.Valid {
+			idv := goalID.Int64
+			goalIDCopy = &idv
+			key = strconv.FormatInt(idv, 10)
+		}
+		if goalText == "" {
+			goalText = "Tanpa TP"
+		}
+		item := itemByKey[key]
+		if item == nil {
+			item = &AttemptLearningGoalItem{
+				LearningGoalID:     goalIDCopy,
+				LearningGoalText:   goalText,
+				LearningGoalMateri: materi,
+			}
+			itemByKey[key] = item
+			order = append(order, key)
+		}
+		item.TotalWeight += weight
+		item.EarnedWeight += earned
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate attempt learning goal rows: %w", err)
+	}
+
+	items := make([]AttemptLearningGoalItem, 0, len(order))
+	for _, key := range order {
+		item := itemByKey[key]
+		if item.TotalWeight > 0 {
+			item.Percent = (item.EarnedWeight / item.TotalWeight) * 100
+		}
+		item.Achieved = item.Percent >= out.KKTP
+		items = append(items, *item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].LearningGoalText) < strings.ToLower(items[j].LearningGoalText)
+	})
+	out.Items = items
 	return out, nil
 }
 

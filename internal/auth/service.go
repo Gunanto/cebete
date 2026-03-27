@@ -207,6 +207,10 @@ type AdminDashboardStats struct {
 	SiswaCount             int64 `json:"siswa_count"`
 	SchoolCount            int64 `json:"school_count"`
 	UniqueParticipantCount int64 `json:"unique_participant_count"`
+	CompletedExamCount     int64 `json:"completed_exam_count"`
+	ActiveUserCountDaily   int64 `json:"active_user_count_daily"`
+	ActiveUserCountWeekly  int64 `json:"active_user_count_weekly"`
+	ActiveUserCountMonthly int64 `json:"active_user_count_monthly"`
 }
 
 type StudentExamProfile struct {
@@ -2773,6 +2777,24 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 	`).Scan(&out.SchoolCount); err != nil {
 		return nil, fmt.Errorf("query school stats: %w", err)
 	}
+	if err := s.db.QueryRowContext(ctx, `
+		WITH activity_users AS (
+			SELECT a.student_id AS user_id, COALESCE(a.submitted_at, a.started_at) AS activity_at
+			FROM attempts a
+			UNION ALL
+			SELECT al.user_id, al.created_at
+			FROM audit_logs al
+		)
+		SELECT
+			COUNT(DISTINCT au.user_id) FILTER (WHERE au.activity_at >= now() - interval '1 day'),
+			COUNT(DISTINCT au.user_id) FILTER (WHERE au.activity_at >= now() - interval '7 days'),
+			COUNT(DISTINCT au.user_id) FILTER (WHERE au.activity_at >= now() - interval '30 days')
+		FROM activity_users au
+		JOIN users u ON u.id = au.user_id
+		WHERE u.is_active = TRUE
+	`).Scan(&out.ActiveUserCountDaily, &out.ActiveUserCountWeekly, &out.ActiveUserCountMonthly); err != nil {
+		return nil, fmt.Errorf("query active user stats: %w", err)
+	}
 	return out, nil
 }
 
@@ -2790,6 +2812,15 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 		  AND u.role = 'siswa'
 	`, guruID).Scan(&out.UniqueParticipantCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard unique participant count: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT e.id)
+		FROM exams e
+		JOIN attempts a ON a.exam_id = e.id
+		WHERE e.created_by = $1
+		  AND COALESCE(a.score, 0) > 0
+	`, guruID).Scan(&out.CompletedExamCount); err != nil {
+		return nil, fmt.Errorf("query guru dashboard completed exam count: %w", err)
 	}
 	return out, nil
 }
