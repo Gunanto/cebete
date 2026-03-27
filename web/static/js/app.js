@@ -6238,6 +6238,21 @@
     const itemAnalysisFilter = document.getElementById(
       "guru-item-analysis-filter",
     );
+    const itemAnalysisFilterNo = document.getElementById(
+      "guru-item-analysis-filter-no",
+    );
+    const itemAnalysisFilterTypeHead = document.getElementById(
+      "guru-item-analysis-filter-type-head",
+    );
+    const itemAnalysisFilterQuestion = document.getElementById(
+      "guru-item-analysis-filter-question",
+    );
+    const itemAnalysisFilterValidity = document.getElementById(
+      "guru-item-analysis-filter-validity",
+    );
+    const itemAnalysisFilterStatus = document.getElementById(
+      "guru-item-analysis-filter-status",
+    );
     const itemAnalysisDetail = document.getElementById(
       "guru-item-analysis-detail",
     );
@@ -7825,6 +7840,11 @@
         itemAnalysisSummary: itemAnalysisSummary,
         itemAnalysisIdentity: itemAnalysisIdentity,
         itemAnalysisFilter: itemAnalysisFilter,
+        itemAnalysisFilterNo: itemAnalysisFilterNo,
+        itemAnalysisFilterTypeHead: itemAnalysisFilterTypeHead,
+        itemAnalysisFilterQuestion: itemAnalysisFilterQuestion,
+        itemAnalysisFilterValidity: itemAnalysisFilterValidity,
+        itemAnalysisFilterStatus: itemAnalysisFilterStatus,
         itemAnalysisDetail: itemAnalysisDetail,
         itemAnalysisSubtitle: itemAnalysisSubtitle,
         itemAnalysisExportBtn: itemAnalysisExportBtn,

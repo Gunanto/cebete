@@ -2847,8 +2847,37 @@ body[data-page="attempt_content"] .bs-table tbody tr:focus-within {
     min-width: 240px;
 }
 
+.analysis-filter-row th {
+    background: #f8fbff;
+    padding: 6px;
+}
+
+.analysis-filter-row input,
+.analysis-filter-row select {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
 .analysis-row-active {
     background: #eef4ff;
+}
+
+.analysis-row-valid {
+    background: #effcf3;
+}
+
+.analysis-row-invalid {
+    background: #fff8db;
+}
+
+.analysis-row-valid.analysis-row-active,
+.analysis-row-invalid.analysis-row-active {
+    background: #dbeafe;
 }
 
 .analysis-status {

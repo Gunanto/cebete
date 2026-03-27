@@ -73,6 +73,25 @@
     deps.itemAnalysisIdentity.innerHTML = String(value || "");
   }
 
+  function fillSelectOptions(selectEl, options, current, defaultLabel) {
+    if (!selectEl) return;
+    selectEl.innerHTML =
+      '<option value="">' +
+      deps.escapeHtml(defaultLabel || "Semua") +
+      "</option>";
+    Object.keys(options || {})
+      .sort(function (a, b) {
+        return String(options[a]).localeCompare(String(options[b]));
+      })
+      .forEach(function (raw) {
+        const opt = document.createElement("option");
+        opt.value = raw;
+        opt.textContent = options[raw];
+        if (current && current === raw) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+  }
+
   function questionTypeLabel(raw) {
     const t = String(raw || "")
       .trim()
@@ -450,6 +469,7 @@
       const difficulty = totalCount > 0 ? correctCount / totalCount : 0;
       const discrimination = calcDiscrimination(rows, idx);
       const validity = validityLabel(discrimination);
+      const validityCoefficient = discrimination;
       const status = statusLabel(difficulty, discrimination);
       return {
         id: String((q && q.question_id) || seqNo || idx + 1),
@@ -462,6 +482,7 @@
         difficulty: difficulty,
         discrimination: discrimination,
         validity: validity,
+        validityCoefficient: validityCoefficient,
         correctCount: correctCount,
         wrongCount: wrongCount,
         totalCount: totalCount,
@@ -499,8 +520,15 @@
       .map(function (it) {
         const difficultyPct = (it.difficulty * 100).toFixed(2) + "%";
         const discriminationPct = (it.discrimination * 100).toFixed(2) + "%";
+        const validityCoef = Number(it.validityCoefficient || 0).toFixed(3);
+        const validityRowClass =
+          String(it.validity || "").trim() === "Valid"
+            ? "analysis-row-valid"
+            : "analysis-row-invalid";
         return [
-          '<tr class="analysis-row" data-item-id="' +
+          '<tr class="analysis-row ' +
+            validityRowClass +
+            '" data-item-id="' +
             deps.escapeHtml(String(it.id)) +
             '">',
           "<td>" + deps.escapeHtml(String(it.no)) + "</td>",
@@ -518,7 +546,11 @@
             " (" +
             deps.escapeHtml(discriminationLabel(it.discrimination)) +
             ")</td>",
-          "<td>" + deps.escapeHtml(String(it.validity)) + "</td>",
+          "<td>" +
+            deps.escapeHtml(String(it.validity)) +
+            " (" +
+            deps.escapeHtml(validityCoef) +
+            ")</td>",
           "<td>" + deps.escapeHtml(String(it.correctCount)) + "</td>",
           "<td>" + deps.escapeHtml(String(it.wrongCount)) + "</td>",
           '<td><span class="analysis-status analysis-status-' +
@@ -584,6 +616,9 @@
         "</strong></div>",
       "<div>Validitas: <strong>" +
         deps.escapeHtml(String(item.validity)) +
+        " (" +
+        deps.escapeHtml(Number(item.validityCoefficient || 0).toFixed(3)) +
+        ")" +
         "</strong></div>",
       "</div>",
       '<div class="analysis-distractors">',
@@ -1246,38 +1281,108 @@
       "Klik salah satu baris untuk melihat detail butir.",
       true,
     );
+    const types = {};
+    items.forEach(function (it) {
+      const raw = String(it.rawType || "").trim();
+      if (!raw) return;
+      types[raw] = questionTypeLabel(raw);
+    });
     if (deps.itemAnalysisFilter) {
-      const current = String(deps.itemAnalysisFilter.value || "");
-      const types = {};
-      items.forEach(function (it) {
-        const raw = String(it.rawType || "").trim();
-        if (!raw) return;
-        types[raw] = questionTypeLabel(raw);
-      });
-      deps.itemAnalysisFilter.innerHTML =
-        '<option value="">Semua Tipe</option>';
-      Object.keys(types)
-        .sort(function (a, b) {
-          return String(types[a]).localeCompare(String(types[b]));
-        })
-        .forEach(function (raw) {
-          const opt = document.createElement("option");
-          opt.value = raw;
-          opt.textContent = types[raw];
-          if (current && current === raw) opt.selected = true;
-          deps.itemAnalysisFilter.appendChild(opt);
-        });
+      fillSelectOptions(
+        deps.itemAnalysisFilter,
+        types,
+        String(deps.itemAnalysisFilter.value || ""),
+        "Semua Tipe",
+      );
+    }
+    if (deps.itemAnalysisFilterTypeHead) {
+      fillSelectOptions(
+        deps.itemAnalysisFilterTypeHead,
+        types,
+        String(deps.itemAnalysisFilterTypeHead.value || ""),
+        "Semua",
+      );
     }
     deps.itemAnalysisDialog.showModal();
   }
 
   function getFilteredItemAnalysis() {
     const items = Array.isArray(latestItemAnalysis) ? latestItemAnalysis : [];
-    if (!deps || !deps.itemAnalysisFilter) return items;
-    const filterRaw = String(deps.itemAnalysisFilter.value || "").trim();
-    if (!filterRaw) return items;
+    if (!deps) return items;
+    const filterRaw = String(
+      (deps.itemAnalysisFilter && deps.itemAnalysisFilter.value) || "",
+    ).trim();
+    const filterNo = String(
+      (deps.itemAnalysisFilterNo && deps.itemAnalysisFilterNo.value) || "",
+    ).trim();
+    const filterTypeHead = String(
+      (deps.itemAnalysisFilterTypeHead &&
+        deps.itemAnalysisFilterTypeHead.value) ||
+        "",
+    ).trim();
+    const filterQuestion = String(
+      (deps.itemAnalysisFilterQuestion &&
+        deps.itemAnalysisFilterQuestion.value) ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    const filterValidity = String(
+      (deps.itemAnalysisFilterValidity &&
+        deps.itemAnalysisFilterValidity.value) ||
+        "",
+    ).trim();
+    const filterStatus = String(
+      (deps.itemAnalysisFilterStatus && deps.itemAnalysisFilterStatus.value) ||
+        "",
+    ).trim();
+    if (
+      !filterRaw &&
+      !filterNo &&
+      !filterTypeHead &&
+      !filterQuestion &&
+      !filterValidity &&
+      !filterStatus
+    ) {
+      return items;
+    }
     return items.filter(function (it) {
-      return String(it.rawType || "").trim() === filterRaw;
+      if (filterRaw && String(it.rawType || "").trim() !== filterRaw) {
+        return false;
+      }
+      if (
+        filterTypeHead &&
+        String(it.rawType || "").trim() !== filterTypeHead
+      ) {
+        return false;
+      }
+      if (
+        filterNo &&
+        String(it.no || "")
+          .trim()
+          .indexOf(filterNo) === -1
+      ) {
+        return false;
+      }
+      if (
+        filterQuestion &&
+        String(it.question || "")
+          .trim()
+          .toLowerCase()
+          .indexOf(filterQuestion) === -1
+      ) {
+        return false;
+      }
+      if (
+        filterValidity &&
+        String(it.validity || "").trim() !== filterValidity
+      ) {
+        return false;
+      }
+      if (filterStatus && String(it.status || "").trim() !== filterStatus) {
+        return false;
+      }
+      return true;
     });
   }
 
@@ -1329,7 +1434,10 @@
         it.question,
         difficultyPct + " (" + difficultyLabel(it.difficulty) + ")",
         discriminationPct + " (" + discriminationLabel(it.discrimination) + ")",
-        it.validity,
+        it.validity +
+          " (" +
+          Number(it.validityCoefficient || 0).toFixed(3) +
+          ")",
         it.correctCount,
         it.wrongCount,
         it.totalCount,
@@ -1382,6 +1490,7 @@
       .map(function (it) {
         const difficultyPct = (it.difficulty * 100).toFixed(2) + "%";
         const discriminationPct = (it.discrimination * 100).toFixed(2) + "%";
+        const validityCoef = Number(it.validityCoefficient || 0).toFixed(3);
         return [
           "<tr>",
           "<td>" + deps.escapeHtml(String(it.no)) + "</td>",
@@ -1397,7 +1506,11 @@
             " (" +
             deps.escapeHtml(discriminationLabel(it.discrimination)) +
             ")</td>",
-          "<td>" + deps.escapeHtml(String(it.validity)) + "</td>",
+          "<td>" +
+            deps.escapeHtml(String(it.validity)) +
+            " (" +
+            deps.escapeHtml(validityCoef) +
+            ")</td>",
           "<td>" + deps.escapeHtml(String(it.correctCount)) + "</td>",
           "<td>" + deps.escapeHtml(String(it.wrongCount)) + "</td>",
           "<td>" + deps.escapeHtml(String(it.status)) + "</td>",
@@ -1688,6 +1801,21 @@
         filterItemAnalysis();
       });
     }
+    [
+      deps.itemAnalysisFilterNo,
+      deps.itemAnalysisFilterTypeHead,
+      deps.itemAnalysisFilterQuestion,
+      deps.itemAnalysisFilterValidity,
+      deps.itemAnalysisFilterStatus,
+    ].forEach(function (el) {
+      if (!el) return;
+      el.addEventListener(
+        el.tagName === "SELECT" ? "change" : "input",
+        function () {
+          filterItemAnalysis();
+        },
+      );
+    });
     bindItemAnalysisRowClick();
   }
 
