@@ -14,6 +14,7 @@
   var latestLearningGoalExamID = 0;
   var latestLearningGoalIdentity = null;
   var latestLearningGoalStudentView = null;
+  var latestLearningGoalStudentSchool = {};
   var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
 
@@ -322,6 +323,32 @@
     } catch (_) {
       const info = { name: "", city: "", address: "" };
       examSchoolInfoCache[key] = info;
+      return info;
+    }
+  }
+
+  async function ensureAttemptStudentSchoolInfo(attemptID) {
+    const key = String(attemptID || 0);
+    if (latestLearningGoalStudentSchool[key]) {
+      return latestLearningGoalStudentSchool[key];
+    }
+    if (!deps || typeof deps.api !== "function" || !attemptID) {
+      return { schoolName: "", schoolCity: "" };
+    }
+    try {
+      const out = await deps.api(
+        "/api/v1/attempts/" + Number(attemptID) + "/student-school",
+        "GET",
+      );
+      const info = {
+        schoolName: String((out && out.school_name) || "").trim(),
+        schoolCity: String((out && out.school_city) || "").trim(),
+      };
+      latestLearningGoalStudentSchool[key] = info;
+      return info;
+    } catch (_) {
+      const info = { schoolName: "", schoolCity: "" };
+      latestLearningGoalStudentSchool[key] = info;
       return info;
     }
   }
@@ -2157,7 +2184,10 @@
     }
     latestLearningGoalStudentView = view;
     const participant = view.participant || {};
+    const schoolInfo = await ensureAttemptStudentSchoolInfo(targetAttemptID);
     const studentIdentity = Object.assign({}, identityBase, {
+      schoolName: schoolInfo.schoolName || identityBase.schoolName || "",
+      schoolPlace: schoolInfo.schoolCity || identityBase.schoolPlace || "",
       examTitle:
         String(identityBase.examTitle || "-") +
         " | " +

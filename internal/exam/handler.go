@@ -45,6 +45,7 @@ type examService interface {
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
 	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	GetAttemptLearningGoalResult(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
+	GetAttemptStudentSchoolInfo(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
 	ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -1046,6 +1047,59 @@ func (h *Handler) GetAttemptLearningGoalResult(w http.ResponseWriter, r *http.Re
 	}
 
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: result})
+}
+
+func (h *Handler) GetAttemptStudentSchoolInfo(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	attemptID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || attemptID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid attempt id"})
+		return
+	}
+
+	if err := h.authorizeAttemptAccess(r, user, attemptID); err != nil {
+		switch {
+		case errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	info, err := h.svc.GetAttemptStudentSchoolInfo(r.Context(), attemptID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	if err := h.ensureGuruExamOwner(r.Context(), user, info.ExamID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: info})
 }
 
 func (h *Handler) DeleteExamAttempt(w http.ResponseWriter, r *http.Request) {

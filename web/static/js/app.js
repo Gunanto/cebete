@@ -4494,6 +4494,10 @@
             })
           : String(normalizedScore || 0);
         const examTitle = String((s && s.title) || "").trim();
+        const examCode = String((s && s.exam_code) || "").trim();
+        const examTitleDisplay = examCode
+          ? examCode + " | " + (examTitle || "-")
+          : examTitle || "-";
         if (resultDialogTitle) {
           resultDialogTitle.textContent = examTitle
             ? "Hasil " + examTitle
@@ -4509,7 +4513,7 @@
           );
         }
         if (resultDialogExamTitle)
-          resultDialogExamTitle.textContent = examTitle || "-";
+          resultDialogExamTitle.textContent = examTitleDisplay;
         if (resultDialogSubject)
           resultDialogSubject.textContent = subjectLabel || "-";
         if (resultDialogStatus)

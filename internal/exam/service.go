@@ -448,6 +448,13 @@ type AttemptLearningGoalItem struct {
 	Achieved           bool    `json:"achieved"`
 }
 
+type AttemptStudentSchoolInfo struct {
+	AttemptID  int64  `json:"attempt_id"`
+	ExamID     int64  `json:"exam_id"`
+	SchoolName string `json:"school_name"`
+	SchoolCity string `json:"school_city"`
+}
+
 type ExamParticipantResultRow struct {
 	UserID       int64      `json:"user_id"`
 	Username     string     `json:"username"`
@@ -2955,6 +2962,39 @@ func (s *Service) GetAttemptLearningGoalResult(ctx context.Context, attemptID in
 	})
 	out.Items = items
 	return out, nil
+}
+
+func (s *Service) GetAttemptStudentSchoolInfo(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error) {
+	if attemptID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	var out AttemptStudentSchoolInfo
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			a.id,
+			a.exam_id,
+			COALESCE(s.name, ''),
+			COALESCE(s.city, '')
+		FROM attempts a
+		JOIN users u ON u.id = a.student_id
+		LEFT JOIN LATERAL (
+			SELECT e.school_id
+			FROM enrollments e
+			WHERE e.user_id = u.id
+			  AND e.status = 'active'
+			ORDER BY e.enrolled_at DESC, e.id DESC
+			LIMIT 1
+		) enr ON TRUE
+		LEFT JOIN schools s ON s.id = enr.school_id
+		WHERE a.id = $1
+	`, attemptID).Scan(&out.AttemptID, &out.ExamID, &out.SchoolName, &out.SchoolCity); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("load attempt student school info: %w", err)
+	}
+	return &out, nil
 }
 
 func (s *Service) ensureExamQuestionSeqNoContiguous(ctx context.Context, examID int64) error {
