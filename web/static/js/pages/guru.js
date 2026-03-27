@@ -1716,6 +1716,122 @@
       }
     }
 
+    function buildGuruCountDesc(base, noun, total) {
+      if (total <= 0) return base + " Anda belum membuat " + noun + ".";
+      return base + " Saat ini ada " + String(total) + " " + String(noun) + ".";
+    }
+
+    function getGuruMenuInfo(menuKey) {
+      const key = String(menuKey || "").trim();
+      const buildSubjectsDesc = function () {
+        const total = Number(getSubjectsCache().length || 0);
+        return buildGuruCountDesc(
+          "Kelola daftar mapel yang tersedia.",
+          "mapel",
+          total,
+        );
+      };
+      const buildLearningGoalsDesc = function () {
+        const total = Number(
+          LearningGoals && typeof LearningGoals.getCount === "function"
+            ? LearningGoals.getCount()
+            : 0,
+        );
+        return buildGuruCountDesc(
+          "Kelola tujuan pembelajaran per mapel dan jenjang.",
+          "tujuan pembelajaran",
+          total,
+        );
+      };
+      const buildManuscriptsDesc = function () {
+        const total = Number(
+          ManuscriptTable && typeof ManuscriptTable.getCount === "function"
+            ? ManuscriptTable.getCount()
+            : 0,
+        );
+        if (total <= 0) {
+          return "Kelola naskah soal berbasis blueprint. Belum ada versi naskah.";
+        }
+        return (
+          "Kelola naskah soal berbasis blueprint. Saat ini ada " +
+          String(total) +
+          " versi naskah."
+        );
+      };
+      const buildExamsDesc = function () {
+        const total = Number(
+          GuruExams && typeof GuruExams.getExamCount === "function"
+            ? GuruExams.getExamCount()
+            : 0,
+        );
+        return buildGuruCountDesc(
+          "Kelola paket ujian dan jadwal pelaksanaan.",
+          "ujian",
+          total,
+        );
+      };
+      const buildResultsDesc = function () {
+        const total = Number(
+          GuruResults && typeof GuruResults.getResultsCount === "function"
+            ? GuruResults.getResultsCount()
+            : GuruExams && typeof GuruExams.getResultsCount === "function"
+              ? GuruExams.getResultsCount()
+              : 0,
+        );
+        if (total <= 0) {
+          return "Lihat hasil dan performa peserta. Belum ada peserta ujian yang dimuat.";
+        }
+        return (
+          "Lihat hasil dan performa peserta. Saat ini ada " +
+          String(total) +
+          " peserta terdaftar pada ujian terpilih."
+        );
+      };
+      const guruTitles = {
+        dashboard: {
+          title: "Dashboard Guru",
+          desc: "Ringkasan workflow penyusunan naskah soal dan ujian.",
+        },
+        reviews: {
+          title: "Review Soal",
+          desc: "Tinjau dan validasi soal yang perlu review.",
+        },
+        "learning-goals": {
+          title: "Tujuan Pembelajaran",
+          desc: buildLearningGoalsDesc(),
+        },
+        blueprints: {
+          title: "Blueprint",
+          desc: "Susun blueprint sebagai kerangka penyusunan soal.",
+        },
+        manuscripts: {
+          title: "Naskah Soal",
+          desc: buildManuscriptsDesc(),
+        },
+        exams: {
+          title: "Pengelolaan Pelaksanaan Ujian",
+          desc: buildExamsDesc(),
+        },
+        enroll: {
+          title: "Enroll Peserta",
+          desc: "Enroll peserta ke ujian Anda per kelas.",
+        },
+        results: {
+          title: "Hasil Ujian",
+          desc: buildResultsDesc(),
+        },
+        subjects: {
+          title: "Mata Pelajaran",
+          desc: buildSubjectsDesc(),
+        },
+        guide: {
+          title: "Petunjuk Penggunaan",
+          desc: "Panduan singkat penggunaan menu guru.",
+        },
+      };
+      return guruTitles[key] || guruTitles.dashboard;
+    }
+
     async function reloadManuscriptsByCurrentTableScope(fallbackQuestionID) {
       if (
         ManuscriptTable &&
