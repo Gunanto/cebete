@@ -6274,25 +6274,27 @@
     const learningGoalAnalysisBody = document.getElementById(
       "guru-learning-goal-analysis-body",
     );
-    const learningGoalSummary = document.getElementById(
+    const learningGoalAnalysisSummary = document.getElementById(
       "guru-learning-goal-summary",
     );
-    const learningGoalIdentity = document.getElementById(
+    const learningGoalAnalysisIdentity = document.getElementById(
       "guru-learning-goal-identity",
     );
-    const learningGoalDetail = document.getElementById(
+    const learningGoalAnalysisDetail = document.getElementById(
       "guru-learning-goal-detail",
     );
-    const learningGoalSubtitle = document.getElementById(
+    const learningGoalAnalysisSubtitle = document.getElementById(
       "guru-learning-goal-subtitle",
     );
-    const learningGoalExportBtn = document.getElementById(
+    const learningGoalAnalysisExportBtn = document.getElementById(
       "guru-learning-goal-export-btn",
     );
-    const learningGoalPrintBtn = document.getElementById(
+    const learningGoalAnalysisPrintBtn = document.getElementById(
       "guru-learning-goal-print-btn",
     );
-    const learningGoalKKTP = document.getElementById("guru-learning-goal-kktp");
+    const learningGoalAnalysisKKTP = document.getElementById(
+      "guru-learning-goal-kktp",
+    );
 
     const tabQuillByWrap = new WeakMap();
     let guruUniqueParticipantCount = 0;
@@ -7880,13 +7882,13 @@
         itemAnalysisPrintBtn: itemAnalysisPrintBtn,
         learningGoalDialog: learningGoalDialog,
         learningGoalBody: learningGoalAnalysisBody,
-        learningGoalSummary: learningGoalSummary,
-        learningGoalIdentity: learningGoalIdentity,
-        learningGoalDetail: learningGoalDetail,
-        learningGoalSubtitle: learningGoalSubtitle,
-        learningGoalExportBtn: learningGoalExportBtn,
-        learningGoalPrintBtn: learningGoalPrintBtn,
-        learningGoalKKTP: learningGoalKKTP,
+        learningGoalSummary: learningGoalAnalysisSummary,
+        learningGoalIdentity: learningGoalAnalysisIdentity,
+        learningGoalDetail: learningGoalAnalysisDetail,
+        learningGoalSubtitle: learningGoalAnalysisSubtitle,
+        learningGoalExportBtn: learningGoalAnalysisExportBtn,
+        learningGoalPrintBtn: learningGoalAnalysisPrintBtn,
+        learningGoalKKTP: learningGoalAnalysisKKTP,
         meOrNull: meOrNull,
         refreshExams: loadGuruExamManageTable,
       });
