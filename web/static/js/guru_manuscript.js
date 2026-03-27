@@ -16,6 +16,90 @@
     deps = opts || {};
   }
 
+  function isChoiceQuestionType(type) {
+    const qType = String(type || currentManuscriptQuestionType || "")
+      .trim()
+      .toLowerCase();
+    return qType === "pg_tunggal" || qType === "multi_jawaban";
+  }
+
+  function getOptionLayoutValue() {
+    if (!deps || !deps.manuscriptOptionLayout) return "standard";
+    const raw = String(deps.manuscriptOptionLayout.value || "")
+      .trim()
+      .toLowerCase();
+    return raw === "comparison" ? "comparison" : "standard";
+  }
+
+  function getDefaultComparisonLabel(side) {
+    if (side === "right") return "Kolom Kanan";
+    return "Kolom Kiri";
+  }
+
+  function readComparisonQuestionContent(questionContentObj) {
+    const content =
+      questionContentObj && typeof questionContentObj === "object"
+        ? questionContentObj
+        : {};
+    const layout = String(content.layout || "")
+      .trim()
+      .toLowerCase();
+    const rows = Array.isArray(content.options) ? content.options : [];
+    return {
+      active: layout === "comparison",
+      leftLabel: String(content.left_label || "").trim(),
+      rightLabel: String(content.right_label || "").trim(),
+      options: rows
+        .map(function (it) {
+          return {
+            option_key: String((it && it.option_key) || "")
+              .trim()
+              .toUpperCase(),
+            left_html: String((it && it.left_html) || "").trim(),
+            right_html: String((it && it.right_html) || "").trim(),
+          };
+        })
+        .filter(function (it) {
+          return it.option_key || it.left_html || it.right_html;
+        }),
+    };
+  }
+
+  function renderComparisonOptionHTML(optionLike, labels) {
+    const opt = optionLike || {};
+    const meta = labels || {};
+    const leftLabel = String(meta.leftLabel || "").trim();
+    const rightLabel = String(meta.rightLabel || "").trim();
+    const leftHTML = String((opt && opt.left_html) || "").trim();
+    const rightHTML = String((opt && opt.right_html) || "").trim();
+    return [
+      '<div class="option-comparison-content">',
+      '<div class="option-comparison-table">',
+      '<div class="option-comparison-head">' +
+        deps.escapeHtml(leftLabel || getDefaultComparisonLabel("left")) +
+        "</div>",
+      '<div class="option-comparison-head">' +
+        deps.escapeHtml(rightLabel || getDefaultComparisonLabel("right")) +
+        "</div>",
+      '<div class="option-comparison-cell">' +
+        (leftHTML || '<span class="muted">-</span>') +
+        "</div>",
+      '<div class="option-comparison-cell">' +
+        (rightHTML || '<span class="muted">-</span>') +
+        "</div>",
+      "</div>",
+      "</div>",
+    ].join("");
+  }
+
+  function syncOptionLayoutUI() {
+    const isComparison =
+      isChoiceQuestionType() && getOptionLayoutValue() === "comparison";
+    if (deps && deps.manuscriptOptionComparisonFields) {
+      deps.manuscriptOptionComparisonFields.hidden = !isComparison;
+    }
+  }
+
   function getQuillHTML(quill) {
     if (!deps || typeof deps.getQuillHTML !== "function") return "";
     return deps.getQuillHTML(quill);
@@ -91,9 +175,19 @@
     if (deps && deps.manuscriptShortAnswerMaxLength) {
       deps.manuscriptShortAnswerMaxLength.value = "33";
     }
+    if (deps && deps.manuscriptOptionLayout) {
+      deps.manuscriptOptionLayout.value = "standard";
+    }
+    if (deps && deps.manuscriptOptionLeftLabel) {
+      deps.manuscriptOptionLeftLabel.value = "Ulasan Buku I";
+    }
+    if (deps && deps.manuscriptOptionRightLabel) {
+      deps.manuscriptOptionRightLabel.value = "Ulasan Buku II";
+    }
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
+    syncOptionLayoutUI();
     syncHiddenInputs();
   }
 
@@ -339,17 +433,33 @@
     const key =
       String((data && data.option_key) || "").trim() ||
       String.fromCharCode(65 + idx);
+    const optionLayout = String((data && data.layout) || getOptionLayoutValue())
+      .trim()
+      .toLowerCase();
     const htmlValue = String((data && data.option_html) || "").trim();
+    const leftHTML = String((data && data.left_html) || "").trim();
+    const rightHTML = String((data && data.right_html) || "").trim();
+    const editorHTML =
+      optionLayout === "comparison"
+        ? '<div class="option-comparison-editor-grid mt">' +
+          '<div><label>Kolom Kiri</label><div class="quill-editor-shell mt"><div class="manuscript-option-left-editor"></div></div><input type="hidden" data-option-left-html value="' +
+          deps.escapeHtml(leftHTML) +
+          '" /></div>' +
+          '<div><label>Kolom Kanan</label><div class="quill-editor-shell mt"><div class="manuscript-option-right-editor"></div></div><input type="hidden" data-option-right-html value="' +
+          deps.escapeHtml(rightHTML) +
+          '" /></div>' +
+          "</div>"
+        : '<label class="mt">Konten Opsi</label>' +
+          '<div class="quill-editor-shell mt"><div class="manuscript-option-editor"></div></div>' +
+          '<input type="hidden" data-option-html value="' +
+          deps.escapeHtml(htmlValue) +
+          '" />';
     return (
       '<div class="panel mt" data-option-row="1">' +
       '<label>Kode Opsi<input type="text" data-option-key value="' +
       deps.escapeHtml(key) +
       '" placeholder="A" maxlength="10" /></label>' +
-      '<label class="mt">Konten Opsi</label>' +
-      '<div class="quill-editor-shell mt"><div class="manuscript-option-editor"></div></div>' +
-      '<input type="hidden" data-option-html value="' +
-      deps.escapeHtml(htmlValue) +
-      '" />' +
+      editorHTML +
       '<button type="button" class="btn btn-secondary btn-inline mt" data-option-remove="1">Hapus Opsi</button>' +
       "</div>"
     );
@@ -358,23 +468,36 @@
   function bindOptionEditor(row) {
     if (!row || manuscriptOptionQuillByRow.has(row) || !window.Quill) return;
     if (!deps || typeof deps.createQuillEditor !== "function") return;
-    const host = row.querySelector(".manuscript-option-editor");
-    const hidden = row.querySelector("[data-option-html]");
-    if (!host || !hidden) return;
-    const initialHTML = String(hidden.value || "").trim();
-    const quill = deps.createQuillEditor(host, "Isi opsi jawaban...", {
-      defaultFontSize: "12pt",
-    });
-    if (!quill) return;
-    if (initialHTML) {
-      quill.clipboard.dangerouslyPasteHTML(initialHTML);
-    }
-    hidden.value = getQuillHTML(quill);
-    quill.on("text-change", function () {
+    const standardHost = row.querySelector(".manuscript-option-editor");
+    const standardHidden = row.querySelector("[data-option-html]");
+    const leftHost = row.querySelector(".manuscript-option-left-editor");
+    const rightHost = row.querySelector(".manuscript-option-right-editor");
+    const leftHidden = row.querySelector("[data-option-left-html]");
+    const rightHidden = row.querySelector("[data-option-right-html]");
+    const bindings = {};
+    function bindSingle(host, hidden, placeholder, cacheKey) {
+      if (!host || !hidden) return;
+      const initialHTML = String(hidden.value || "").trim();
+      const quill = deps.createQuillEditor(host, placeholder, {
+        defaultFontSize: "12pt",
+      });
+      if (!quill) return;
+      if (initialHTML) {
+        quill.clipboard.dangerouslyPasteHTML(initialHTML);
+      }
       hidden.value = getQuillHTML(quill);
-      syncAnswerKeyPreview();
-    });
-    manuscriptOptionQuillByRow.set(row, quill);
+      quill.on("text-change", function () {
+        hidden.value = getQuillHTML(quill);
+        syncAnswerKeyPreview();
+      });
+      bindings[cacheKey] = quill;
+    }
+    bindSingle(standardHost, standardHidden, "Isi opsi jawaban...", "standard");
+    bindSingle(leftHost, leftHidden, "Isi kolom kiri...", "left");
+    bindSingle(rightHost, rightHidden, "Isi kolom kanan...", "right");
+    if (Object.keys(bindings).length > 0) {
+      manuscriptOptionQuillByRow.set(row, bindings);
+    }
   }
 
   function bindOptionEditors() {
@@ -390,8 +513,8 @@
     if (!deps || !deps.manuscriptOptionsWrap) return;
     if (!deps.manuscriptOptionsWrap.querySelector("[data-option-row]")) {
       deps.manuscriptOptionsWrap.innerHTML =
-        createOptionRow({ option_key: "A", option_html: "" }, 0) +
-        createOptionRow({ option_key: "B", option_html: "" }, 1);
+        createOptionRow({ option_key: "A" }, 0) +
+        createOptionRow({ option_key: "B" }, 1);
     }
     bindOptionEditors();
   }
@@ -406,9 +529,60 @@
     return rows.map(function (row) {
       const keyInput = row.querySelector("[data-option-key]");
       const htmlInput = row.querySelector("[data-option-html]");
+      const leftInput = row.querySelector("[data-option-left-html]");
+      const rightInput = row.querySelector("[data-option-right-html]");
+      const key = String((keyInput && keyInput.value) || "").trim();
+      if (getOptionLayoutValue() === "comparison") {
+        const leftHTML = String((leftInput && leftInput.value) || "").trim();
+        const rightHTML = String((rightInput && rightInput.value) || "").trim();
+        return {
+          option_key: key,
+          left_html: leftHTML,
+          right_html: rightHTML,
+          option_html: renderComparisonOptionHTML(
+            {
+              left_html: leftHTML,
+              right_html: rightHTML,
+            },
+            {
+              leftLabel:
+                deps && deps.manuscriptOptionLeftLabel
+                  ? deps.manuscriptOptionLeftLabel.value
+                  : "",
+              rightLabel:
+                deps && deps.manuscriptOptionRightLabel
+                  ? deps.manuscriptOptionRightLabel.value
+                  : "",
+            },
+          ),
+        };
+      }
+      return {
+        option_key: key,
+        option_html: String((htmlInput && htmlInput.value) || "").trim(),
+      };
+    });
+  }
+
+  function readOptionRowsFromDOM() {
+    const rows = Array.from(
+      (deps &&
+        deps.manuscriptOptionsWrap &&
+        deps.manuscriptOptionsWrap.querySelectorAll("[data-option-row]")) ||
+        [],
+    );
+    return rows.map(function (row) {
+      const keyInput = row.querySelector("[data-option-key]");
+      const htmlInput = row.querySelector("[data-option-html]");
+      const leftInput = row.querySelector("[data-option-left-html]");
+      const rightInput = row.querySelector("[data-option-right-html]");
+      const standardHTML = String((htmlInput && htmlInput.value) || "").trim();
       return {
         option_key: String((keyInput && keyInput.value) || "").trim(),
-        option_html: String((htmlInput && htmlInput.value) || "").trim(),
+        option_html: standardHTML,
+        left_html:
+          String((leftInput && leftInput.value) || "").trim() || standardHTML,
+        right_html: String((rightInput && rightInput.value) || "").trim(),
       };
     });
   }
@@ -418,6 +592,7 @@
     const isChoiceType =
       currentManuscriptQuestionType === "pg_tunggal" ||
       currentManuscriptQuestionType === "multi_jawaban";
+    const isComparison = getOptionLayoutValue() === "comparison";
     if (!isChoiceType) return [];
     if (list.length < 2) {
       throw new Error("Minimal 2 opsi jawaban untuk MC/MR.");
@@ -428,20 +603,62 @@
         .trim()
         .toUpperCase();
       const body = String((it && it.option_html) || "").trim();
+      const leftHTML = String((it && it.left_html) || "").trim();
+      const rightHTML = String((it && it.right_html) || "").trim();
       if (!key)
         throw new Error("Kode opsi baris " + String(idx + 1) + " wajib diisi.");
       if (seen[key]) throw new Error("Kode opsi duplikat: " + key);
-      if (!body) throw new Error("Konten opsi " + key + " wajib diisi.");
+      if (isComparison) {
+        if (!leftHTML && !rightHTML) {
+          throw new Error(
+            "Minimal salah satu sisi tabel opsi " + key + " wajib diisi.",
+          );
+        }
+      } else if (!body) {
+        throw new Error("Konten opsi " + key + " wajib diisi.");
+      }
       seen[key] = true;
     });
     return list.map(function (it) {
-      return {
+      const out = {
         option_key: String(it.option_key || "")
           .trim()
           .toUpperCase(),
         option_html: String(it.option_html || "").trim(),
       };
+      if (isComparison) {
+        out.left_html = String(it.left_html || "").trim();
+        out.right_html = String(it.right_html || "").trim();
+      }
+      return out;
     });
+  }
+
+  function collectChoiceQuestionContent(options) {
+    if (!isChoiceQuestionType()) return null;
+    if (getOptionLayoutValue() !== "comparison") return null;
+    return {
+      layout: "comparison",
+      left_label: String(
+        (deps && deps.manuscriptOptionLeftLabel
+          ? deps.manuscriptOptionLeftLabel.value
+          : "") || getDefaultComparisonLabel("left"),
+      ).trim(),
+      right_label: String(
+        (deps && deps.manuscriptOptionRightLabel
+          ? deps.manuscriptOptionRightLabel.value
+          : "") || getDefaultComparisonLabel("right"),
+      ).trim(),
+      options: (Array.isArray(options) ? options : []).map(function (it) {
+        return {
+          option_key: String((it && it.option_key) || "")
+            .trim()
+            .toUpperCase(),
+          left_html: String((it && it.left_html) || "").trim(),
+          right_html: String((it && it.right_html) || "").trim(),
+        };
+      }),
+    };
   }
 
   function renderKeyChoices() {
@@ -891,11 +1108,11 @@
     }
     currentManuscriptQuestionType = selectedType || blueprintType;
     if (deps.manuscriptOptionsPanel) {
-      deps.manuscriptOptionsPanel.hidden = ![
-        "pg_tunggal",
-        "multi_jawaban",
-      ].includes(currentManuscriptQuestionType);
+      deps.manuscriptOptionsPanel.hidden = !isChoiceQuestionType(
+        currentManuscriptQuestionType,
+      );
     }
+    syncOptionLayoutUI();
     if (deps.manuscriptKeyMC) {
       deps.manuscriptKeyMC.hidden =
         currentManuscriptQuestionType !== "pg_tunggal";
@@ -1052,6 +1269,33 @@
     if (!questionContentObj || typeof questionContentObj !== "object")
       return {};
     if (
+      String(questionContentObj.layout || "")
+        .trim()
+        .toLowerCase() === "comparison"
+    ) {
+      return {
+        layout: "comparison",
+        left_label: String(questionContentObj.left_label || "").trim(),
+        right_label: String(questionContentObj.right_label || "").trim(),
+        options: (Array.isArray(questionContentObj.options)
+          ? questionContentObj.options
+          : []
+        )
+          .map(function (it) {
+            return {
+              option_key: String((it && it.option_key) || "")
+                .trim()
+                .toUpperCase(),
+              left_html: String((it && it.left_html) || "").trim(),
+              right_html: String((it && it.right_html) || "").trim(),
+            };
+          })
+          .sort(function (a, b) {
+            return a.option_key.localeCompare(b.option_key);
+          }),
+      };
+    }
+    if (
       currentManuscriptQuestionType === "short_answer" ||
       Object.prototype.hasOwnProperty.call(questionContentObj, "input_type") ||
       Object.prototype.hasOwnProperty.call(questionContentObj, "max_length") ||
@@ -1088,12 +1332,20 @@
     const list = Array.isArray(options) ? options : [];
     return list
       .map(function (it) {
-        return {
+        const out = {
           option_key: String((it && it.option_key) || "")
             .trim()
             .toUpperCase(),
           option_html: String((it && it.option_html) || "").trim(),
         };
+        if (
+          Object.prototype.hasOwnProperty.call(it || {}, "left_html") ||
+          Object.prototype.hasOwnProperty.call(it || {}, "right_html")
+        ) {
+          out.left_html = String((it && it.left_html) || "").trim();
+          out.right_html = String((it && it.right_html) || "").trim();
+        }
+        return out;
       })
       .sort(function (a, b) {
         return a.option_key.localeCompare(b.option_key);
@@ -1175,15 +1427,48 @@
     );
   }
 
-  function renderOptionsFromData(options) {
+  function renderOptionsFromData(options, questionContentObj) {
     if (!deps || !deps.manuscriptOptionsWrap) return;
     const list = Array.isArray(options) ? options : [];
+    const comparison = readComparisonQuestionContent(questionContentObj);
+    if (deps.manuscriptOptionLayout) {
+      deps.manuscriptOptionLayout.value = comparison.active
+        ? "comparison"
+        : "standard";
+    }
+    if (deps.manuscriptOptionLeftLabel) {
+      deps.manuscriptOptionLeftLabel.value =
+        comparison.leftLabel || "Ulasan Buku I";
+    }
+    if (deps.manuscriptOptionRightLabel) {
+      deps.manuscriptOptionRightLabel.value =
+        comparison.rightLabel || "Ulasan Buku II";
+    }
+    syncOptionLayoutUI();
     if (!list.length) {
       ensureOptionRows();
       return;
     }
     deps.manuscriptOptionsWrap.innerHTML = list
       .map(function (it, idx) {
+        if (comparison.active) {
+          const found = comparison.options.find(function (row) {
+            return (
+              String((row && row.option_key) || "")
+                .trim()
+                .toUpperCase() ===
+              String((it && it.option_key) || "")
+                .trim()
+                .toUpperCase()
+            );
+          });
+          return createOptionRow(
+            Object.assign({}, it || {}, found || {}, {
+              layout: "comparison",
+            }),
+            idx,
+          );
+        }
         return createOptionRow(it || {}, idx);
       })
       .join("");
@@ -1402,7 +1687,7 @@
         );
       }
     } else {
-      renderOptionsFromData(item.options);
+      renderOptionsFromData(item.options, item.question_content);
     }
     applyTypeUI(false);
     applyAnswerKeyToUI(keyObj);
@@ -1426,6 +1711,7 @@
       item && item.question_content && typeof item.question_content === "object"
         ? item.question_content
         : {};
+    const comparison = readComparisonQuestionContent(questionContent);
     const statements = Array.isArray(keyObj && keyObj.statements)
       ? keyObj.statements
       : [];
@@ -1469,15 +1755,45 @@
       ? deps.escapeHtml(String(infoGoal))
       : '<span class="muted">-</span>';
     const optionsHTML = options.length
-      ? "<ol>" +
-        options
-          .map(function (it) {
-            const key = deps.escapeHtml(String((it && it.option_key) || ""));
-            const html = String((it && it.option_html) || "");
-            return "<li><strong>" + key + "</strong> " + html + "</li>";
-          })
-          .join("") +
-        "</ol>"
+      ? comparison.active
+        ? '<div class="option-preview-list">' +
+          options
+            .map(function (it) {
+              const key = String((it && it.option_key) || "")
+                .trim()
+                .toUpperCase();
+              const row = comparison.options.find(function (entry) {
+                return (
+                  String((entry && entry.option_key) || "")
+                    .trim()
+                    .toUpperCase() === key
+                );
+              });
+              const inputType =
+                questionType === "multi_jawaban" ? "checkbox" : "radio";
+              return (
+                '<label class="option-row option-row-comparison">' +
+                '<input type="' +
+                inputType +
+                '" disabled />' +
+                renderComparisonOptionHTML(row || {}, {
+                  leftLabel: comparison.leftLabel,
+                  rightLabel: comparison.rightLabel,
+                }) +
+                "</label>"
+              );
+            })
+            .join("") +
+          "</div>"
+        : "<ol>" +
+          options
+            .map(function (it) {
+              const key = deps.escapeHtml(String((it && it.option_key) || ""));
+              const html = String((it && it.option_html) || "");
+              return "<li><strong>" + key + "</strong> " + html + "</li>";
+            })
+            .join("") +
+          "</ol>"
       : '<div class="muted">Tidak ada opsi tersimpan.</div>';
     const statementsHTML = statements.length
       ? "<ol>" +
@@ -1745,6 +2061,9 @@
     var questionContentPayload = null;
     try {
       optionsPayload = validateOptions(collectOptions());
+      if (isChoiceQuestionType(selectedType)) {
+        questionContentPayload = collectChoiceQuestionContent(optionsPayload);
+      }
       if (selectedType === "menjodohkan_drag_drop") {
         questionContentPayload = collectMatchQuestionContent();
       } else if (selectedType === "short_answer") {
@@ -2065,6 +2384,80 @@
     applyTypeUI(false);
   }
 
+  function rebuildOptionRowsForLayoutChange() {
+    if (!deps || !deps.manuscriptOptionsWrap) return;
+    const currentOptions = readOptionRowsFromDOM();
+    const selectedMC = document.querySelector(
+      'input[name="manuscript_mc_key"]:checked',
+    );
+    const selectedMR = Array.from(
+      document.querySelectorAll('input[name="manuscript_mr_key"]:checked'),
+    ).map(function (el) {
+      return String(el.value || "")
+        .trim()
+        .toUpperCase();
+    });
+    const nextLayout = getOptionLayoutValue();
+    deps.manuscriptOptionsWrap.innerHTML = (
+      Array.isArray(currentOptions) ? currentOptions : []
+    )
+      .map(function (it, idx) {
+        const nextItem = Object.assign({}, it || {});
+        if (
+          nextLayout === "standard" &&
+          !String(nextItem.option_html || "").trim() &&
+          (String(nextItem.left_html || "").trim() ||
+            String(nextItem.right_html || "").trim())
+        ) {
+          nextItem.option_html = renderComparisonOptionHTML(nextItem, {
+            leftLabel:
+              deps && deps.manuscriptOptionLeftLabel
+                ? deps.manuscriptOptionLeftLabel.value
+                : "",
+            rightLabel:
+              deps && deps.manuscriptOptionRightLabel
+                ? deps.manuscriptOptionRightLabel.value
+                : "",
+          });
+        }
+        return createOptionRow(nextItem, idx);
+      })
+      .join("");
+    ensureOptionRows();
+    renderKeyChoices();
+    if (
+      selectedMC &&
+      deps.manuscriptKeyMCOptions &&
+      deps.manuscriptKeyMCOptions.querySelector
+    ) {
+      const target = deps.manuscriptKeyMCOptions.querySelector(
+        'input[name="manuscript_mc_key"][value="' +
+          String(selectedMC.value || "")
+            .trim()
+            .toUpperCase() +
+          '"]',
+      );
+      if (target) target.checked = true;
+    }
+    if (deps.manuscriptKeyMROptions) {
+      deps.manuscriptKeyMROptions
+        .querySelectorAll('input[name="manuscript_mr_key"]')
+        .forEach(function (el) {
+          el.checked = selectedMR.includes(
+            String(el.value || "")
+              .trim()
+              .toUpperCase(),
+          );
+        });
+    }
+    syncAnswerKeyPreview();
+  }
+
+  function onOptionLayoutChange() {
+    syncOptionLayoutUI();
+    rebuildOptionRowsForLayoutChange();
+  }
+
   function onStimulusTypeChange() {
     applyStimulusTypeUI();
   }
@@ -2076,8 +2469,13 @@
       target.name === "manuscript_mc_key" ||
       target.name === "manuscript_mr_key" ||
       target === (deps && deps.manuscriptStimulusType) ||
+      target === (deps && deps.manuscriptOptionLayout) ||
+      target === (deps && deps.manuscriptOptionLeftLabel) ||
+      target === (deps && deps.manuscriptOptionRightLabel) ||
       target.hasAttribute("data-option-key") ||
       target.hasAttribute("data-option-html") ||
+      target.hasAttribute("data-option-left-html") ||
+      target.hasAttribute("data-option-right-html") ||
       target.hasAttribute("data-stimulus-tab-title") ||
       target.hasAttribute("data-stimulus-tab-body") ||
       target.hasAttribute("data-statement-id") ||
@@ -2094,7 +2492,11 @@
     ) {
       if (
         target.hasAttribute("data-option-key") ||
-        target.hasAttribute("data-option-html")
+        target.hasAttribute("data-option-html") ||
+        target.hasAttribute("data-option-left-html") ||
+        target.hasAttribute("data-option-right-html") ||
+        target === (deps && deps.manuscriptOptionLeftLabel) ||
+        target === (deps && deps.manuscriptOptionRightLabel)
       ) {
         renderKeyChoices();
       }
@@ -2147,6 +2549,12 @@
         onStimulusTypeChange,
       );
     }
+    if (deps.manuscriptOptionLayout) {
+      deps.manuscriptOptionLayout.addEventListener(
+        "change",
+        onOptionLayoutChange,
+      );
+    }
     if (deps.manuscriptForm) {
       deps.manuscriptForm.addEventListener("submit", onSubmitForm);
       deps.manuscriptForm.addEventListener("change", onFormChangeOrInput);
@@ -2165,7 +2573,7 @@
               .length || 0;
           deps.manuscriptOptionsWrap.insertAdjacentHTML(
             "beforeend",
-            createOptionRow({ option_key: "", option_html: "" }, idx),
+            createOptionRow({ option_key: "" }, idx),
           );
           bindOptionEditors();
           renderKeyChoices();

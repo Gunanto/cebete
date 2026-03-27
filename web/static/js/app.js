@@ -661,10 +661,45 @@
 
       const multiple = qType === "multi_jawaban";
       const inputType = multiple ? "checkbox" : "radio";
+      const comparison = readChoiceComparisonContent(q);
       const rows = (q.options || []).map(function (opt) {
         const isChecked = selected.has(opt.option_key);
         const checked = isChecked ? "checked" : "";
-        const labelClass = isChecked ? "option-row is-selected" : "option-row";
+        const labelClass =
+          (isChecked ? "option-row is-selected" : "option-row") +
+          (comparison.active ? " option-row-comparison" : "");
+        const comparisonRow = comparison.active
+          ? (comparison.options || []).find(function (it) {
+              return (
+                String((it && it.option_key) || "")
+                  .trim()
+                  .toUpperCase() ===
+                String((opt && opt.option_key) || "")
+                  .trim()
+                  .toUpperCase()
+              );
+            }) || null
+          : null;
+        const optionContent = comparison.active
+          ? [
+              '<div class="option-comparison-content">',
+              '<div class="option-comparison-table">',
+              '<div class="option-comparison-head">' +
+                escapeHtml(comparison.leftLabel || "Kolom Kiri") +
+                "</div>",
+              '<div class="option-comparison-head">' +
+                escapeHtml(comparison.rightLabel || "Kolom Kanan") +
+                "</div>",
+              '<div class="option-comparison-cell">' +
+                String((comparisonRow && comparisonRow.left_html) || "") +
+                "</div>",
+              '<div class="option-comparison-cell">' +
+                String((comparisonRow && comparisonRow.right_html) || "") +
+                "</div>",
+              "</div>",
+              "</div>",
+            ].join("")
+          : "<div>" + opt.option_html + "</div>";
         return [
           '<label class="' + labelClass + '">',
           '<input type="' +
@@ -674,7 +709,7 @@
             '" ' +
             checked +
             ">",
-          "<div>" + opt.option_html + "</div>",
+          optionContent,
           "</label>",
         ].join("");
       });
@@ -703,6 +738,20 @@
           statement_html: String((opt && opt.option_html) || ""),
         };
       });
+    }
+
+    function readChoiceComparisonContent(q) {
+      const content = parseJSONLoose(q && q.question_content, {});
+      const layout = String((content && content.layout) || "")
+        .trim()
+        .toLowerCase();
+      return {
+        active: layout === "comparison",
+        leftLabel: String((content && content.left_label) || "").trim(),
+        rightLabel: String((content && content.right_label) || "").trim(),
+        options:
+          content && Array.isArray(content.options) ? content.options : [],
+      };
     }
 
     function readMatchingContent(q) {
@@ -2249,6 +2298,18 @@
     );
     const manuscriptOptionsWrap = document.getElementById(
       "guru-manuscript-options",
+    );
+    const manuscriptOptionLayout = document.getElementById(
+      "guru-manuscript-option-layout",
+    );
+    const manuscriptOptionComparisonFields = document.getElementById(
+      "guru-manuscript-option-comparison-fields",
+    );
+    const manuscriptOptionLeftLabel = document.getElementById(
+      "guru-manuscript-option-left-label",
+    );
+    const manuscriptOptionRightLabel = document.getElementById(
+      "guru-manuscript-option-right-label",
     );
     const manuscriptAddOptionBtn = document.getElementById(
       "guru-manuscript-add-option-btn",
@@ -4103,6 +4164,10 @@
         manuscriptHintHTMLInput: manuscriptHintHTMLInput,
         manuscriptOptionsPanel: manuscriptOptionsPanel,
         manuscriptOptionsWrap: manuscriptOptionsWrap,
+        manuscriptOptionLayout: manuscriptOptionLayout,
+        manuscriptOptionComparisonFields: manuscriptOptionComparisonFields,
+        manuscriptOptionLeftLabel: manuscriptOptionLeftLabel,
+        manuscriptOptionRightLabel: manuscriptOptionRightLabel,
         manuscriptAddOptionBtn: manuscriptAddOptionBtn,
         manuscriptAddOptionBtnBottom: manuscriptAddOptionBtnBottom,
         manuscriptKeyMC: manuscriptKeyMC,

@@ -77,6 +77,19 @@
     return deps.escapeHtml(String(rawLabel || ""));
   }
 
+  function readChoiceComparisonContent(item) {
+    const content = parseJSONLoose(item && item.question_content, {});
+    const layout = String((content && content.layout) || "")
+      .trim()
+      .toLowerCase();
+    return {
+      active: layout === "comparison",
+      leftLabel: String((content && content.left_label) || "").trim(),
+      rightLabel: String((content && content.right_label) || "").trim(),
+      options: content && Array.isArray(content.options) ? content.options : [],
+    };
+  }
+
   function renderExamQuestionViewOptions(item) {
     if (!deps) return "";
     const qType = String((item && item.question_type) || "")
@@ -108,6 +121,53 @@
     const options = Array.isArray(item && item.options) ? item.options : [];
     if (!options.length) {
       return '<div class="muted">Opsi tidak tersedia.</div>';
+    }
+    const comparison = readChoiceComparisonContent(item);
+    if (comparison.active) {
+      const inputType = qType === "multi_jawaban" ? "checkbox" : "radio";
+      return (
+        '<div class="option-preview-list">' +
+        options
+          .map(function (opt) {
+            const comparisonRow = (comparison.options || []).find(
+              function (it) {
+                return (
+                  String((it && it.option_key) || "")
+                    .trim()
+                    .toUpperCase() ===
+                  String((opt && opt.option_key) || "")
+                    .trim()
+                    .toUpperCase()
+                );
+              },
+            );
+            return (
+              '<label class="option-row option-row-comparison">' +
+              '<input type="' +
+              inputType +
+              '" disabled />' +
+              '<div class="option-comparison-content">' +
+              '<div class="option-comparison-table">' +
+              '<div class="option-comparison-head">' +
+              deps.escapeHtml(comparison.leftLabel || "Kolom Kiri") +
+              "</div>" +
+              '<div class="option-comparison-head">' +
+              deps.escapeHtml(comparison.rightLabel || "Kolom Kanan") +
+              "</div>" +
+              '<div class="option-comparison-cell">' +
+              String((comparisonRow && comparisonRow.left_html) || "") +
+              "</div>" +
+              '<div class="option-comparison-cell">' +
+              String((comparisonRow && comparisonRow.right_html) || "") +
+              "</div>" +
+              "</div>" +
+              "</div>" +
+              "</label>"
+            );
+          })
+          .join("") +
+        "</div>"
+      );
     }
     return (
       "<ol>" +

@@ -994,6 +994,41 @@
                                 Tambah Opsi
                             </button>
                         </div>
+                        <div class="form-grid mt">
+                            <label>
+                                Model Opsi
+                                <select id="guru-manuscript-option-layout">
+                                    <option value="standard">Standar</option>
+                                    <option value="comparison">
+                                        Tabel Perbandingan
+                                    </option>
+                                </select>
+                            </label>
+                        </div>
+                        <div
+                            id="guru-manuscript-option-comparison-fields"
+                            class="form-grid mt"
+                            hidden
+                        >
+                            <label>
+                                Judul Kolom Kiri
+                                <input
+                                    id="guru-manuscript-option-left-label"
+                                    type="text"
+                                    value="Ulasan Buku I"
+                                    placeholder="Kolom kiri"
+                                />
+                            </label>
+                            <label>
+                                Judul Kolom Kanan
+                                <input
+                                    id="guru-manuscript-option-right-label"
+                                    type="text"
+                                    value="Ulasan Buku II"
+                                    placeholder="Kolom kanan"
+                                />
+                            </label>
+                        </div>
                         <div id="guru-manuscript-options" class="mt"></div>
                         <button
                             id="guru-manuscript-add-option-btn-bottom"

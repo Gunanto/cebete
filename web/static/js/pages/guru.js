@@ -314,6 +314,18 @@
     const manuscriptOptionsWrap = document.getElementById(
       "guru-manuscript-options",
     );
+    const manuscriptOptionLayout = document.getElementById(
+      "guru-manuscript-option-layout",
+    );
+    const manuscriptOptionComparisonFields = document.getElementById(
+      "guru-manuscript-option-comparison-fields",
+    );
+    const manuscriptOptionLeftLabel = document.getElementById(
+      "guru-manuscript-option-left-label",
+    );
+    const manuscriptOptionRightLabel = document.getElementById(
+      "guru-manuscript-option-right-label",
+    );
     const manuscriptAddOptionBtn = document.getElementById(
       "guru-manuscript-add-option-btn",
     );
@@ -1541,6 +1553,10 @@
         manuscriptHintHTMLInput: manuscriptHintHTMLInput,
         manuscriptOptionsPanel: manuscriptOptionsPanel,
         manuscriptOptionsWrap: manuscriptOptionsWrap,
+        manuscriptOptionLayout: manuscriptOptionLayout,
+        manuscriptOptionComparisonFields: manuscriptOptionComparisonFields,
+        manuscriptOptionLeftLabel: manuscriptOptionLeftLabel,
+        manuscriptOptionRightLabel: manuscriptOptionRightLabel,
         manuscriptAddOptionBtn: manuscriptAddOptionBtn,
         manuscriptAddOptionBtnBottom: manuscriptAddOptionBtnBottom,
         manuscriptKeyMC: manuscriptKeyMC,
