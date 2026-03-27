@@ -811,6 +811,7 @@
           code: String(fd.get("code") || "").trim(),
           title: String(fd.get("title") || "").trim(),
           subject_id: Number(fd.get("subject_id") || 0),
+          kktp: Number(fd.get("kktp") || 70),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
           max_attempts: Number(fd.get("max_attempts") || 1),
           start_at: startAt,
@@ -868,6 +869,7 @@
             const codeField = deps.examForm.elements.namedItem("code");
             const titleField = deps.examForm.elements.namedItem("title");
             const subjectField = deps.examForm.elements.namedItem("subject_id");
+            const kktpField = deps.examForm.elements.namedItem("kktp");
             const durationField =
               deps.examForm.elements.namedItem("duration_minutes");
             const maxAttemptField =
@@ -882,6 +884,9 @@
             if (titleField) titleField.value = String(examRow.title || "");
             if (subjectField) {
               subjectField.value = String(examRow.subject_id || "");
+            }
+            if (kktpField) {
+              kktpField.value = String(examRow.kktp || 70);
             }
             if (durationField) {
               durationField.value = String(examRow.duration_minutes || 90);

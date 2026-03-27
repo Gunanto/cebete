@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE exams
+  DROP CONSTRAINT IF EXISTS chk_exams_kktp_range;
+
+ALTER TABLE exams
+  DROP COLUMN IF EXISTS kktp;
+
+COMMIT;

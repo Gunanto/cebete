@@ -9,6 +9,10 @@
   var latestItemAnalysisExamID = 0;
   var currentUserCache = null;
   var latestItemAnalysisIdentity = null;
+  var latestLearningGoalResult = null;
+  var latestLearningGoalByKey = {};
+  var latestLearningGoalExamID = 0;
+  var latestLearningGoalIdentity = null;
   var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
 
@@ -71,6 +75,41 @@
   function setItemAnalysisIdentityHTML(value) {
     if (!deps || !deps.itemAnalysisIdentity) return;
     deps.itemAnalysisIdentity.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalSubtitle(value) {
+    if (!deps || !deps.learningGoalSubtitle) return;
+    deps.text(deps.learningGoalSubtitle, value);
+  }
+
+  function setLearningGoalSummaryHTML(value) {
+    if (!deps || !deps.learningGoalSummary) return;
+    deps.learningGoalSummary.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalBodyHTML(value) {
+    if (!deps || !deps.learningGoalBody) return;
+    deps.learningGoalBody.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalDetailHTML(value, muted) {
+    if (!deps || !deps.learningGoalDetail) return;
+    deps.learningGoalDetail.innerHTML = String(value || "");
+    if (muted) {
+      deps.learningGoalDetail.classList.add("muted");
+      return;
+    }
+    deps.learningGoalDetail.classList.remove("muted");
+  }
+
+  function setLearningGoalIdentityHTML(value) {
+    if (!deps || !deps.learningGoalIdentity) return;
+    deps.learningGoalIdentity.innerHTML = String(value || "");
+  }
+
+  function setLearningGoalKKTP(value) {
+    if (!deps || !deps.learningGoalKKTP) return;
+    deps.learningGoalKKTP.textContent = String(value || "70.00%");
   }
 
   function fillSelectOptions(selectEl, options, current, defaultLabel) {
@@ -332,10 +371,12 @@
     return maxTs;
   }
 
-  function renderIdentityHTML(identity) {
+  function renderIdentityHTML(identity, title) {
     if (!identity) return "";
     return [
-      '<div class="analysis-identity-title">ANALISIS BUTIR SOAL</div>',
+      '<div class="analysis-identity-title">' +
+        deps.escapeHtml(title || "ANALISIS BUTIR SOAL") +
+        "</div>",
       '<div class="analysis-identity-grid">',
       '<table class="analysis-identity-table">',
       "<tr><td>Nama Sekolah</td><td>: " +
@@ -624,6 +665,183 @@
       '<div class="analysis-distractors">',
       rows.join(""),
       "</div>",
+    ].join("");
+  }
+
+  function percentText(value) {
+    return Number(value || 0).toFixed(2) + "%";
+  }
+
+  function learningGoalStatusLabel(achieved) {
+    return achieved ? "Tercapai" : "Belum Tercapai";
+  }
+
+  function learningGoalStatusClass(achieved) {
+    return achieved ? "accepted" : "revision";
+  }
+
+  function renderLearningGoalSummary(data) {
+    const result = data || {};
+    const items = Array.isArray(result.items) ? result.items : [];
+    const totalStudents = Number(result.total_students || 0);
+    const achievedStudentRates = items.length
+      ? items.reduce(function (acc, it) {
+          const total = Number(it.student_count || 0);
+          if (!total) return acc;
+          return acc + (Number(it.achieved_student_count || 0) / total) * 100;
+        }, 0) / items.length
+      : 0;
+    return [
+      buildStatCard("KKTP", percentText(result.kktp || 0), "is-primary"),
+      buildStatCard("Total TP", String(result.total_goals || 0), ""),
+      buildStatCard("TP Tercapai", String(result.achieved_goals || 0), ""),
+      buildStatCard(
+        "TP Belum Tercapai",
+        String(result.unachieved_goals || 0),
+        "",
+      ),
+      buildStatCard("Peserta/Attempt", String(totalStudents), ""),
+      buildStatCard(
+        "Rerata Siswa Tercapai",
+        percentText(achievedStudentRates),
+        "",
+      ),
+    ].join("");
+  }
+
+  function renderLearningGoalRows(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      return '<tr><td colspan="7" class="muted">Belum ada data ketercapaian TP.</td></tr>';
+    }
+    return list
+      .map(function (it, idx) {
+        const key =
+          String(
+            it.learning_goal_id != null ? it.learning_goal_id : "none-" + idx,
+          ) +
+          "::" +
+          String(it.learning_goal_text || "");
+        return [
+          '<tr class="analysis-row ' +
+            (it.achieved ? "analysis-row-valid" : "analysis-row-invalid") +
+            '" data-goal-key="' +
+            deps.escapeHtml(key) +
+            '">',
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_text || "Tanpa TP")) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_materi || "-")) +
+            "</td>",
+          "<td>" + deps.escapeHtml(String(it.question_count || 0)) + "</td>",
+          "<td>" +
+            deps.escapeHtml(Number(it.total_weight || 0).toFixed(2)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(percentText(it.average_percent || 0)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(
+              String(it.achieved_student_count || 0) +
+                "/" +
+                String(it.student_count || 0),
+            ) +
+            "</td>",
+          '<td><span class="analysis-status analysis-status-' +
+            learningGoalStatusClass(!!it.achieved) +
+            '">' +
+            deps.escapeHtml(learningGoalStatusLabel(!!it.achieved)) +
+            "</span></td>",
+          "</tr>",
+        ].join("");
+      })
+      .join("");
+  }
+
+  function renderLearningGoalDetail(item, kktp) {
+    if (!item) {
+      return '<div class="muted">Pilih salah satu baris untuk melihat detail ketercapaian per peserta.</div>';
+    }
+    const students = Array.isArray(item.students) ? item.students : [];
+    const studentRows = students.length
+      ? [
+          '<div class="analysis-table-wrap mt"><table class="bs-table analysis-table">',
+          "<thead><tr><th>Peserta</th><th>Kelas</th><th>Attempt</th><th>Bobot Dicapai</th><th>Total Bobot</th><th>Persentase</th><th>Status</th></tr></thead>",
+          "<tbody>",
+          students
+            .map(function (student) {
+              return [
+                "<tr>",
+                "<td>" +
+                  deps.escapeHtml(String(student.full_name || "-")) +
+                  "</td>",
+                "<td>" +
+                  deps.escapeHtml(String(student.class_name || "-")) +
+                  "</td>",
+                "<td>" +
+                  deps.escapeHtml(String(student.attempt_ke || 0)) +
+                  "</td>",
+                "<td>" +
+                  deps.escapeHtml(
+                    Number(student.earned_weight || 0).toFixed(2),
+                  ) +
+                  "</td>",
+                "<td>" +
+                  deps.escapeHtml(
+                    Number(student.total_weight || 0).toFixed(2),
+                  ) +
+                  "</td>",
+                "<td>" +
+                  deps.escapeHtml(percentText(student.percent || 0)) +
+                  "</td>",
+                '<td><span class="analysis-status analysis-status-' +
+                  learningGoalStatusClass(!!student.achieved) +
+                  '">' +
+                  deps.escapeHtml(learningGoalStatusLabel(!!student.achieved)) +
+                  "</span></td>",
+                "</tr>",
+              ].join("");
+            })
+            .join(""),
+          "</tbody></table></div>",
+        ].join("")
+      : '<div class="muted">Belum ada peserta pada TP ini.</div>';
+    return [
+      '<div class="analysis-detail-header">',
+      "<h4>" +
+        deps.escapeHtml(String(item.learning_goal_text || "Tanpa TP")) +
+        "</h4>",
+      '<div class="analysis-detail-text">' +
+        "Materi: " +
+        deps.escapeHtml(String(item.learning_goal_materi || "-")) +
+        "</div>",
+      "</div>",
+      '<div class="analysis-detail-meta">',
+      "<div>Jumlah Butir: <strong>" +
+        deps.escapeHtml(String(item.question_count || 0)) +
+        "</strong></div>",
+      "<div>Total Bobot: <strong>" +
+        deps.escapeHtml(Number(item.total_weight || 0).toFixed(2)) +
+        "</strong></div>",
+      "<div>Rata-rata Capaian: <strong>" +
+        deps.escapeHtml(percentText(item.average_percent || 0)) +
+        "</strong></div>",
+      "<div>KKTP: <strong>" +
+        deps.escapeHtml(percentText(kktp || 0)) +
+        "</strong></div>",
+      "<div>Siswa Tercapai: <strong>" +
+        deps.escapeHtml(
+          String(item.achieved_student_count || 0) +
+            "/" +
+            String(item.student_count || 0),
+        ) +
+        "</strong></div>",
+      "<div>Status TP: <strong>" +
+        deps.escapeHtml(learningGoalStatusLabel(!!item.achieved)) +
+        "</strong></div>",
+      "</div>",
+      studentRows,
     ].join("");
   }
 
@@ -1113,6 +1331,11 @@
       latestItemAnalysis = null;
       latestItemAnalysisByID = {};
       latestItemAnalysisExamID = 0;
+      latestItemAnalysisIdentity = null;
+      latestLearningGoalResult = null;
+      latestLearningGoalByKey = {};
+      latestLearningGoalExamID = 0;
+      latestLearningGoalIdentity = null;
       if (deps && typeof deps.refreshStats === "function") {
         deps.refreshStats();
       }
@@ -1137,6 +1360,11 @@
     latestItemAnalysis = null;
     latestItemAnalysisByID = {};
     latestItemAnalysisExamID = Number(examID || 0);
+    latestItemAnalysisIdentity = null;
+    latestLearningGoalResult = null;
+    latestLearningGoalByKey = {};
+    latestLearningGoalExamID = Number(examID || 0);
+    latestLearningGoalIdentity = null;
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
@@ -1554,6 +1782,321 @@
     win.print();
   }
 
+  async function buildLearningGoalIdentity(examID, rows) {
+    let exam = findExamByID(examID);
+    if (!exam && deps && typeof deps.refreshExams === "function") {
+      try {
+        await deps.refreshExams();
+        exam = findExamByID(examID);
+      } catch (_) {
+        exam = exam || null;
+      }
+    }
+    const examSafe = exam || {};
+    const filteredRows = Array.isArray(rows) ? rows : [];
+    const fallback = getExamSelectInfo(examID) || {};
+    const user = await ensureCurrentUser();
+    let startAtValue = "";
+    if (examSafe && examSafe.start_at) {
+      startAtValue = deps.fmtDate(examSafe.start_at);
+    } else if (filteredRows.length) {
+      const first = filteredRows.slice().sort(function (a, b) {
+        return new Date(a.started_at) - new Date(b.started_at);
+      })[0];
+      startAtValue = deps.fmtDate(first && first.started_at);
+    }
+    const maxEnd = maxEndedAt(filteredRows);
+    const schoolInfo = await ensureExamSchoolInfo(examID);
+    const signatureRawDate =
+      maxEnd ||
+      (examSafe && examSafe.end_at) ||
+      (examSafe && examSafe.start_at);
+    return {
+      schoolName: schoolInfo.name || "",
+      schoolPlace: schoolInfo.city || "",
+      examTitle: String((examSafe && examSafe.title) || fallback.title || ""),
+      examCode: String((examSafe && examSafe.code) || fallback.code || ""),
+      subjectName: String((examSafe && examSafe.subject_name) || ""),
+      startedAt: startAtValue || "-",
+      endedAt: maxEnd ? deps.fmtDate(maxEnd) : "-",
+      duration: fmtDuration(examSafe && examSafe.duration_minutes),
+      teacherName: user && user.full_name ? user.full_name : "",
+      signatureDate: fmtDateOnly(signatureRawDate),
+    };
+  }
+
+  async function openLearningGoalDialog() {
+    if (!deps || !deps.learningGoalDialog) return;
+    const matrix = latestResultsMatrix;
+    const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
+    const filteredRows = filterResultsRows(rows);
+    const examID = Number(
+      (matrix && matrix.exam_id) || latestLearningGoalExamID || 0,
+    );
+    if (!matrix || !rows.length || examID <= 0) {
+      setLearningGoalSubtitle("Belum ada data hasil ujian.");
+      setLearningGoalKKTP("70.00%");
+      setLearningGoalSummaryHTML("");
+      setLearningGoalIdentityHTML("");
+      setLearningGoalBodyHTML(
+        '<tr><td colspan="7" class="muted">Muat hasil ujian peserta terlebih dahulu.</td></tr>',
+      );
+      setLearningGoalDetailHTML(
+        "Tidak ada data untuk dianalisis. Pilih ujian lalu muat hasil ujian.",
+        true,
+      );
+      deps.learningGoalDialog.showModal();
+      return;
+    }
+    if (!filteredRows.length) {
+      setLearningGoalSubtitle("Tidak ada data sesuai filter yang dipilih.");
+      setLearningGoalSummaryHTML("");
+      setLearningGoalIdentityHTML("");
+      setLearningGoalBodyHTML(
+        '<tr><td colspan="7" class="muted">Tidak ada data sesuai filter.</td></tr>',
+      );
+      setLearningGoalDetailHTML(
+        "Ubah filter Attempt/Kelas untuk melihat analisis ketercapaian TP.",
+        true,
+      );
+      deps.learningGoalDialog.showModal();
+      return;
+    }
+
+    const params = new URLSearchParams();
+    const attemptFilter = getActiveAttemptFilter();
+    const classFilter = getActiveClassFilter();
+    if (attemptFilter) params.set("attempt", attemptFilter);
+    if (classFilter) params.set("class", classFilter);
+    const query = params.toString();
+    const result = await deps.api(
+      "/api/v1/admin/exams/" +
+        examID +
+        "/learning-goal-results" +
+        (query ? "?" + query : ""),
+      "GET",
+    );
+
+    latestLearningGoalResult = result || null;
+    latestLearningGoalExamID = examID;
+    latestLearningGoalByKey = {};
+
+    const items = Array.isArray(result && result.items) ? result.items : [];
+    items.forEach(function (it, idx) {
+      const key =
+        String(
+          it.learning_goal_id != null ? it.learning_goal_id : "none-" + idx,
+        ) +
+        "::" +
+        String(it.learning_goal_text || "");
+      latestLearningGoalByKey[key] = it;
+    });
+
+    latestLearningGoalIdentity = await buildLearningGoalIdentity(
+      examID,
+      filteredRows,
+    );
+    setLearningGoalIdentityHTML(
+      renderIdentityHTML(
+        latestLearningGoalIdentity,
+        "ANALISIS KETERCAPAIAN TUJUAN PEMBELAJARAN",
+      ),
+    );
+    setLearningGoalKKTP(percentText(result && result.kktp));
+    setLearningGoalSubtitle(
+      "Exam #" +
+        String(examID) +
+        " | Peserta/Attempt: " +
+        String((result && result.total_students) || 0) +
+        " | TP: " +
+        String((result && result.total_goals) || 0) +
+        (resultsFilterLabel() ? " | " + resultsFilterLabel() : ""),
+    );
+    setLearningGoalSummaryHTML(renderLearningGoalSummary(result));
+    setLearningGoalBodyHTML(renderLearningGoalRows(items));
+    setLearningGoalDetailHTML(
+      "Klik salah satu baris untuk melihat detail ketercapaian per peserta.",
+      true,
+    );
+    deps.learningGoalDialog.showModal();
+  }
+
+  function exportLearningGoalAnalysis() {
+    const result = latestLearningGoalResult || {};
+    const items = Array.isArray(result.items) ? result.items : [];
+    if (!items.length) {
+      deps.setMsg("Tidak ada data ketercapaian TP untuk diexport.");
+      return;
+    }
+    const identity = latestLearningGoalIdentity || {};
+    const identityRows = [
+      ["Nama Sekolah", identity.schoolName || "-"],
+      ["Nama Ujian", identity.examTitle || "-"],
+      ["Kode Soal", identity.examCode || "-"],
+      ["Mata Pelajaran", identity.subjectName || "-"],
+      ["Pelaksanaan (Mulai)", identity.startedAt || "-"],
+      ["Diakhiri oleh Peserta", identity.endedAt || "-"],
+      ["Lama Pengerjaan", identity.duration || "-"],
+      ["Nama Guru", identity.teacherName || "-"],
+      ["KKTP", percentText(result.kktp || 0)],
+    ];
+    const lines = identityRows
+      .concat([[]])
+      .concat([
+        [
+          "TP",
+          "Materi",
+          "Jumlah Butir",
+          "Total Bobot",
+          "Rata-rata Capaian",
+          "Siswa Tercapai",
+          "Status",
+        ],
+      ])
+      .concat(
+        items.map(function (it) {
+          return [
+            it.learning_goal_text || "Tanpa TP",
+            it.learning_goal_materi || "-",
+            it.question_count || 0,
+            Number(it.total_weight || 0).toFixed(2),
+            percentText(it.average_percent || 0),
+            String(it.achieved_student_count || 0) +
+              "/" +
+              String(it.student_count || 0),
+            learningGoalStatusLabel(!!it.achieved),
+          ];
+        }),
+      )
+      .concat([[]], [["DETAIL PESERTA PER TP"]])
+      .concat(
+        items.flatMap(function (it) {
+          const head = [
+            [it.learning_goal_text || "Tanpa TP"],
+            [
+              "Peserta",
+              "Kelas",
+              "Attempt",
+              "Bobot Dicapai",
+              "Total Bobot",
+              "Persentase",
+              "Status",
+            ],
+          ];
+          const students = (Array.isArray(it.students) ? it.students : []).map(
+            function (student) {
+              return [
+                student.full_name || "-",
+                student.class_name || "-",
+                student.attempt_ke || 0,
+                Number(student.earned_weight || 0).toFixed(2),
+                Number(student.total_weight || 0).toFixed(2),
+                percentText(student.percent || 0),
+                learningGoalStatusLabel(!!student.achieved),
+              ];
+            },
+          );
+          return head.concat(students, [[]]);
+        }),
+      )
+      .map(function (row) {
+        return row.map(csvEscape).join(",");
+      })
+      .join("\n");
+    const blob = new Blob([lines], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const examID = Number(latestLearningGoalExamID || 0);
+    a.href = url;
+    a.download =
+      "analisis_ketercapaian_tp" + (examID ? "_exam_" + examID : "") + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    deps.setMsg("Export analisis ketercapaian TP berhasil.");
+  }
+
+  function printLearningGoalAnalysis() {
+    const result = latestLearningGoalResult || {};
+    const items = Array.isArray(result.items) ? result.items : [];
+    if (!items.length) {
+      deps.setMsg("Tidak ada data ketercapaian TP untuk dicetak.");
+      return;
+    }
+    const identityHTML = renderIdentityHTML(
+      latestLearningGoalIdentity,
+      "ANALISIS KETERCAPAIAN TUJUAN PEMBELAJARAN",
+    );
+    const rowsHTML = items
+      .map(function (it) {
+        return [
+          "<tr>",
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_text || "Tanpa TP")) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(String(it.learning_goal_materi || "-")) +
+            "</td>",
+          "<td>" + deps.escapeHtml(String(it.question_count || 0)) + "</td>",
+          "<td>" +
+            deps.escapeHtml(Number(it.total_weight || 0).toFixed(2)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(percentText(it.average_percent || 0)) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(
+              String(it.achieved_student_count || 0) +
+                "/" +
+                String(it.student_count || 0),
+            ) +
+            "</td>",
+          "<td>" +
+            deps.escapeHtml(learningGoalStatusLabel(!!it.achieved)) +
+            "</td>",
+          "</tr>",
+        ].join("");
+      })
+      .join("");
+    const html = [
+      "<!doctype html>",
+      '<html lang="id"><head><meta charset="utf-8" />',
+      "<title>Analisis Ketercapaian TP</title>",
+      "<style>",
+      "body{font-family:Arial, sans-serif; color:#111827; padding:24px;}",
+      ".analysis-identity-title{font-weight:800;letter-spacing:.02em;margin-bottom:8px;}",
+      ".analysis-identity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 20px;margin-bottom:16px;}",
+      ".analysis-identity-table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}",
+      ".analysis-identity-table td{padding:3px 0;vertical-align:top;}",
+      ".analysis-identity-table td:first-child{width:180px;color:#4b5563;font-weight:600;}",
+      "table{width:100%;border-collapse:collapse;font-size:12px;}",
+      "th,td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;}",
+      "th{background:#f3f4f6;text-align:left;}",
+      "</style></head><body>",
+      identityHTML,
+      "<p><strong>KKTP:</strong> " +
+        deps.escapeHtml(percentText(result.kktp || 0)) +
+        "</p>",
+      "<table>",
+      "<thead><tr><th>TP</th><th>Materi</th><th>Jumlah Butir</th><th>Total Bobot</th><th>Rata-rata Capaian</th><th>Siswa Tercapai</th><th>Status</th></tr></thead>",
+      "<tbody>",
+      rowsHTML,
+      "</tbody></table>",
+      "</body></html>",
+    ].join("");
+    const win = window.open("", "_blank");
+    if (!win) {
+      deps.setMsg("Gagal membuka jendela print.");
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
   function bindItemAnalysisRowClick() {
     if (!deps || !deps.itemAnalysisBody) return;
     deps.itemAnalysisBody.addEventListener("click", function (e) {
@@ -1570,6 +2113,30 @@
       row.classList.add("analysis-row-active");
       setItemAnalysisDetailHTML(
         renderItemDetail(latestItemAnalysisByID[itemID]),
+        false,
+      );
+    });
+  }
+
+  function bindLearningGoalRowClick() {
+    if (!deps || !deps.learningGoalBody) return;
+    deps.learningGoalBody.addEventListener("click", function (e) {
+      const target = e.target;
+      if (!target) return;
+      const row = target.closest(".analysis-row");
+      if (!row) return;
+      const key = row.getAttribute("data-goal-key");
+      if (!key || !latestLearningGoalByKey[key]) return;
+      const current = deps.learningGoalBody.querySelector(
+        ".analysis-row-active",
+      );
+      if (current) current.classList.remove("analysis-row-active");
+      row.classList.add("analysis-row-active");
+      setLearningGoalDetailHTML(
+        renderLearningGoalDetail(
+          latestLearningGoalByKey[key],
+          latestLearningGoalResult && latestLearningGoalResult.kktp,
+        ),
         false,
       );
     });
@@ -1786,6 +2353,17 @@
         }
       });
     }
+    if (deps.learningGoalBtn) {
+      deps.learningGoalBtn.addEventListener("click", async function () {
+        try {
+          await openLearningGoalDialog();
+        } catch (err) {
+          deps.setMsg(
+            "Gagal menyiapkan analisis ketercapaian TP: " + err.message,
+          );
+        }
+      });
+    }
     if (deps.itemAnalysisExportBtn) {
       deps.itemAnalysisExportBtn.addEventListener("click", function () {
         exportItemAnalysis();
@@ -1794,6 +2372,16 @@
     if (deps.itemAnalysisPrintBtn) {
       deps.itemAnalysisPrintBtn.addEventListener("click", function () {
         printItemAnalysis();
+      });
+    }
+    if (deps.learningGoalExportBtn) {
+      deps.learningGoalExportBtn.addEventListener("click", function () {
+        exportLearningGoalAnalysis();
+      });
+    }
+    if (deps.learningGoalPrintBtn) {
+      deps.learningGoalPrintBtn.addEventListener("click", function () {
+        printLearningGoalAnalysis();
       });
     }
     if (deps.itemAnalysisFilter) {
@@ -1817,6 +2405,7 @@
       );
     });
     bindItemAnalysisRowClick();
+    bindLearningGoalRowClick();
   }
 
   function init(opts) {

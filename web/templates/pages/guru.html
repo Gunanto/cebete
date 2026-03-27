@@ -1555,6 +1555,23 @@
                         </svg>
                         Analisis Butir Soal
                     </button>
+                    <button
+                        id="guru-results-learning-goal-btn"
+                        class="btn btn-secondary btn-inline btn-with-icon"
+                        type="button"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                                d="M5 12h14M12 5l7 7-7 7"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                            />
+                        </svg>
+                        Analisis Ketercapaian TP
+                    </button>
                 </div>
                 <div id="guru-results-extra" class="box mt muted">
                     Laporan/statistik/grafik akan diringkas dari tabel hasil
@@ -1743,6 +1760,75 @@
         <div class="actions">
             <button class="btn btn-secondary" type="submit">Tutup</button>
         </div>
+    </form>
+</dialog>
+
+<dialog id="guru-learning-goal-dialog" class="admin-dialog admin-dialog-wide">
+    <form method="dialog" class="form-grid">
+        <div class="analysis-header">
+            <div>
+                <h3>Analisis Ketercapaian Tujuan Pembelajaran</h3>
+                <p id="guru-learning-goal-subtitle" class="muted">
+                    Ringkasan ketercapaian TP berdasarkan hasil peserta.
+                </p>
+            </div>
+            <div class="analysis-filter">
+                KKTP
+                <strong id="guru-learning-goal-kktp">70.00%</strong>
+            </div>
+        </div>
+
+        <div id="guru-learning-goal-summary" class="analysis-stats"></div>
+
+        <div id="guru-learning-goal-identity" class="analysis-identity"></div>
+
+        <div class="analysis-toolbar">
+            <button
+                id="guru-learning-goal-export-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Export
+            </button>
+            <button
+                id="guru-learning-goal-print-btn"
+                class="btn btn-secondary"
+                type="button"
+            >
+                Print
+            </button>
+        </div>
+
+        <div class="analysis-table-wrap">
+            <table class="bs-table analysis-table">
+                <thead>
+                    <tr>
+                        <th>TP</th>
+                        <th>Materi</th>
+                        <th>Jumlah Butir</th>
+                        <th>Total Bobot</th>
+                        <th>Rata-rata Capaian</th>
+                        <th>Siswa Tercapai</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="guru-learning-goal-body">
+                    <tr>
+                        <td colspan="7" class="muted">
+                            Muat hasil ujian peserta terlebih dahulu.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="guru-learning-goal-detail" class="analysis-detail box muted">
+            Klik salah satu baris untuk melihat detail ketercapaian per peserta.
+        </div>
+
+        <menu class="dialog-actions">
+            <button class="btn" value="cancel">Tutup</button>
+        </menu>
     </form>
 </dialog>
 
@@ -2083,6 +2169,18 @@
                     <select id="guru-exam-subject" name="subject_id" required>
                         <option value="">Pilih mapel...</option>
                     </select>
+                </label>
+                <label>
+                    KKTP
+                    <input
+                        name="kktp"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value="70"
+                        required
+                    />
                 </label>
             </div>
 

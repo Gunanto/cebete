@@ -43,6 +43,7 @@ type examService interface {
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -141,18 +142,19 @@ type generateExamTokenRequest struct {
 }
 
 type examManageRequest struct {
-	Code               string `json:"code"`
-	Title              string `json:"title"`
-	SubjectID          int64  `json:"subject_id"`
-	DurationMinutes    int    `json:"duration_minutes"`
-	MaxAttempts        int    `json:"max_attempts"`
-	StartAt            string `json:"start_at"`
-	EndAt              string `json:"end_at"`
-	ReviewPolicy       string `json:"review_policy"`
-	RandomizeQuestions bool   `json:"randomize_questions"`
-	RandomizeOptions   bool   `json:"randomize_options"`
-	AllowNonRegular    bool   `json:"allow_non_regular_self_enroll"`
-	IsActive           *bool  `json:"is_active"`
+	Code               string  `json:"code"`
+	Title              string  `json:"title"`
+	SubjectID          int64   `json:"subject_id"`
+	KKTP               float64 `json:"kktp"`
+	DurationMinutes    int     `json:"duration_minutes"`
+	MaxAttempts        int     `json:"max_attempts"`
+	StartAt            string  `json:"start_at"`
+	EndAt              string  `json:"end_at"`
+	ReviewPolicy       string  `json:"review_policy"`
+	RandomizeQuestions bool    `json:"randomize_questions"`
+	RandomizeOptions   bool    `json:"randomize_options"`
+	AllowNonRegular    bool    `json:"allow_non_regular_self_enroll"`
+	IsActive           *bool   `json:"is_active"`
 }
 
 type resetExamAttemptRequest struct {
@@ -614,6 +616,7 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 		Code:               req.Code,
 		Title:              req.Title,
 		SubjectID:          req.SubjectID,
+		KKTP:               req.KKTP,
 		DurationMinutes:    req.DurationMinutes,
 		MaxAttempts:        req.MaxAttempts,
 		StartAt:            startAt,
@@ -684,6 +687,7 @@ func (h *Handler) UpdateExam(w http.ResponseWriter, r *http.Request) {
 		Code:               req.Code,
 		Title:              req.Title,
 		SubjectID:          req.SubjectID,
+		KKTP:               req.KKTP,
 		DurationMinutes:    req.DurationMinutes,
 		MaxAttempts:        req.MaxAttempts,
 		StartAt:            startAt,
@@ -936,6 +940,58 @@ func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Requ
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) ListExamLearningGoalResults(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	var attemptFilter *int
+	if raw := strings.TrimSpace(r.URL.Query().Get("attempt")); raw != "" {
+		n, convErr := strconv.Atoi(raw)
+		if convErr != nil || n <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid attempt filter"})
+			return
+		}
+		attemptFilter = &n
+	}
+	var classFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("class")); raw != "" {
+		classFilter = &raw
+	}
+
+	items, err := h.svc.ListExamLearningGoalResults(r.Context(), examID, attemptFilter, classFilter)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
 		default:

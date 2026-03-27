@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -275,6 +277,7 @@ type ExamAdminRecord struct {
 	SubjectName        string     `json:"subject_name"`
 	EducationLevel     string     `json:"education_level"`
 	SubjectType        string     `json:"subject_type"`
+	KKTP               float64    `json:"kktp"`
 	DurationMinutes    int        `json:"duration_minutes"`
 	MaxAttempts        int        `json:"max_attempts"`
 	StartAt            *time.Time `json:"start_at,omitempty"`
@@ -294,6 +297,7 @@ type CreateExamInput struct {
 	Code               string
 	Title              string
 	SubjectID          int64
+	KKTP               float64
 	DurationMinutes    int
 	MaxAttempts        int
 	StartAt            *time.Time
@@ -310,6 +314,7 @@ type UpdateExamInput struct {
 	Code               string
 	Title              string
 	SubjectID          int64
+	KKTP               float64
 	DurationMinutes    int
 	MaxAttempts        int
 	StartAt            *time.Time
@@ -387,6 +392,43 @@ type ExamParticipantResult struct {
 	AnswerKeys  []string                   `json:"answer_keys,omitempty"`
 	TotalWeight float64                    `json:"total_weight"`
 	Rows        []ExamParticipantResultRow `json:"rows"`
+}
+
+type LearningGoalAchievementResult struct {
+	ExamID          int64                         `json:"exam_id"`
+	KKTP            float64                       `json:"kktp"`
+	AttemptFilter   *int                          `json:"attempt_filter,omitempty"`
+	ClassFilter     *string                       `json:"class_filter,omitempty"`
+	TotalStudents   int                           `json:"total_students"`
+	TotalGoals      int                           `json:"total_goals"`
+	AchievedGoals   int                           `json:"achieved_goals"`
+	UnachievedGoals int                           `json:"unachieved_goals"`
+	Items           []LearningGoalAchievementItem `json:"items"`
+}
+
+type LearningGoalAchievementItem struct {
+	LearningGoalID       *int64                           `json:"learning_goal_id,omitempty"`
+	LearningGoalText     string                           `json:"learning_goal_text"`
+	LearningGoalMateri   string                           `json:"learning_goal_materi,omitempty"`
+	QuestionCount        int                              `json:"question_count"`
+	TotalWeight          float64                          `json:"total_weight"`
+	AveragePercent       float64                          `json:"average_percent"`
+	AchievedStudentCount int                              `json:"achieved_student_count"`
+	StudentCount         int                              `json:"student_count"`
+	Achieved             bool                             `json:"achieved"`
+	Students             []LearningGoalAchievementStudent `json:"students"`
+}
+
+type LearningGoalAchievementStudent struct {
+	UserID       int64   `json:"user_id"`
+	FullName     string  `json:"full_name"`
+	ClassName    *string `json:"class_name,omitempty"`
+	AttemptID    int64   `json:"attempt_id"`
+	AttemptKe    int     `json:"attempt_ke"`
+	EarnedWeight float64 `json:"earned_weight"`
+	TotalWeight  float64 `json:"total_weight"`
+	Percent      float64 `json:"percent"`
+	Achieved     bool    `json:"achieved"`
 }
 
 type ExamParticipantResultRow struct {
@@ -1392,6 +1434,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 			s.name AS subject_name,
 			s.education_level,
 			s.subject_type,
+			e.kktp,
 			e.duration_minutes,
 			e.max_attempts,
 			e.start_at,
@@ -1457,6 +1500,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 					s.name AS subject_name,
 					s.education_level,
 					s.subject_type,
+					e.kktp,
 					e.duration_minutes,
 					e.max_attempts,
 					e.start_at,
@@ -1504,6 +1548,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 			&it.SubjectName,
 			&it.EducationLevel,
 			&it.SubjectType,
+			&it.KKTP,
 			&it.DurationMinutes,
 			&it.MaxAttempts,
 			&startAt,
@@ -1547,6 +1592,7 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if in.DurationMinutes <= 0 {
 		in.DurationMinutes = s.defaultExamMinutes
 	}
+	in.KKTP = normalizeKKTP(in.KKTP)
 	if in.MaxAttempts <= 0 {
 		in.MaxAttempts = 1
 	}
@@ -1557,12 +1603,12 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		var outID int64
 		if err := s.db.QueryRowContext(ctx, `
 			INSERT INTO exams (
-				code, title, subject_id, duration_minutes, max_attempts,
+				code, title, subject_id, kktp, duration_minutes, max_attempts,
 				start_at, end_at, review_policy, randomize_questions, randomize_options,
 				allow_non_regular_self_enroll, is_active, created_by, created_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,$12,now())
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13,now())
 			RETURNING id
-		`, code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.CreatedBy).Scan(&outID); err != nil {
+		`, code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.CreatedBy).Scan(&outID); err != nil {
 			return 0, err
 		}
 		return outID, nil
@@ -1634,6 +1680,7 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 	if in.DurationMinutes <= 0 {
 		in.DurationMinutes = s.defaultExamMinutes
 	}
+	in.KKTP = normalizeKKTP(in.KKTP)
 	if in.MaxAttempts <= 0 {
 		in.MaxAttempts = 1
 	}
@@ -1646,18 +1693,19 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 		SET code = $2,
 			title = $3,
 			subject_id = $4,
-			duration_minutes = $5,
-			max_attempts = $6,
-			start_at = $7,
-			end_at = $8,
-			review_policy = $9,
-			randomize_questions = $10,
-			randomize_options = $11,
-			allow_non_regular_self_enroll = $12,
-			is_active = $13
+			kktp = $5,
+			duration_minutes = $6,
+			max_attempts = $7,
+			start_at = $8,
+			end_at = $9,
+			review_policy = $10,
+			randomize_questions = $11,
+			randomize_options = $12,
+			allow_non_regular_self_enroll = $13,
+			is_active = $14
 		WHERE id = $1
 		RETURNING id
-	`, in.ID, in.Code, in.Title, in.SubjectID, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.IsActive).Scan(&outID); err != nil {
+	`, in.ID, in.Code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.IsActive).Scan(&outID); err != nil {
 		if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
 			return nil, ErrReviewPolicySchema
 		}
@@ -1710,6 +1758,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 			s.name AS subject_name,
 			s.education_level,
 			s.subject_type,
+			e.kktp,
 			e.duration_minutes,
 			e.max_attempts,
 			e.start_at,
@@ -1749,6 +1798,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 					s.name AS subject_name,
 					s.education_level,
 					s.subject_type,
+					e.kktp,
 					e.duration_minutes,
 					e.max_attempts,
 					e.start_at,
@@ -1792,6 +1842,7 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 		&it.SubjectName,
 		&it.EducationLevel,
 		&it.SubjectType,
+		&it.KKTP,
 		&it.DurationMinutes,
 		&it.MaxAttempts,
 		&startAt,
@@ -2446,6 +2497,318 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		TotalWeight: totalWeight,
 		Rows:        resultRows,
 	}, nil
+}
+
+func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
+	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
+		return nil, err
+	}
+
+	out := &LearningGoalAchievementResult{ExamID: examID}
+	if attemptFilter != nil {
+		v := *attemptFilter
+		out.AttemptFilter = &v
+	}
+	if classFilter != nil {
+		v := strings.TrimSpace(*classFilter)
+		if v != "" {
+			out.ClassFilter = &v
+		}
+	}
+
+	var (
+		examExists bool
+		kktp       float64
+	)
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1), COALESCE((SELECT kktp FROM exams WHERE id = $1), 70)
+	`, examID).Scan(&examExists, &kktp); err != nil {
+		return nil, fmt.Errorf("check exam exists for learning goal results: %w", err)
+	}
+	if !examExists {
+		return nil, ErrExamNotFound
+	}
+	out.KKTP = normalizeKKTP(kktp)
+
+	type questionMeta struct {
+		QuestionID         int64
+		LearningGoalID     *int64
+		LearningGoalText   string
+		LearningGoalMateri string
+		Weight             float64
+	}
+	questions := make([]questionMeta, 0)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			eq.question_id,
+			q.learning_goal_id,
+			COALESCE(lg.tujuan_pembelajaran, ''),
+			COALESCE(lg.materi, ''),
+			eq.weight
+		FROM exam_questions eq
+		JOIN questions q ON q.id = eq.question_id
+		LEFT JOIN learning_goals lg ON lg.id = q.learning_goal_id
+		WHERE eq.exam_id = $1
+		ORDER BY eq.seq_no ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list exam questions for learning goal results: %w", err)
+	}
+	for rows.Next() {
+		var (
+			it       questionMeta
+			goalID   sql.NullInt64
+			goalText sql.NullString
+			materi   sql.NullString
+		)
+		if err := rows.Scan(&it.QuestionID, &goalID, &goalText, &materi, &it.Weight); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan exam question for learning goal results: %w", err)
+		}
+		if goalID.Valid {
+			it.LearningGoalID = &goalID.Int64
+		}
+		if goalText.Valid {
+			it.LearningGoalText = strings.TrimSpace(goalText.String)
+		}
+		if materi.Valid {
+			it.LearningGoalMateri = strings.TrimSpace(materi.String)
+		}
+		if it.LearningGoalText == "" {
+			it.LearningGoalText = "Tanpa TP"
+		}
+		questions = append(questions, it)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("iterate exam questions for learning goal results: %w", err)
+	}
+	_ = rows.Close()
+
+	type goalAccumulator struct {
+		item          LearningGoalAchievementItem
+		seenQuestions map[int64]struct{}
+	}
+	goalByKey := make(map[string]*goalAccumulator)
+	goalOrder := make([]string, 0)
+	questionGoalKey := make(map[int64]string, len(questions))
+	for _, q := range questions {
+		key := "none"
+		var goalIDCopy *int64
+		if q.LearningGoalID != nil {
+			key = strconv.FormatInt(*q.LearningGoalID, 10)
+			idv := *q.LearningGoalID
+			goalIDCopy = &idv
+		}
+		acc, ok := goalByKey[key]
+		if !ok {
+			acc = &goalAccumulator{
+				item: LearningGoalAchievementItem{
+					LearningGoalID:     goalIDCopy,
+					LearningGoalText:   q.LearningGoalText,
+					LearningGoalMateri: q.LearningGoalMateri,
+				},
+				seenQuestions: make(map[int64]struct{}),
+			}
+			goalByKey[key] = acc
+			goalOrder = append(goalOrder, key)
+		}
+		if _, seen := acc.seenQuestions[q.QuestionID]; !seen {
+			acc.seenQuestions[q.QuestionID] = struct{}{}
+			acc.item.QuestionCount++
+			acc.item.TotalWeight += q.Weight
+		}
+		questionGoalKey[q.QuestionID] = key
+	}
+
+	type attemptRowLite struct {
+		AttemptID int64
+		StudentID int64
+		FullName  string
+		ClassName *string
+		AttemptKe int
+	}
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT
+			a.id,
+			u.id,
+			u.full_name,
+			enr.class_name
+		FROM attempts a
+		JOIN users u ON u.id = a.student_id
+		LEFT JOIN LATERAL (
+			SELECT c.name AS class_name
+			FROM enrollments e
+			JOIN classes c ON c.id = e.class_id
+			WHERE e.user_id = u.id
+			  AND e.status = 'active'
+			ORDER BY e.enrolled_at DESC, e.id DESC
+			LIMIT 1
+		) enr ON TRUE
+		WHERE a.exam_id = $1
+		  AND u.role = 'siswa'
+		ORDER BY a.started_at ASC, a.id ASC
+	`, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list attempts for learning goal results: %w", err)
+	}
+	attemptCountByStudent := map[int64]int{}
+	selectedAttemptIDs := make([]int64, 0)
+	selectedAttempts := make([]attemptRowLite, 0)
+	for rows.Next() {
+		var (
+			it        attemptRowLite
+			className sql.NullString
+		)
+		if err := rows.Scan(&it.AttemptID, &it.StudentID, &it.FullName, &className); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan attempts for learning goal results: %w", err)
+		}
+		if className.Valid {
+			it.ClassName = &className.String
+		}
+		attemptCountByStudent[it.StudentID]++
+		it.AttemptKe = attemptCountByStudent[it.StudentID]
+		if attemptFilter != nil && it.AttemptKe != *attemptFilter {
+			continue
+		}
+		if out.ClassFilter != nil {
+			currentClass := strings.TrimSpace(func() string {
+				if it.ClassName == nil {
+					return ""
+				}
+				return *it.ClassName
+			}())
+			if currentClass != *out.ClassFilter {
+				continue
+			}
+		}
+		selectedAttemptIDs = append(selectedAttemptIDs, it.AttemptID)
+		selectedAttempts = append(selectedAttempts, it)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("iterate attempts for learning goal results: %w", err)
+	}
+	_ = rows.Close()
+
+	out.TotalStudents = len(selectedAttempts)
+	if len(goalOrder) == 0 {
+		return out, nil
+	}
+
+	scoreByAttemptQuestion := make(map[int64]map[int64]float64)
+	if len(selectedAttemptIDs) > 0 {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT s.attempt_id, s.question_id, s.earned_score
+			FROM attempt_scores s
+			JOIN attempts a ON a.id = s.attempt_id
+			WHERE a.exam_id = $1
+		`, examID)
+		if err != nil {
+			return nil, fmt.Errorf("list attempt scores for learning goal results: %w", err)
+		}
+		for rows.Next() {
+			var (
+				attemptID  int64
+				questionID int64
+				earned     float64
+			)
+			if err := rows.Scan(&attemptID, &questionID, &earned); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan attempt scores for learning goal results: %w", err)
+			}
+			if _, ok := scoreByAttemptQuestion[attemptID]; !ok {
+				scoreByAttemptQuestion[attemptID] = make(map[int64]float64)
+			}
+			scoreByAttemptQuestion[attemptID][questionID] = earned
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate attempt scores for learning goal results: %w", err)
+		}
+		_ = rows.Close()
+	}
+
+	type studentAccumulator struct {
+		LearningGoalAchievementStudent
+	}
+	studentByGoalAttempt := make(map[string]map[int64]*studentAccumulator)
+	for _, key := range goalOrder {
+		studentByGoalAttempt[key] = make(map[int64]*studentAccumulator)
+	}
+
+	for _, attempt := range selectedAttempts {
+		for _, q := range questions {
+			key := questionGoalKey[q.QuestionID]
+			acc := studentByGoalAttempt[key][attempt.AttemptID]
+			if acc == nil {
+				acc = &studentAccumulator{
+					LearningGoalAchievementStudent: LearningGoalAchievementStudent{
+						UserID:    attempt.StudentID,
+						FullName:  attempt.FullName,
+						ClassName: attempt.ClassName,
+						AttemptID: attempt.AttemptID,
+						AttemptKe: attempt.AttemptKe,
+					},
+				}
+				studentByGoalAttempt[key][attempt.AttemptID] = acc
+			}
+			acc.TotalWeight += q.Weight
+			if scoreByAttemptQuestion[attempt.AttemptID] != nil {
+				acc.EarnedWeight += scoreByAttemptQuestion[attempt.AttemptID][q.QuestionID]
+			}
+		}
+	}
+
+	items := make([]LearningGoalAchievementItem, 0, len(goalOrder))
+	for _, key := range goalOrder {
+		acc := goalByKey[key]
+		item := acc.item
+		students := make([]LearningGoalAchievementStudent, 0, len(studentByGoalAttempt[key]))
+		sumPercent := 0.0
+		for _, studentAcc := range studentByGoalAttempt[key] {
+			if studentAcc.TotalWeight > 0 {
+				studentAcc.Percent = (studentAcc.EarnedWeight / studentAcc.TotalWeight) * 100
+			}
+			studentAcc.Achieved = studentAcc.Percent >= out.KKTP
+			if studentAcc.Achieved {
+				item.AchievedStudentCount++
+			}
+			sumPercent += studentAcc.Percent
+			students = append(students, studentAcc.LearningGoalAchievementStudent)
+		}
+		sort.Slice(students, func(i, j int) bool {
+			if students[i].FullName == students[j].FullName {
+				return students[i].AttemptKe < students[j].AttemptKe
+			}
+			return students[i].FullName < students[j].FullName
+		})
+		item.Students = students
+		item.StudentCount = len(students)
+		if item.StudentCount > 0 {
+			item.AveragePercent = sumPercent / float64(item.StudentCount)
+		}
+		item.Achieved = item.AveragePercent >= out.KKTP
+		if item.Achieved {
+			out.AchievedGoals++
+		}
+		items = append(items, item)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].LearningGoalText) < strings.ToLower(items[j].LearningGoalText)
+	})
+	out.Items = items
+	out.TotalGoals = len(items)
+	out.UnachievedGoals = out.TotalGoals - out.AchievedGoals
+	return out, nil
 }
 
 func (s *Service) ensureExamQuestionSeqNoContiguous(ctx context.Context, examID int64) error {
@@ -3930,6 +4293,13 @@ func normalizeReviewPolicy(input string) string {
 	default:
 		return "after_submit"
 	}
+}
+
+func normalizeKKTP(input float64) float64 {
+	if input < 0 || input > 100 {
+		return 70
+	}
+	return math.Round(input*100) / 100
 }
 
 func normalizeIncidentPolicy(input string) string {

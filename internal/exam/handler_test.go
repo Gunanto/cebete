@@ -35,6 +35,7 @@ type mockExamService struct {
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	listExamParticipantResultsFn    func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	listExamLearningGoalResultsFn   func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	exportExamParticipantResultsFn  func(ctx context.Context, examID int64) ([]byte, string, error)
 	replaceExamAssignmentsFn        func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	replaceExamAssignmentsByClassFn func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -214,6 +215,13 @@ func (m *mockExamService) ListExamParticipantResults(ctx context.Context, examID
 		return nil, errors.New("not implemented")
 	}
 	return m.listExamParticipantResultsFn(ctx, examID)
+}
+
+func (m *mockExamService) ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {
+	if m.listExamLearningGoalResultsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamLearningGoalResultsFn(ctx, examID, attemptFilter, classFilter)
 }
 
 func (m *mockExamService) ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error) {
