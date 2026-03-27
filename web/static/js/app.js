@@ -6271,7 +6271,9 @@
     const learningGoalDialog = document.getElementById(
       "guru-learning-goal-dialog",
     );
-    const learningGoalBody = document.getElementById("guru-learning-goal-body");
+    const learningGoalAnalysisBody = document.getElementById(
+      "guru-learning-goal-analysis-body",
+    );
     const learningGoalSummary = document.getElementById(
       "guru-learning-goal-summary",
     );
@@ -7877,7 +7879,7 @@
         itemAnalysisExportBtn: itemAnalysisExportBtn,
         itemAnalysisPrintBtn: itemAnalysisPrintBtn,
         learningGoalDialog: learningGoalDialog,
-        learningGoalBody: learningGoalBody,
+        learningGoalBody: learningGoalAnalysisBody,
         learningGoalSummary: learningGoalSummary,
         learningGoalIdentity: learningGoalIdentity,
         learningGoalDetail: learningGoalDetail,
