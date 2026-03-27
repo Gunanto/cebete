@@ -1621,6 +1621,10 @@ textarea:focus-visible {
     color: #0f172a;
 }
 
+.stat-sub-strong {
+    color: #0f172a;
+}
+
 .stat-admin {
     background: linear-gradient(135deg, #e8f1ff 0%, #f6f9ff 100%);
     border-color: #c5dafd;

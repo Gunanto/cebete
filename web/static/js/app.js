@@ -3117,6 +3117,14 @@
       }
     }
 
+    async function loadGuruResultExamOptions() {
+      const exams = await api("/api/v1/admin/exams/manage?all=1", "GET");
+      if (GuruResults && typeof GuruResults.setExams === "function") {
+        GuruResults.setExams(exams);
+      }
+      return Array.isArray(exams) ? exams : [];
+    }
+
     async function loadGuruExamQuestions(examID) {
       if (GuruExams && typeof GuruExams.loadExamQuestions === "function") {
         return GuruExams.loadExamQuestions(examID);
@@ -4016,6 +4024,14 @@
             }
             return;
           }
+          if (key === "results") {
+            try {
+              await loadGuruResultExamOptions();
+            } catch (_) {
+              // error already surfaced by the module
+            }
+            return;
+          }
           if (key === "enroll") {
             try {
               await Promise.all([
@@ -4181,7 +4197,7 @@
         learningGoalStudentSubtitle: learningGoalStudentSubtitle,
         learningGoalStudentKKTP: learningGoalStudentKKTP,
         meOrNull: meOrNull,
-        refreshExams: loadGuruExamManageTable,
+        refreshExams: loadGuruResultExamOptions,
       });
     }
 
@@ -4419,6 +4435,7 @@
         loadClassesForLearningGoal(),
         loadGuruExamSubjectOptions(),
         loadGuruExamManageTable(),
+        loadGuruResultExamOptions(),
       ]);
       await loadQuestionCodes(
         Number(

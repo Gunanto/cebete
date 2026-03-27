@@ -347,7 +347,7 @@
     if (!deps.regBody) return;
     if (!items.length) {
       deps.regBody.innerHTML =
-        '<tr><td colspan="10" class="muted">Tidak ada data pengguna.</td></tr>';
+        '<tr><td colspan="11" class="muted">Tidak ada data pengguna.</td></tr>';
       return;
     }
     deps.regBody.innerHTML = "";
@@ -385,6 +385,7 @@
         "<td>" + deps.escapeHtml(it.full_name || "") + "</td>",
         "<td>" + deps.escapeHtml(it.role || "") + "</td>",
         "<td>" + deps.escapeHtml(it.school_name || "-") + "</td>",
+        "<td>" + deps.escapeHtml(it.school_city || "-") + "</td>",
         "<td>" + deps.escapeHtml(it.participant_no || "-") + "</td>",
         "<td>" + deps.escapeHtml(it.email || "") + "</td>",
         "<td>" + deps.escapeHtml(it.account_status || "") + "</td>",
