@@ -4030,9 +4030,12 @@ body[data-page="admin_content"] .dashboard-hero .admin-stat-card,
 body[data-page="proktor_content"] .dashboard-hero .admin-stat-card,
 body[data-page="guru_content"] .dashboard-hero .admin-stat-card,
 body[data-page="peserta_content"] .dashboard-hero .admin-stat-card {
-    background: rgba(255, 255, 255, 0.88);
-    border-color: rgba(255, 255, 255, 0.88);
-    box-shadow: 0 8px 14px rgba(28, 17, 92, 0.12);
+    position: relative;
+    overflow: hidden;
+    border-width: 0;
+    border-color: transparent;
+    box-shadow: 0 14px 24px rgba(28, 17, 92, 0.22);
+    isolation: isolate;
 }
 
 body[data-page="admin_content"] .dashboard-hero .admin-stat-card .stat-label,
@@ -4043,7 +4046,550 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-label,
 body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value,
 body[data-page="peserta_content"] .dashboard-hero .admin-stat-card .stat-label,
 body[data-page="peserta_content"] .dashboard-hero .admin-stat-card .stat-value {
-    color: #0f172a;
+    position: relative;
+    z-index: 1;
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card::before,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card::before,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card::before {
+    content: "";
+    position: absolute;
+    inset: auto -18px -24px auto;
+    width: 108px;
+    height: 108px;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.14);
+    transform: rotate(12deg);
+    z-index: 0;
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card::after,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card::after,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card::after {
+    content: "";
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        -28px 12px 0 rgba(255, 255, 255, 0.1),
+        -10px 34px 0 rgba(255, 255, 255, 0.08);
+    z-index: 0;
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon]::after {
+    content: "◼";
+    top: 12px;
+    right: 16px;
+    width: auto;
+    height: auto;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+    font-size: 44px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: -0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.14);
+    text-shadow:
+        -30px 16px 0 rgba(255, 255, 255, 0.07),
+        -12px 38px 0 rgba(255, 255, 255, 0.05);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="shield"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="shield"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="shield"]::after {
+    content: "⬢";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="monitor"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="monitor"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="monitor"]::after {
+    content: "▣";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="user"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="user"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="user"]::after {
+    content: "◉";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="users"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="users"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="users"]::after {
+    content: "◎";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="pulse"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="pulse"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="pulse"]::after {
+    content: "≈";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after {
+    content: "▦";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="book"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="book"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="book"]::after {
+    content: "▤";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="layers"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="layers"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="layers"]::after {
+    content: "◫";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="target"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="target"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="target"]::after {
+    content: "◌";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="file"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="file"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="file"]::after {
+    content: "▥";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="clipboard"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="clipboard"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="clipboard"]::after {
+    content: "☰";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after {
+    content: "◔";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="check"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="check"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="check"]::after {
+    content: "✓";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="chart"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="chart"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="chart"]::after {
+    content: "▧";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="alert"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="alert"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="alert"]::after {
+    content: "!";
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="school"]::after,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card[data-stat-icon="timer"]::after {
+    color: rgba(74, 37, 0, 0.16);
+    text-shadow:
+        -30px 16px 0 rgba(74, 37, 0, 0.08),
+        -12px 38px 0 rgba(74, 37, 0, 0.05);
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card.stat-admin,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card.stat-admin,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card.stat-admin {
+    background: linear-gradient(135deg, #3758ff 0%, #6236ff 58%, #7b2fff 100%);
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card.stat-proktor,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card.stat-proktor,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card.stat-proktor {
+    background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 52%, #2563eb 100%);
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card.stat-guru,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card.stat-guru,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card.stat-guru {
+    background: linear-gradient(135deg, #10b981 0%, #22c55e 50%, #14b8a6 100%);
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card.stat-siswa,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card.stat-siswa,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card.stat-siswa {
+    background: linear-gradient(135deg, #ec4899 0%, #ff2d7a 52%, #c026d3 100%);
+}
+
+body[data-page="admin_content"] .dashboard-hero .admin-stat-card.stat-sekolah,
+body[data-page="proktor_content"] .dashboard-hero .admin-stat-card.stat-sekolah,
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card.stat-sekolah {
+    background: linear-gradient(135deg, #f59e0b 0%, #facc15 55%, #f97316 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-violet,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-violet,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-violet {
+    background: linear-gradient(135deg, #4338ca 0%, #6d28d9 58%, #8b5cf6 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-indigo,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-indigo,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-indigo {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #38bdf8 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-cyan,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-cyan,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-cyan {
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 55%, #22d3ee 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald {
+    background: linear-gradient(135deg, #059669 0%, #10b981 55%, #34d399 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald-dark,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald-dark,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-emerald-dark {
+    background: linear-gradient(135deg, #047857 0%, #059669 55%, #14b8a6 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-fuchsia,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-fuchsia,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-fuchsia {
+    background: linear-gradient(135deg, #db2777 0%, #ec4899 55%, #f472b6 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-rose,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-rose,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-rose {
+    background: linear-gradient(135deg, #e11d48 0%, #f43f5e 52%, #fb7185 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber {
+    background: linear-gradient(135deg, #f59e0b 0%, #facc15 55%, #fb923c 100%);
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-value,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-value,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-value,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-admin
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-proktor
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-guru
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-siswa
+    .stat-value {
+    color: #f8fbff;
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-sekolah
+    .stat-value {
+    color: #4a2500;
+}
+
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-label,
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-value,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-label,
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-value,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-label,
+body[data-page="guru_content"]
+    .dashboard-hero
+    .admin-stat-card.stat-variant-amber
+    .stat-value {
+    color: #4a2500;
 }
 
 body[data-page="peserta_content"] #peserta-sidebar-toggle {
