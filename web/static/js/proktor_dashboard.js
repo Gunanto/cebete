@@ -26,6 +26,8 @@
     if (deps.statUsers) deps.statUsers.textContent = String(totalUsers);
     if (deps.statSchools)
       deps.statSchools.textContent = String(stats.school_count || 0);
+    if (deps.statInProgress)
+      deps.statInProgress.textContent = String(stats.in_progress_count || 0);
   }
 
   function init(opts) {

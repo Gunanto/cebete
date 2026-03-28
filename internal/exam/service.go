@@ -394,6 +394,7 @@ type ExamAssignmentUser struct {
 	LatestAttemptID     *int64     `json:"latest_attempt_id,omitempty"`
 	LatestAttemptStatus *string    `json:"latest_attempt_status,omitempty"`
 	LatestAttemptScore  *float64   `json:"latest_attempt_score,omitempty"`
+	LatestStartedAt     *time.Time `json:"latest_started_at,omitempty"`
 	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
 }
 
@@ -2096,6 +2097,7 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			la.id AS latest_attempt_id,
 			la.status AS latest_attempt_status,
 			la.score AS latest_attempt_score,
+			la.started_at AS latest_started_at,
 			la.submitted_at AS latest_submitted_at
 		FROM exam_assignments ea
 		JOIN users u ON u.id = ea.user_id
@@ -2140,6 +2142,7 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		var latestAttemptID sql.NullInt64
 		var latestAttemptStatus sql.NullString
 		var latestAttemptScore sql.NullFloat64
+		var latestStartedAt sql.NullTime
 		var latestSubmittedAt sql.NullTime
 		if err := rows.Scan(
 			&it.UserID,
@@ -2164,6 +2167,7 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			&latestAttemptID,
 			&latestAttemptStatus,
 			&latestAttemptScore,
+			&latestStartedAt,
 			&latestSubmittedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan exam assignment: %w", err)
@@ -2235,6 +2239,10 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		if latestAttemptScore.Valid {
 			v := latestAttemptScore.Float64
 			it.LatestAttemptScore = &v
+		}
+		if latestStartedAt.Valid {
+			v := latestStartedAt.Time
+			it.LatestStartedAt = &v
 		}
 		if latestSubmittedAt.Valid {
 			v := latestSubmittedAt.Time

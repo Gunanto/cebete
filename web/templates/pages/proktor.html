@@ -296,7 +296,78 @@
                             0
                         </div>
                     </article>
+                    <article class="admin-stat-card stat-admin">
+                        <div class="stat-label">Peserta Sedang Ujian</div>
+                        <div id="proktor-stat-in-progress" class="stat-value">
+                            0
+                        </div>
+                    </article>
                 </div>
+                <section class="dashboard-monitor panel mt">
+                    <div class="admin-section-head">
+                        <div>
+                            <h3>Peserta Sedang Ujian</h3>
+                            <p class="muted">
+                                Monitor peserta aktif dalam scope ujian proktor.
+                            </p>
+                        </div>
+                        <div class="dashboard-monitor-actions">
+                            <label class="dashboard-monitor-filter">
+                                <span>Filter Ujian</span>
+                                <select
+                                    id="proktor-dashboard-monitor-exam-filter"
+                                >
+                                    <option value="">Semua ujian</option>
+                                </select>
+                            </label>
+                            <label class="dashboard-monitor-filter">
+                                <span>Idle Threshold</span>
+                                <select
+                                    id="proktor-dashboard-monitor-idle-threshold"
+                                >
+                                    <option value="2">2 menit</option>
+                                    <option value="5">5 menit</option>
+                                    <option value="10">10 menit</option>
+                                </select>
+                            </label>
+                            <button
+                                id="proktor-dashboard-monitor-refresh-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                            >
+                                Refresh Monitor
+                            </button>
+                        </div>
+                    </div>
+                    <div
+                        id="proktor-dashboard-monitor-meta"
+                        class="box muted mt"
+                    >
+                        Memuat monitor peserta...
+                    </div>
+                    <div class="table-wrap mt">
+                        <table class="bs-table">
+                            <thead>
+                                <tr>
+                                    <th>Peserta</th>
+                                    <th>Kelas</th>
+                                    <th>Ujian</th>
+                                    <th>Mulai Ujian</th>
+                                    <th>Aktivitas Terakhir</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="proktor-dashboard-monitor-body">
+                                <tr>
+                                    <td colspan="7" class="muted">
+                                        Memuat peserta aktif...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </section>
 
             <section id="proktor-registrations-panel" class="panel" hidden>

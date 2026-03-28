@@ -208,6 +208,7 @@ type AdminDashboardStats struct {
 	SchoolCount            int64 `json:"school_count"`
 	UniqueParticipantCount int64 `json:"unique_participant_count"`
 	CompletedExamCount     int64 `json:"completed_exam_count"`
+	InProgressCount        int64 `json:"in_progress_count"`
 	ActiveUserCountDaily   int64 `json:"active_user_count_daily"`
 	ActiveUserCountWeekly  int64 `json:"active_user_count_weekly"`
 	ActiveUserCountMonthly int64 `json:"active_user_count_monthly"`
@@ -2795,6 +2796,17 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 	`).Scan(&out.ActiveUserCountDaily, &out.ActiveUserCountWeekly, &out.ActiveUserCountMonthly); err != nil {
 		return nil, fmt.Errorf("query active user stats: %w", err)
 	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT a.student_id)
+		FROM attempts a
+		JOIN users u ON u.id = a.student_id
+		WHERE a.status = 'in_progress'
+		  AND a.expires_at > now()
+		  AND u.is_active = TRUE
+		  AND u.role = 'siswa'
+	`).Scan(&out.InProgressCount); err != nil {
+		return nil, fmt.Errorf("query admin dashboard in progress count: %w", err)
+	}
 	return out, nil
 }
 
@@ -2821,6 +2833,19 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 		  AND COALESCE(a.score, 0) > 0
 	`, guruID).Scan(&out.CompletedExamCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard completed exam count: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT a.student_id)
+		FROM attempts a
+		JOIN exams e ON e.id = a.exam_id
+		JOIN users u ON u.id = a.student_id
+		WHERE e.created_by = $1
+		  AND a.status = 'in_progress'
+		  AND a.expires_at > now()
+		  AND u.is_active = TRUE
+		  AND u.role = 'siswa'
+	`, guruID).Scan(&out.InProgressCount); err != nil {
+		return nil, fmt.Errorf("query guru dashboard in progress count: %w", err)
 	}
 	return out, nil
 }

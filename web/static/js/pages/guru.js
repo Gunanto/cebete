@@ -44,7 +44,23 @@
     const statCompletedExams = document.getElementById(
       "guru-stat-completed-exams",
     );
+    const statInProgress = document.getElementById("guru-stat-in-progress");
     const statResults = document.getElementById("guru-stat-results");
+    const dashboardMonitorRefreshBtn = document.getElementById(
+      "guru-dashboard-monitor-refresh-btn",
+    );
+    const dashboardMonitorExamFilter = document.getElementById(
+      "guru-dashboard-monitor-exam-filter",
+    );
+    const dashboardMonitorIdleThreshold = document.getElementById(
+      "guru-dashboard-monitor-idle-threshold",
+    );
+    const dashboardMonitorMeta = document.getElementById(
+      "guru-dashboard-monitor-meta",
+    );
+    const dashboardMonitorBody = document.getElementById(
+      "guru-dashboard-monitor-body",
+    );
     const subjectRefreshBtn = document.getElementById(
       "guru-subjects-refresh-btn",
     );
@@ -653,6 +669,13 @@
 
     let guruUniqueParticipantCount = 0;
     let guruCompletedExamCount = 0;
+    let guruInProgressCount = 0;
+    let dashboardMonitorTimer = null;
+    let dashboardMonitorLoading = false;
+    let dashboardMonitorExamItems = [];
+    let dashboardMonitorRows = [];
+    const dashboardIdleThresholdStorageKey =
+      "cbtlms_guru_dashboard_idle_threshold";
 
     function refreshGuruSummaryStats() {
       if (statLearningGoals) {
@@ -682,6 +705,9 @@
           Number(guruCompletedExamCount || 0),
         );
       }
+      if (statInProgress) {
+        statInProgress.textContent = String(Number(guruInProgressCount || 0));
+      }
       if (statResults) {
         statResults.textContent = String(
           Number(guruUniqueParticipantCount || 0),
@@ -702,6 +728,349 @@
       if (Number.isNaN(d.getTime())) return String(raw);
       return d.toLocaleString("id-ID");
     };
+
+    function setDashboardMonitorMeta(value, muted) {
+      if (!dashboardMonitorMeta) return;
+      text(dashboardMonitorMeta, value);
+      dashboardMonitorMeta.classList.toggle("muted", muted !== false);
+    }
+
+    function fillDashboardMonitorExamFilter(exams) {
+      if (!dashboardMonitorExamFilter) return;
+      const current = String(dashboardMonitorExamFilter.value || "");
+      const items = Array.isArray(exams) ? exams : [];
+      dashboardMonitorExamItems = items.slice();
+      dashboardMonitorExamFilter.innerHTML =
+        '<option value="">Semua ujian</option>';
+      items.forEach(function (exam) {
+        const examID = String((exam && exam.id) || "");
+        if (!examID) return;
+        const opt = document.createElement("option");
+        opt.value = examID;
+        opt.textContent =
+          [
+            String((exam && exam.code) || "").trim(),
+            String((exam && exam.title) || "").trim(),
+          ]
+            .filter(Boolean)
+            .join(" | ") || "Ujian #" + examID;
+        if (current && current === examID) opt.selected = true;
+        dashboardMonitorExamFilter.appendChild(opt);
+      });
+      if (current && !dashboardMonitorExamFilter.value) {
+        dashboardMonitorExamFilter.value = "";
+      }
+    }
+
+    function getDashboardMonitorFilteredRows() {
+      const examFilter = String(
+        (dashboardMonitorExamFilter && dashboardMonitorExamFilter.value) || "",
+      );
+      return (Array.isArray(dashboardMonitorRows) ? dashboardMonitorRows : [])
+        .filter(function (it) {
+          if (!examFilter) return true;
+          return String((it && it.exam_id) || "") === examFilter;
+        })
+        .slice();
+    }
+
+    function statusBadgeHTML(status) {
+      const raw = String(status || "in_progress")
+        .trim()
+        .toLowerCase();
+      return (
+        '<span class="dashboard-status-badge status-' +
+        escapeHtml(raw.replace(/[^a-z0-9_-]+/g, "-")) +
+        '">' +
+        escapeHtml(raw || "-") +
+        "</span>"
+      );
+    }
+
+    function activityBadgeHTML(kind, label) {
+      return (
+        '<span class="dashboard-status-badge status-' +
+        escapeHtml(String(kind || "no-event")) +
+        '">' +
+        escapeHtml(String(label || "-")) +
+        "</span>"
+      );
+    }
+
+    function saveDashboardIdleThreshold(value) {
+      const allowed = ["2", "5", "10"];
+      const normalized = allowed.includes(String(value || ""))
+        ? String(value)
+        : "2";
+      try {
+        window.localStorage.setItem(
+          dashboardIdleThresholdStorageKey,
+          normalized,
+        );
+      } catch (_) {
+        // Ignore if storage is unavailable.
+      }
+      return normalized;
+    }
+
+    function loadSavedDashboardIdleThreshold() {
+      try {
+        const saved = window.localStorage.getItem(
+          dashboardIdleThresholdStorageKey,
+        );
+        if (saved) return saveDashboardIdleThreshold(saved);
+      } catch (_) {
+        // Ignore if storage is unavailable.
+      }
+      return "2";
+    }
+
+    function getDashboardIdleThresholdMs() {
+      const current =
+        (dashboardMonitorIdleThreshold &&
+          dashboardMonitorIdleThreshold.value) ||
+        loadSavedDashboardIdleThreshold();
+      const minutes = Number(saveDashboardIdleThreshold(current));
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        return 2 * 60 * 1000;
+      }
+      return minutes * 60 * 1000;
+    }
+
+    async function loadDashboardMonitorActivity(rows) {
+      const items = Array.isArray(rows) ? rows : [];
+      const examIDs = items
+        .map(function (it) {
+          return Number((it && it.exam_id) || 0);
+        })
+        .filter(function (id, idx, arr) {
+          return id > 0 && arr.indexOf(id) === idx;
+        });
+      const latestByAttemptID = {};
+      await Promise.all(
+        examIDs.map(async function (examID) {
+          try {
+            const events = await api(
+              "/api/v1/exams/" + examID + "/events?limit=500",
+              "GET",
+            );
+            (Array.isArray(events) ? events : []).forEach(function (eventItem) {
+              const attemptID = Number(
+                (eventItem && eventItem.attempt_id) || 0,
+              );
+              const rawTS = String(
+                (eventItem && eventItem.server_ts) || "",
+              ).trim();
+              if (attemptID <= 0 || !rawTS) return;
+              const prev = latestByAttemptID[attemptID];
+              if (!prev || new Date(rawTS) > new Date(prev)) {
+                latestByAttemptID[attemptID] = rawTS;
+              }
+            });
+          } catch (_) {
+            // Keep monitor usable even if event aggregation fails for one exam.
+          }
+        }),
+      );
+      const now = Date.now();
+      const idleThresholdMs = getDashboardIdleThresholdMs();
+      return items.map(function (it) {
+        const copy = Object.assign({}, it || {});
+        const attemptID = Number((copy && copy.latest_attempt_id) || 0);
+        const lastActivityAt =
+          attemptID > 0 ? latestByAttemptID[attemptID] || "" : "";
+        copy.latest_activity_at = lastActivityAt || null;
+        if (!lastActivityAt) {
+          copy.activity_state = "no-event";
+          copy.activity_label = "Belum ada event";
+          copy.idle_minutes = null;
+          return copy;
+        }
+        const ageMs = Math.max(0, now - new Date(lastActivityAt).getTime());
+        const idleMinutes = Math.floor(ageMs / 60000);
+        copy.idle_minutes = idleMinutes;
+        if (ageMs >= idleThresholdMs) {
+          copy.activity_state = "idle";
+          copy.activity_label =
+            idleMinutes > 0 ? "Idle " + String(idleMinutes) + "m" : "Idle";
+          return copy;
+        }
+        copy.activity_state = "in-progress";
+        copy.activity_label = "Aktif";
+        return copy;
+      });
+    }
+
+    function renderDashboardMonitorRows(rows) {
+      if (!dashboardMonitorBody) return;
+      const items = Array.isArray(rows) ? rows : [];
+      if (!items.length) {
+        dashboardMonitorBody.innerHTML =
+          '<tr><td colspan="6" class="muted">Belum ada peserta yang sedang mengerjakan ujian.</td></tr>';
+        return;
+      }
+      dashboardMonitorBody.innerHTML = "";
+      items.forEach(function (it) {
+        const tr = document.createElement("tr");
+        const startedAt = it.latest_started_at || it.assigned_at;
+        const latestActivityAt = it.latest_activity_at;
+        tr.classList.toggle(
+          "dashboard-monitor-row-idle",
+          String(it.activity_state || "") === "idle",
+        );
+        tr.innerHTML = [
+          "<td>" +
+            escapeHtml(String(it.full_name || "-")) +
+            "<br><small>" +
+            escapeHtml(String(it.username || "-")) +
+            "</small></td>",
+          "<td>" +
+            escapeHtml(String(it.class_name || it.school_name || "-")) +
+            "</td>",
+          "<td>" + escapeHtml(String(it.exam_label || "-")) + "</td>",
+          "<td>" + escapeHtml(fmtDate(startedAt)) + "</td>",
+          "<td>" +
+            escapeHtml(fmtDate(latestActivityAt)) +
+            "<br><small>" +
+            activityBadgeHTML(it.activity_state, it.activity_label) +
+            "</small></td>",
+          "<td>" +
+            statusBadgeHTML(it.latest_attempt_status || "in_progress") +
+            "</td>",
+        ].join("");
+        dashboardMonitorBody.appendChild(tr);
+      });
+    }
+
+    function applyDashboardMonitorView() {
+      const rows = getDashboardMonitorFilteredRows().sort(function (a, b) {
+        const rank = function (it) {
+          const state = String((it && it.activity_state) || "");
+          if (state === "idle") return 0;
+          if (state === "no-event") return 1;
+          return 2;
+        };
+        const rankDiff = rank(a) - rank(b);
+        if (rankDiff !== 0) return rankDiff;
+        const aIdle = Number((a && a.idle_minutes) || 0);
+        const bIdle = Number((b && b.idle_minutes) || 0);
+        if (rank(a) === 0 && aIdle !== bIdle) return bIdle - aIdle;
+        const aActivity = new Date(
+          (a && a.latest_activity_at) || (a && a.latest_started_at) || 0,
+        ).getTime();
+        const bActivity = new Date(
+          (b && b.latest_activity_at) || (b && b.latest_started_at) || 0,
+        ).getTime();
+        return bActivity - aActivity;
+      });
+      renderDashboardMonitorRows(rows);
+      const idleCount = rows.filter(function (it) {
+        return String((it && it.activity_state) || "") === "idle";
+      }).length;
+      const examFilter = String(
+        (dashboardMonitorExamFilter && dashboardMonitorExamFilter.value) || "",
+      );
+      const examLabel = examFilter
+        ? (() => {
+            const target = dashboardMonitorExamItems.find(function (it) {
+              return String((it && it.id) || "") === examFilter;
+            });
+            if (!target) return "";
+            return (
+              [
+                String((target && target.code) || "").trim(),
+                String((target && target.title) || "").trim(),
+              ]
+                .filter(Boolean)
+                .join(" | ") || "Ujian #" + examFilter
+            );
+          })()
+        : "";
+      setDashboardMonitorMeta(
+        "Peserta aktif: " +
+          String(rows.length) +
+          " | Idle: " +
+          String(idleCount) +
+          (examLabel ? " | Filter: " + examLabel : "") +
+          " | Diperbarui " +
+          fmtDate(new Date().toISOString()),
+        rows.length === 0,
+      );
+    }
+
+    async function loadGuruDashboardMonitor(force) {
+      if (!dashboardPanel || dashboardPanel.hidden) return;
+      if (dashboardMonitorLoading && !force) return;
+      dashboardMonitorLoading = true;
+      if (dashboardMonitorRefreshBtn) {
+        dashboardMonitorRefreshBtn.disabled = true;
+      }
+      try {
+        const exams = await api("/api/v1/admin/exams", "GET");
+        const examItems = (Array.isArray(exams) ? exams : []).filter(
+          function (it) {
+            return Number((it && it.assigned_count) || 0) > 0;
+          },
+        );
+        fillDashboardMonitorExamFilter(examItems);
+        const assignmentLists = await Promise.all(
+          examItems.map(async function (exam) {
+            const examID = Number((exam && exam.id) || 0);
+            if (examID <= 0) return [];
+            const rows = await api(
+              "/api/v1/admin/exams/" + examID + "/assignments",
+              "GET",
+            );
+            return (Array.isArray(rows) ? rows : []).map(function (it) {
+              const copy = Object.assign({}, it || {});
+              copy.exam_id = examID;
+              copy.exam_label =
+                [
+                  String((exam && exam.code) || "").trim(),
+                  String((exam && exam.title) || "").trim(),
+                ]
+                  .filter(Boolean)
+                  .join(" | ") || "Ujian #" + String(examID);
+              return copy;
+            });
+          }),
+        );
+        const activeRows = assignmentLists.flat().filter(function (it) {
+          return (
+            String((it && it.role) || "").toLowerCase() === "siswa" &&
+            String((it && it.latest_attempt_status) || "")
+              .trim()
+              .toLowerCase() === "in_progress"
+          );
+        });
+        dashboardMonitorRows = await loadDashboardMonitorActivity(activeRows);
+        guruInProgressCount = activeRows.length;
+        refreshGuruSummaryStats();
+        applyDashboardMonitorView();
+      } catch (err) {
+        dashboardMonitorRows = [];
+        renderDashboardMonitorRows([]);
+        setDashboardMonitorMeta(
+          "Gagal memuat monitor peserta: " + err.message,
+          true,
+        );
+      } finally {
+        dashboardMonitorLoading = false;
+        if (dashboardMonitorRefreshBtn) {
+          dashboardMonitorRefreshBtn.disabled = false;
+        }
+      }
+    }
+
+    function scheduleGuruDashboardMonitor() {
+      if (dashboardMonitorTimer) {
+        window.clearInterval(dashboardMonitorTimer);
+      }
+      dashboardMonitorTimer = window.setInterval(function () {
+        if (!dashboardPanel || dashboardPanel.hidden) return;
+        loadGuruDashboardMonitor(false);
+      }, 15000);
+    }
 
     function csvEscape(raw) {
       const s = String(raw || "");
@@ -1494,6 +1863,10 @@
             refreshGuruSummaryStats();
             return;
           }
+          if (menuKey === "dashboard") {
+            loadGuruDashboardMonitor(false);
+            return;
+          }
           if (menuKey === "exams") {
             try {
               await Promise.all([
@@ -2028,6 +2401,9 @@
       guruCompletedExamCount = Number(
         (dashboardStats && dashboardStats.completed_exam_count) || 0,
       );
+      guruInProgressCount = Number(
+        (dashboardStats && dashboardStats.in_progress_count) || 0,
+      );
       await Promise.all([
         loadEducationLevelsForGuruSubjectForm(),
         loadSubjects(),
@@ -2058,6 +2434,7 @@
       }
       fillSubjectEducationLevelSelect("");
       refreshGuruSummaryStats();
+      await loadGuruDashboardMonitor(true);
     }
 
     initGuruSubjectsModule();
@@ -2071,6 +2448,26 @@
     initGuruEnrollModule();
     initGuruResultsModule();
     initGuruDashboardModule();
+    if (dashboardMonitorRefreshBtn) {
+      dashboardMonitorRefreshBtn.addEventListener("click", function () {
+        loadGuruDashboardMonitor(true);
+      });
+    }
+    if (dashboardMonitorExamFilter) {
+      dashboardMonitorExamFilter.addEventListener("change", function () {
+        applyDashboardMonitorView();
+      });
+    }
+    if (dashboardMonitorIdleThreshold) {
+      dashboardMonitorIdleThreshold.value = loadSavedDashboardIdleThreshold();
+      dashboardMonitorIdleThreshold.addEventListener("change", function () {
+        dashboardMonitorIdleThreshold.value = saveDashboardIdleThreshold(
+          dashboardMonitorIdleThreshold.value,
+        );
+        loadGuruDashboardMonitor(true);
+      });
+    }
+    scheduleGuruDashboardMonitor();
     initGuruManuscriptModule();
     initManuscriptTableModule();
 
