@@ -64,6 +64,47 @@ func currentScopedProktor(ctx context.Context) (*auth.User, bool) {
 	return user, true
 }
 
+func proktorExamScopeClause(examExpr, creatorExpr, userExpr string, includeAssignments bool) string {
+	parts := make([]string, 0, 2)
+	if includeAssignments {
+		parts = append(parts, fmt.Sprintf(`
+			EXISTS (
+				SELECT 1
+				FROM exam_assignments ea
+				JOIN enrollments en ON en.user_id = ea.user_id AND en.status = 'active'
+				JOIN user_school_scopes uss ON uss.school_id = en.school_id
+				WHERE ea.exam_id = %s
+				  AND ea.status = 'active'
+				  AND uss.user_id = %s
+			)
+		`, examExpr, userExpr))
+	}
+	parts = append(parts, fmt.Sprintf(`
+		EXISTS (
+			SELECT 1
+			FROM enrollments creator_en
+			JOIN user_school_scopes creator_scope ON creator_scope.school_id = creator_en.school_id
+			WHERE creator_en.user_id = %s
+			  AND creator_en.status = 'active'
+			  AND creator_scope.user_id = %s
+		)
+	`, creatorExpr, userExpr))
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func proktorStudentScopeClause(studentExpr, userExpr string) string {
+	return fmt.Sprintf(`
+		EXISTS (
+			SELECT 1
+			FROM enrollments scoped_en
+			JOIN user_school_scopes scoped_school ON scoped_school.school_id = scoped_en.school_id
+			WHERE scoped_en.user_id = %s
+			  AND scoped_en.status = 'active'
+			  AND scoped_school.user_id = %s
+		)
+	`, studentExpr, userExpr)
+}
+
 func (s *Service) ensureProktorSchoolScope(ctx context.Context, schoolID int64) error {
 	user, ok := currentScopedProktor(ctx)
 	if !ok {
@@ -119,17 +160,15 @@ func (s *Service) ensureProktorExamScope(ctx context.Context, examID int64) erro
 		return nil
 	}
 	var allowed bool
-	if err := s.db.QueryRowContext(ctx, `
+	query := fmt.Sprintf(`
 		SELECT EXISTS(
 			SELECT 1
-			FROM exam_assignments ea
-			JOIN enrollments e ON e.user_id = ea.user_id AND e.status = 'active'
-			JOIN user_school_scopes uss ON uss.school_id = e.school_id
-			WHERE ea.exam_id = $2
-			  AND ea.status = 'active'
-			  AND uss.user_id = $1
+			FROM exams e
+			WHERE e.id = $2
+			  AND %s
 		)
-	`, user.ID, examID).Scan(&allowed); err != nil {
+	`, proktorExamScopeClause("e.id", "e.created_by", "$1", true))
+	if err := s.db.QueryRowContext(ctx, query, user.ID, examID).Scan(&allowed); err != nil {
 		if isUndefinedTableErr(err, "exam_assignments") {
 			return ErrAssignmentFeature
 		}
@@ -1194,7 +1233,7 @@ func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool)
 
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
 	user, isProktor := currentScopedProktor(ctx)
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			e.id,
 			e.code,
@@ -1209,18 +1248,10 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 		WHERE e.is_active = TRUE
 		  AND (
 			$1 = 0
-			OR EXISTS (
-				SELECT 1
-				FROM exam_assignments ea
-				JOIN enrollments en ON en.user_id = ea.user_id AND en.status = 'active'
-				JOIN user_school_scopes uss ON uss.school_id = en.school_id
-				WHERE ea.exam_id = e.id
-				  AND ea.status = 'active'
-				  AND uss.user_id = $1
-			)
+			OR %s
 		  )
 		ORDER BY e.created_at DESC, e.id DESC
-	`, func() int64 {
+	`, proktorExamScopeClause("e.id", "e.created_by", "$1", true)), func() int64 {
 		if isProktor {
 			return user.ID
 		}
@@ -1608,15 +1639,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 		args = append(args, *ownerID)
 	}
 	if isProktor {
-		clauses = append(clauses, fmt.Sprintf(`EXISTS (
-			SELECT 1
-			FROM exam_assignments ea2
-			JOIN enrollments en2 ON en2.user_id = ea2.user_id AND en2.status = 'active'
-			JOIN user_school_scopes uss ON uss.school_id = en2.school_id
-			WHERE ea2.exam_id = e.id
-			  AND ea2.status = 'active'
-			  AND uss.user_id = $%d
-		)`, len(args)+1))
+		clauses = append(clauses, proktorExamScopeClause("e.id", "e.created_by", fmt.Sprintf("$%d", len(args)+1), true))
 		args = append(args, user.ID)
 	}
 	if len(clauses) > 0 {
@@ -1658,8 +1681,13 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 					GROUP BY exam_id
 				) eq ON eq.exam_id = e.id
 			`
-			if len(clauses) > 0 {
-				query += " WHERE " + strings.Join(clauses, " AND ")
+			fallbackClauses := make([]string, 0, len(clauses))
+			fallbackClauses = append(fallbackClauses, clauses...)
+			if isProktor {
+				fallbackClauses[len(fallbackClauses)-1] = proktorExamScopeClause("e.id", "e.created_by", fmt.Sprintf("$%d", len(args)), false)
+			}
+			if len(fallbackClauses) > 0 {
+				query += " WHERE " + strings.Join(fallbackClauses, " AND ")
 			}
 			query += " ORDER BY e.created_at DESC, e.id DESC"
 			rows, err = s.db.QueryContext(ctx, query, args...)
@@ -2098,7 +2126,8 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	user, isProktor := currentScopedProktor(ctx)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			u.id,
 			u.username,
@@ -2140,8 +2169,14 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		) la ON TRUE
 		WHERE ea.exam_id = $1
 		  AND ea.status = 'active'
+		  AND ($2 = 0 OR %s)
 		ORDER BY u.role, u.full_name, u.username
-	`, examID)
+	`, proktorStudentScopeClause("u.id", "$2")), examID, func() int64 {
+		if isProktor {
+			return user.ID
+		}
+		return 0
+	}())
 	if err != nil {
 		if isUndefinedTableErr(err, "exam_assignments") {
 			return nil, ErrAssignmentFeature
@@ -2459,7 +2494,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		SubmittedAt *time.Time
 	}
 	attemptRows := make([]attemptRowLite, 0)
-	rows, err := s.db.QueryContext(ctx, `
+	user, isProktor := currentScopedProktor(ctx)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			a.id,
 			u.id,
@@ -2483,8 +2519,14 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		) enr ON TRUE
 		WHERE a.exam_id = $1
 		  AND u.role = 'siswa'
+		  AND ($2 = 0 OR %s)
 		ORDER BY a.started_at ASC, a.id ASC
-	`, examID)
+	`, proktorStudentScopeClause("u.id", "$2")), examID, func() int64 {
+		if isProktor {
+			return user.ID
+		}
+		return 0
+	}())
 	if err != nil {
 		return nil, fmt.Errorf("list exam participant results: %w", err)
 	}
@@ -2777,7 +2819,8 @@ func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64,
 		ClassName *string
 		AttemptKe int
 	}
-	rows, err = s.db.QueryContext(ctx, `
+	user, isProktor := currentScopedProktor(ctx)
+	rows, err = s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			a.id,
 			u.id,
@@ -2796,8 +2839,14 @@ func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64,
 		) enr ON TRUE
 		WHERE a.exam_id = $1
 		  AND u.role = 'siswa'
+		  AND ($2 = 0 OR %s)
 		ORDER BY a.started_at ASC, a.id ASC
-	`, examID)
+	`, proktorStudentScopeClause("u.id", "$2")), examID, func() int64 {
+		if isProktor {
+			return user.ID
+		}
+		return 0
+	}())
 	if err != nil {
 		return nil, fmt.Errorf("list attempts for learning goal results: %w", err)
 	}
@@ -5557,16 +5606,23 @@ func (s *Service) ListExamEvents(ctx context.Context, examID int64, limit int) (
 	if !exists {
 		return nil, ErrExamNotFound
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	user, isProktor := currentScopedProktor(ctx)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT ae.id, ae.attempt_id, ae.event_type, ae.payload, ae.client_ts, ae.server_ts, ae.actor_user_id,
 		       u.full_name, ae.created_at
 		FROM attempt_events ae
 		JOIN attempts a ON a.id = ae.attempt_id
 		LEFT JOIN users u ON u.id = ae.actor_user_id
 		WHERE a.exam_id = $1
+		  AND ($3 = 0 OR %s)
 		ORDER BY ae.server_ts DESC, ae.id DESC
 		LIMIT $2
-	`, examID, limit)
+	`, proktorStudentScopeClause("a.student_id", "$3")), examID, limit, func() int64 {
+		if isProktor {
+			return user.ID
+		}
+		return 0
+	}())
 	if err != nil {
 		return nil, fmt.Errorf("query exam events: %w", err)
 	}
