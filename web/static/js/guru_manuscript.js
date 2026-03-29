@@ -2524,6 +2524,16 @@
       "Muat ulang naskah...",
     );
     try {
+      if (typeof deps.loadBlueprints === "function") {
+        await deps.loadBlueprints(
+          Number(
+            (deps &&
+              deps.manuscriptSubjectSelect &&
+              deps.manuscriptSubjectSelect.value) ||
+              0,
+          ),
+        );
+      }
       const versions =
         typeof deps.loadAllManuscriptVersionsFromBlueprints === "function"
           ? await deps.loadAllManuscriptVersionsFromBlueprints()
