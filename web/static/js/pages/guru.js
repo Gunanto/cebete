@@ -1165,10 +1165,34 @@
     }
 
     function questionCodeLabel(it) {
-      const code = String((it && it.code) || "").trim();
-      const name = String((it && it.name) || "").trim();
-      if (!code && !name) return "-";
-      return name ? code + " - " + name : code;
+      if (!it) return "-";
+      const code = String((it && (it.code || it.question_code)) || "").trim();
+      const name = String(
+        (it && (it.name || it.question_code_name)) || "",
+      ).trim();
+      if (code && name) return code + " - " + name;
+      if (code || name) return code || name;
+      const questionCodeID = Number(
+        (it && (it.question_code_id || it.id)) || 0,
+      );
+      if (questionCodeID > 0) {
+        const found = findQuestionCodeByID(questionCodeID);
+        if (found && found !== it) {
+          const fallbackCode = String(
+            (found && (found.code || found.question_code)) || "",
+          ).trim();
+          const fallbackName = String(
+            (found && (found.name || found.question_code_name)) || "",
+          ).trim();
+          if (fallbackCode && fallbackName) {
+            return fallbackCode + " - " + fallbackName;
+          }
+          if (fallbackCode || fallbackName) {
+            return fallbackCode || fallbackName;
+          }
+        }
+      }
+      return "-";
     }
 
     function getSubjectsCache() {
