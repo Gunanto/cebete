@@ -221,28 +221,33 @@
   }
 
   async function reloadByCurrentScope(fallbackQuestionID) {
-    var questionIDs = Array.from(
-      new Set(
-        (Array.isArray(versionsCache) ? versionsCache : [])
-          .map(function (it) {
-            return Number((it && it.question_id) || 0);
-          })
-          .filter(function (v) {
-            return v > 0;
-          }),
-      ),
+    var questionIDsSet = new Set(
+      (Array.isArray(versionsCache) ? versionsCache : [])
+        .map(function (it) {
+          return Number((it && it.question_id) || 0);
+        })
+        .filter(function (v) {
+          return v > 0;
+        }),
     );
+    var fallbackQID = Number(
+      fallbackQuestionID ||
+        (deps.questionSelect && deps.questionSelect.value) ||
+        0,
+    );
+    if (fallbackQID > 0) {
+      questionIDsSet.add(fallbackQID);
+    }
+    var questionIDs = Array.from(questionIDsSet);
     if (!questionIDs.length) {
-      var qid = Number(
-        fallbackQuestionID ||
-          (deps.questionSelect && deps.questionSelect.value) ||
-          0,
-      );
-      if (qid <= 0) {
+      if (fallbackQID <= 0) {
         render([]);
         return;
       }
-      var one = await deps.api("/api/v1/questions/" + qid + "/versions", "GET");
+      var one = await deps.api(
+        "/api/v1/questions/" + fallbackQID + "/versions",
+        "GET",
+      );
       render(Array.isArray(one) ? one : []);
       return;
     }
