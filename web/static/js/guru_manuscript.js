@@ -2304,6 +2304,7 @@
     const fd = new FormData(deps.manuscriptForm);
     const editingVersionNo = Number(fd.get("editing_version_no") || 0);
     const isEditMode = editingVersionNo > 0;
+    const selectedSubjectID = Number(fd.get("subject_id") || 0);
     const stemHTML = String(fd.get("stem_html") || "");
     if (isBlankHTML(stemHTML)) {
       setMsg("Naskah Soal (Stem) wajib diisi.");
@@ -2405,14 +2406,14 @@
         }
         questionID = await ensureQuestionFn({
           question_id: questionID,
-          subject_id: Number(fd.get("subject_id") || 0),
+          subject_id: selectedSubjectID,
           learning_goal_id: selectedLearningGoalID,
           question_code_id: selectedQuestionCodeID,
           question_type: selectedType,
           stem_html: stemHTML,
         });
         if (typeof deps.loadBlueprints === "function") {
-          await deps.loadBlueprints(0);
+          await deps.loadBlueprints(selectedSubjectID);
         }
         if (deps.manuscriptQuestionSelect) {
           deps.manuscriptQuestionSelect.value = String(questionID);
@@ -2524,8 +2525,8 @@
         );
         return;
       }
-      if (blueprintChanged && typeof deps.loadBlueprints === "function") {
-        await deps.loadBlueprints(0);
+      if (typeof deps.loadBlueprints === "function") {
+        await deps.loadBlueprints(selectedSubjectID);
       }
       if (typeof deps.reloadManuscriptsByCurrentTableScope === "function") {
         await deps.reloadManuscriptsByCurrentTableScope(questionID);
