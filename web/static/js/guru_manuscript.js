@@ -2304,7 +2304,13 @@
     const fd = new FormData(deps.manuscriptForm);
     const editingVersionNo = Number(fd.get("editing_version_no") || 0);
     const isEditMode = editingVersionNo > 0;
-    const selectedSubjectID = Number(fd.get("subject_id") || 0);
+    const selectedSubjectID = Number(
+      fd.get("subject_id") ||
+        (deps &&
+          deps.manuscriptSubjectSelect &&
+          deps.manuscriptSubjectSelect.value) ||
+        0,
+    );
     const stemHTML = String(fd.get("stem_html") || "");
     if (isBlankHTML(stemHTML)) {
       setMsg("Naskah Soal (Stem) wajib diisi.");
@@ -2444,7 +2450,7 @@
           "/api/v1/stimulus-groups/" + effectiveStimulusGroupID,
           "PUT",
           {
-            subject_id: Number(fd.get("subject_id") || 0),
+            subject_id: selectedSubjectID,
             title: nextTitle,
             stimulus_type: stimulusPayload.type,
             stimulus_content: stimulusPayload.content,
@@ -2549,7 +2555,7 @@
       const nextDraftContext =
         !isEditMode && effectiveStimulusGroupID > 0
           ? {
-              subjectID: Number(fd.get("subject_id") || 0),
+              subjectID: selectedSubjectID,
               learningGoalID: selectedLearningGoalID,
               questionCodeID: selectedQuestionCodeID,
               stimulusGroupID: effectiveStimulusGroupID,
