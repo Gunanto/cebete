@@ -2538,7 +2538,22 @@
         typeof deps.loadAllManuscriptVersionsFromBlueprints === "function"
           ? await deps.loadAllManuscriptVersionsFromBlueprints()
           : [];
-      if (typeof deps.renderManuscripts === "function") {
+      if (Array.isArray(versions) && versions.length > 0) {
+        if (typeof deps.renderManuscripts === "function") {
+          deps.renderManuscripts(versions);
+        }
+      } else if (
+        typeof deps.reloadManuscriptsByCurrentTableScope === "function"
+      ) {
+        await deps.reloadManuscriptsByCurrentTableScope(
+          Number(
+            (deps &&
+              deps.manuscriptQuestionSelect &&
+              deps.manuscriptQuestionSelect.value) ||
+              0,
+          ),
+        );
+      } else if (typeof deps.renderManuscripts === "function") {
         deps.renderManuscripts(versions);
       }
       setMsg("Data naskah berhasil dimuat ulang.");
