@@ -149,6 +149,11 @@
     deps.manuscriptStimulusGroupInfo.value = String(value || "").trim();
   }
 
+  function setStimulusGroupStatus(value) {
+    if (!deps || !deps.manuscriptStimulusGroupStatus) return;
+    deps.manuscriptStimulusGroupStatus.textContent = String(value || "").trim();
+  }
+
   function findStimulusGroupByID(id) {
     const target = Number(id || 0);
     if (target <= 0) return null;
@@ -222,12 +227,18 @@
     if (selected <= 0) {
       setStimulusEditorsDisabled(false);
       setStimulusGroupInfo("Belum memilih stimulus group");
+      setStimulusGroupStatus(
+        "Editor stimulus masih aktif. Pilih stimulus group hanya jika stimulus ini akan dipakai bersama oleh beberapa soal.",
+      );
       return;
     }
     const group = findStimulusGroupByID(selected);
     if (!group) {
       setStimulusEditorsDisabled(false);
       setStimulusGroupInfo("Stimulus group tidak ditemukan di cache");
+      setStimulusGroupStatus(
+        "Editor stimulus tetap aktif karena stimulus group yang dipilih tidak ditemukan.",
+      );
       return;
     }
     const stimulusType = String((group && group.stimulus_type) || "single")
@@ -265,6 +276,9 @@
     syncHiddenInputs();
     setStimulusEditorsDisabled(true);
     setStimulusGroupInfo(getStimulusGroupLabel(group));
+    setStimulusGroupStatus(
+      'Stimulus mengikuti group yang dipilih. Editor stimulus di bawah dikunci; gunakan "Lepas Group" jika ingin kembali mengedit stimulus inline.',
+    );
   }
 
   async function loadStimulusGroups(selectedID) {
@@ -342,6 +356,9 @@
     }
     setStimulusEditorsDisabled(false);
     setStimulusGroupInfo("Belum memilih stimulus group");
+    setStimulusGroupStatus(
+      "Editor stimulus masih aktif. Pilih stimulus group hanya jika stimulus ini akan dipakai bersama oleh beberapa soal.",
+    );
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
@@ -1816,6 +1833,9 @@
       loadStimulusGroups(stimulusGroupID > 0 ? stimulusGroupID : 0).catch(
         function () {
           setStimulusGroupInfo("Gagal memuat stimulus group");
+          setStimulusGroupStatus(
+            "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
+          );
         },
       );
     } else {
@@ -2394,6 +2414,9 @@
       }
       await loadStimulusGroups(0).catch(function () {
         setStimulusGroupInfo("Gagal memuat stimulus group");
+        setStimulusGroupStatus(
+          "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
+        );
       });
       if (typeof deps.fillBlueprintSelect === "function") {
         deps.fillBlueprintSelect(deps.manuscriptQuestionSelect);
@@ -2534,6 +2557,9 @@
     }
     loadStimulusGroups(0).catch(function () {
       setStimulusGroupInfo("Gagal memuat stimulus group");
+      setStimulusGroupStatus(
+        "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
+      );
     });
     applyTypeUI(true);
   }
@@ -2567,6 +2593,9 @@
     }
     loadStimulusGroups(0).catch(function () {
       setStimulusGroupInfo("Gagal memuat stimulus group");
+      setStimulusGroupStatus(
+        "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
+      );
     });
   }
 
@@ -3164,6 +3193,9 @@
     bindEvents();
     loadStimulusGroups(0).catch(function () {
       setStimulusGroupInfo("Pilih mapel untuk memuat stimulus group");
+      setStimulusGroupStatus(
+        "Pilih mapel terlebih dahulu. Selama belum ada stimulus group yang dipilih, editor stimulus inline tetap aktif.",
+      );
     });
   }
 

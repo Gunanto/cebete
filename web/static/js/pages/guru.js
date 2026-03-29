@@ -291,6 +291,9 @@
     const manuscriptStimulusGroupInfo = document.getElementById(
       "guru-manuscript-stimulus-group-info",
     );
+    const manuscriptStimulusGroupStatus = document.getElementById(
+      "guru-manuscript-stimulus-group-status",
+    );
     const manuscriptStimulusGroupRefreshBtn = document.getElementById(
       "guru-manuscript-stimulus-group-refresh-btn",
     );
@@ -1958,6 +1961,7 @@
         manuscriptQuestionTypeUI: manuscriptQuestionTypeUI,
         manuscriptStimulusGroupSelect: manuscriptStimulusGroupSelect,
         manuscriptStimulusGroupInfo: manuscriptStimulusGroupInfo,
+        manuscriptStimulusGroupStatus: manuscriptStimulusGroupStatus,
         manuscriptStimulusGroupRefreshBtn: manuscriptStimulusGroupRefreshBtn,
         manuscriptStimulusGroupCreateBtn: manuscriptStimulusGroupCreateBtn,
         manuscriptStimulusGroupClearBtn: manuscriptStimulusGroupClearBtn,
