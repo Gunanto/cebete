@@ -2326,13 +2326,20 @@
         deps.manuscriptStimulusGroupSelect.value) ||
         0,
     );
+    const originalStimulusGroupID = Number(
+      (manuscriptEditSnapshot && manuscriptEditSnapshot.stimulus_group_id) || 0,
+    );
+    const effectiveStimulusGroupID =
+      isEditMode && selectedStimulusGroupID <= 0 && originalStimulusGroupID > 0
+        ? originalStimulusGroupID
+        : selectedStimulusGroupID;
     if (!selectedType) {
       setMsg("Tipe Soal wajib dipilih.");
       return;
     }
     const forceNewQuestionFromStimulus =
       !isEditMode &&
-      selectedStimulusGroupID > 0 &&
+      effectiveStimulusGroupID > 0 &&
       blueprintType &&
       selectedType !== blueprintType;
     if (
@@ -2424,8 +2431,8 @@
       }
       const stimulusPayload = buildStimulusPayload();
       const stimulusHTML = String(stimulusPayload.html || "").trim();
-      if (isEditMode && selectedStimulusGroupID > 0) {
-        const selectedGroup = findStimulusGroupByID(selectedStimulusGroupID);
+      if (isEditMode && effectiveStimulusGroupID > 0) {
+        const selectedGroup = findStimulusGroupByID(effectiveStimulusGroupID);
         const nextTitle =
           buildStimulusTextSnippet(
             stimulusHTML,
@@ -2434,7 +2441,7 @@
           getStimulusGroupDisplayTitle(selectedGroup) ||
           "Stimulus Group";
         await deps.api(
-          "/api/v1/stimulus-groups/" + selectedStimulusGroupID,
+          "/api/v1/stimulus-groups/" + effectiveStimulusGroupID,
           "PUT",
           {
             subject_id: Number(fd.get("subject_id") || 0),
@@ -2444,11 +2451,11 @@
             stimulus_html: stimulusHTML,
           },
         );
-        await loadStimulusGroups(selectedStimulusGroupID);
+        await loadStimulusGroups(effectiveStimulusGroupID);
       }
       const payload = {
         stimulus_group_id:
-          selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
+          effectiveStimulusGroupID > 0 ? effectiveStimulusGroupID : null,
         stimulus_type: stimulusPayload.type,
         stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
@@ -2497,7 +2504,7 @@
         learning_goal_id: selectedLearningGoalID,
         question_code_id: selectedQuestionCodeID,
         stimulus_group_id:
-          selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
+          effectiveStimulusGroupID > 0 ? effectiveStimulusGroupID : null,
         stimulus_type: stimulusPayload.type,
         stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
@@ -2540,12 +2547,12 @@
         }
       }
       const nextDraftContext =
-        !isEditMode && selectedStimulusGroupID > 0
+        !isEditMode && effectiveStimulusGroupID > 0
           ? {
               subjectID: Number(fd.get("subject_id") || 0),
               learningGoalID: selectedLearningGoalID,
               questionCodeID: selectedQuestionCodeID,
-              stimulusGroupID: selectedStimulusGroupID,
+              stimulusGroupID: effectiveStimulusGroupID,
             }
           : null;
       if (nextDraftContext) {
