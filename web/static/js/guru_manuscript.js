@@ -167,12 +167,52 @@
     });
   }
 
+  function buildStimulusTextSnippet(rawHTML, fallback) {
+    const source = String(rawHTML || fallback || "").trim();
+    if (!source) return "";
+    const holder = document.createElement("div");
+    holder.innerHTML = source;
+    const plain = String(holder.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!plain) return "";
+    return plain.length > 60 ? plain.slice(0, 57) + "..." : plain;
+  }
+
+  function getStimulusGroupDisplayTitle(item) {
+    const rawTitle = String((item && item.title) || "").trim();
+    const normalizedTitle = rawTitle.toLowerCase();
+    if (
+      rawTitle &&
+      normalizedTitle !== "pilih soal" &&
+      normalizedTitle !== "stimulus" &&
+      normalizedTitle !== "soal baru"
+    ) {
+      return rawTitle;
+    }
+    const content =
+      item &&
+      item.stimulus_content &&
+      typeof item.stimulus_content === "object" &&
+      typeof item.stimulus_content.body === "string"
+        ? item.stimulus_content.body
+        : "";
+    const snippet = buildStimulusTextSnippet(
+      item && item.stimulus_html,
+      content,
+    );
+    return snippet || rawTitle || "Stimulus Group";
+  }
+
   function getStimulusGroupLabel(item) {
-    const title = String((item && item.title) || "").trim();
+    const title = getStimulusGroupDisplayTitle(item);
     const linked = Number((item && item.linked_questions) || 0);
-    if (!title) return "Stimulus Group";
-    if (linked > 0) return title + " (" + String(linked) + " soal)";
-    return title;
+    const groupID = Number((item && item.id) || 0);
+    const suffix = linked > 0 ? String(linked) + " soal" : "belum dipakai";
+    if (groupID > 0) {
+      return "#" + String(groupID) + " - " + title + " (" + suffix + ")";
+    }
+    return title + " (" + suffix + ")";
   }
 
   function fillStimulusGroupSelect(selectedID) {
@@ -3025,14 +3065,10 @@
             );
             return;
           }
-          const titleSeed = String(
-            (deps &&
-              deps.manuscriptQuestionSelect &&
-              deps.manuscriptQuestionSelect.selectedOptions &&
-              deps.manuscriptQuestionSelect.selectedOptions[0] &&
-              deps.manuscriptQuestionSelect.selectedOptions[0].textContent) ||
-              "",
-          ).trim();
+          const titleSeed = buildStimulusTextSnippet(
+            stimulusPayload.html,
+            stimulusPayload.content && stimulusPayload.content.body,
+          );
           const done = deps.beginBusy(
             deps.manuscriptStimulusGroupCreateBtn,
             deps.msg,
