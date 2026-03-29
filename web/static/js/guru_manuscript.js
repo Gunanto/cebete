@@ -3152,24 +3152,57 @@
             stimulusPayload.html,
             stimulusPayload.content && stimulusPayload.content.body,
           );
+          const selectedGroupID = Number(
+            (deps &&
+              deps.manuscriptStimulusGroupSelect &&
+              deps.manuscriptStimulusGroupSelect.value) ||
+              0,
+          );
           const done = deps.beginBusy(
             deps.manuscriptStimulusGroupCreateBtn,
             deps.msg,
-            "Menyimpan stimulus group...",
+            selectedGroupID > 0
+              ? "Memperbarui stimulus group..."
+              : "Menyimpan stimulus group...",
           );
           try {
-            const created = await deps.api("/api/v1/stimulus-groups", "POST", {
-              subject_id: subjectID,
-              title: titleSeed || "Stimulus Baru",
-              stimulus_type: stimulusPayload.type,
-              stimulus_content: stimulusPayload.content,
-              stimulus_html: String(stimulusPayload.html || "").trim(),
-            });
-            await loadStimulusGroups(Number((created && created.id) || 0));
-            showFormMessage("Stimulus berhasil disimpan menjadi group.", 4000);
+            if (selectedGroupID > 0) {
+              await deps.api(
+                "/api/v1/stimulus-groups/" + selectedGroupID,
+                "PUT",
+                {
+                  subject_id: subjectID,
+                  title: titleSeed || "Stimulus",
+                  stimulus_type: stimulusPayload.type,
+                  stimulus_content: stimulusPayload.content,
+                  stimulus_html: String(stimulusPayload.html || "").trim(),
+                },
+              );
+              await loadStimulusGroups(selectedGroupID);
+              showFormMessage("Stimulus group berhasil diperbarui.", 4000);
+            } else {
+              const created = await deps.api(
+                "/api/v1/stimulus-groups",
+                "POST",
+                {
+                  subject_id: subjectID,
+                  title: titleSeed || "Stimulus Baru",
+                  stimulus_type: stimulusPayload.type,
+                  stimulus_content: stimulusPayload.content,
+                  stimulus_html: String(stimulusPayload.html || "").trim(),
+                },
+              );
+              await loadStimulusGroups(Number((created && created.id) || 0));
+              showFormMessage(
+                "Stimulus berhasil disimpan menjadi group.",
+                4000,
+              );
+            }
           } catch (err) {
             showFormMessage(
-              "Gagal menyimpan stimulus group: " + err.message,
+              (selectedGroupID > 0
+                ? "Gagal memperbarui stimulus group: "
+                : "Gagal menyimpan stimulus group: ") + err.message,
               5000,
             );
           } finally {
