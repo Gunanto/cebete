@@ -2295,10 +2295,16 @@
       const selectedLearningGoalID = Number(fd.get("learning_goal_id") || 0);
       var blueprintChanged = false;
       if (!isEditMode) {
-        if (typeof deps.ensureQuestionForManuscriptSubmission !== "function") {
+        const ensureQuestionFn =
+          typeof deps.ensureQuestionForManuscriptSubmission === "function"
+            ? deps.ensureQuestionForManuscriptSubmission
+            : typeof deps.ensureQuestionForSubmission === "function"
+              ? deps.ensureQuestionForSubmission
+              : null;
+        if (!ensureQuestionFn) {
           throw new Error("Tidak bisa membuat soal baru.");
         }
-        questionID = await deps.ensureQuestionForManuscriptSubmission({
+        questionID = await ensureQuestionFn({
           question_id: questionID,
           subject_id: Number(fd.get("subject_id") || 0),
           learning_goal_id: selectedLearningGoalID,

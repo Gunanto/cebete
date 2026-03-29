@@ -1945,6 +1945,8 @@
         fillLearningGoalSelect: fillLearningGoalSelect,
         fillQuestionCodeSelect: fillQuestionCodeSelect,
         ensureQuestionForSubmission: ensureQuestionForManuscriptSubmission,
+        ensureQuestionForManuscriptSubmission:
+          ensureQuestionForManuscriptSubmission,
         findQuestionByID: findQuestionByID,
         loadBlueprints: loadBlueprints,
         fillBlueprintSelect: fillBlueprintSelect,
