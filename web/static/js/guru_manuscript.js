@@ -154,6 +154,11 @@
     deps.manuscriptStimulusGroupStatus.textContent = String(value || "").trim();
   }
 
+  function syncStimulusGroupQuickActions(groupID) {
+    if (!deps || !deps.manuscriptStimulusGroupQuickActions) return;
+    deps.manuscriptStimulusGroupQuickActions.hidden = Number(groupID || 0) <= 0;
+  }
+
   function findStimulusGroupByID(id) {
     const target = Number(id || 0);
     if (target <= 0) return null;
@@ -230,6 +235,7 @@
       setStimulusGroupStatus(
         "Editor stimulus masih aktif. Pilih stimulus group hanya jika stimulus ini akan dipakai bersama oleh beberapa soal.",
       );
+      syncStimulusGroupQuickActions(0);
       return;
     }
     const group = findStimulusGroupByID(selected);
@@ -239,6 +245,7 @@
       setStimulusGroupStatus(
         "Editor stimulus tetap aktif karena stimulus group yang dipilih tidak ditemukan.",
       );
+      syncStimulusGroupQuickActions(0);
       return;
     }
     const stimulusType = String((group && group.stimulus_type) || "single")
@@ -279,6 +286,7 @@
     setStimulusGroupStatus(
       'Stimulus mengikuti group yang dipilih. Editor stimulus di bawah dikunci; gunakan "Lepas Group" jika ingin kembali mengedit stimulus inline.',
     );
+    syncStimulusGroupQuickActions(selected);
   }
 
   async function loadStimulusGroups(selectedID) {
@@ -359,6 +367,7 @@
     setStimulusGroupStatus(
       "Editor stimulus masih aktif. Pilih stimulus group hanya jika stimulus ini akan dipakai bersama oleh beberapa soal.",
     );
+    syncStimulusGroupQuickActions(0);
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
@@ -2408,66 +2417,81 @@
           deps.renderManuscripts(versions);
         }
       }
-      resetEditors();
-      deps.manuscriptForm.reset();
-      if (typeof deps.syncManuscriptSubjectState === "function") {
-        deps.syncManuscriptSubjectState();
+      const nextDraftContext =
+        !isEditMode && selectedStimulusGroupID > 0
+          ? {
+              subjectID: Number(fd.get("subject_id") || 0),
+              learningGoalID: selectedLearningGoalID,
+              questionCodeID: selectedQuestionCodeID,
+              stimulusGroupID: selectedStimulusGroupID,
+            }
+          : null;
+      if (nextDraftContext) {
+        await primeDraftContext(nextDraftContext, "");
+      } else {
+        resetEditors();
+        deps.manuscriptForm.reset();
+        if (typeof deps.syncManuscriptSubjectState === "function") {
+          deps.syncManuscriptSubjectState();
+        }
+        await loadStimulusGroups(0).catch(function () {
+          setStimulusGroupInfo("Gagal memuat stimulus group");
+          setStimulusGroupStatus(
+            "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
+          );
+        });
+        if (typeof deps.fillBlueprintSelect === "function") {
+          deps.fillBlueprintSelect(deps.manuscriptQuestionSelect);
+        }
+        if (deps.manuscriptStatementsWrap) {
+          deps.manuscriptStatementsWrap.innerHTML = "";
+        }
+        if (deps.manuscriptOptionsWrap) {
+          deps.manuscriptOptionsWrap.innerHTML = "";
+        }
+        if (deps.manuscriptStimulusTabsWrap) {
+          deps.manuscriptStimulusTabsWrap.innerHTML = "";
+        }
+        if (deps.manuscriptMatchPromptsWrap) {
+          deps.manuscriptMatchPromptsWrap.innerHTML = "";
+        }
+        if (deps.manuscriptMatchChoicesWrap) {
+          deps.manuscriptMatchChoicesWrap.innerHTML = "";
+        }
+        if (deps.manuscriptMatchPairsWrap) {
+          deps.manuscriptMatchPairsWrap.innerHTML = "";
+        }
+        if (deps.manuscriptMatchNoteHTML) {
+          deps.manuscriptMatchNoteHTML.value = "";
+        }
+        if (deps.manuscriptShortAnswerAccepted) {
+          deps.manuscriptShortAnswerAccepted.value = "";
+        }
+        if (deps.manuscriptShortAnswerPlaceholder) {
+          deps.manuscriptShortAnswerPlaceholder.value = "";
+        }
+        if (deps.manuscriptShortAnswerInputType) {
+          deps.manuscriptShortAnswerInputType.value = "textarea";
+        }
+        if (deps.manuscriptShortAnswerMaxLength) {
+          deps.manuscriptShortAnswerMaxLength.value = "33";
+        }
+        ensureOptionRows();
+        ensureTFStatementRows();
+        ensureMatchRows("prompt");
+        ensureMatchRows("choice");
+        renderMatchPairRows();
+        ensureStimulusTabRows();
+        applyStimulusTypeUI();
+        applyTypeUI(true);
+        clearEditMode();
       }
-      await loadStimulusGroups(0).catch(function () {
-        setStimulusGroupInfo("Gagal memuat stimulus group");
-        setStimulusGroupStatus(
-          "Daftar stimulus group gagal dimuat. Editor stimulus tetap bisa dipakai secara inline.",
-        );
-      });
-      if (typeof deps.fillBlueprintSelect === "function") {
-        deps.fillBlueprintSelect(deps.manuscriptQuestionSelect);
-      }
-      if (deps.manuscriptStatementsWrap) {
-        deps.manuscriptStatementsWrap.innerHTML = "";
-      }
-      if (deps.manuscriptOptionsWrap) {
-        deps.manuscriptOptionsWrap.innerHTML = "";
-      }
-      if (deps.manuscriptStimulusTabsWrap) {
-        deps.manuscriptStimulusTabsWrap.innerHTML = "";
-      }
-      if (deps.manuscriptMatchPromptsWrap) {
-        deps.manuscriptMatchPromptsWrap.innerHTML = "";
-      }
-      if (deps.manuscriptMatchChoicesWrap) {
-        deps.manuscriptMatchChoicesWrap.innerHTML = "";
-      }
-      if (deps.manuscriptMatchPairsWrap) {
-        deps.manuscriptMatchPairsWrap.innerHTML = "";
-      }
-      if (deps.manuscriptMatchNoteHTML) {
-        deps.manuscriptMatchNoteHTML.value = "";
-      }
-      if (deps.manuscriptShortAnswerAccepted) {
-        deps.manuscriptShortAnswerAccepted.value = "";
-      }
-      if (deps.manuscriptShortAnswerPlaceholder) {
-        deps.manuscriptShortAnswerPlaceholder.value = "";
-      }
-      if (deps.manuscriptShortAnswerInputType) {
-        deps.manuscriptShortAnswerInputType.value = "textarea";
-      }
-      if (deps.manuscriptShortAnswerMaxLength) {
-        deps.manuscriptShortAnswerMaxLength.value = "33";
-      }
-      ensureOptionRows();
-      ensureTFStatementRows();
-      ensureMatchRows("prompt");
-      ensureMatchRows("choice");
-      renderMatchPairRows();
-      ensureStimulusTabRows();
-      applyStimulusTypeUI();
-      applyTypeUI(true);
-      clearEditMode();
       showFormMessage(
         isEditMode
           ? "Naskah soal berhasil diperbarui."
-          : "Naskah soal berhasil disimpan.",
+          : nextDraftContext
+            ? "Naskah soal berhasil disimpan. Stimulus group tetap aktif; pilih tipe soal berikutnya dari panel stimulus."
+            : "Naskah soal berhasil disimpan.",
         4000,
       );
       setMsg(
@@ -2602,6 +2626,141 @@
 
   function onQuestionTypeChange() {
     applyTypeUI(false);
+  }
+
+  function collectDraftContext() {
+    return {
+      subjectID: Number(
+        (deps &&
+          deps.manuscriptSubjectSelect &&
+          deps.manuscriptSubjectSelect.value) ||
+          0,
+      ),
+      learningGoalID: Number(
+        (deps &&
+          deps.manuscriptLearningGoalSelect &&
+          deps.manuscriptLearningGoalSelect.value) ||
+          0,
+      ),
+      questionCodeID: Number(
+        (deps &&
+          deps.manuscriptQuestionCodeSelect &&
+          deps.manuscriptQuestionCodeSelect.value) ||
+          0,
+      ),
+      stimulusGroupID: Number(
+        (deps &&
+          deps.manuscriptStimulusGroupSelect &&
+          deps.manuscriptStimulusGroupSelect.value) ||
+          0,
+      ),
+    };
+  }
+
+  async function primeDraftContext(contextData, questionType) {
+    const ctx = contextData || {};
+    const subjectID = Number(ctx.subjectID || 0);
+    const learningGoalID = Number(ctx.learningGoalID || 0);
+    const questionCodeID = Number(ctx.questionCodeID || 0);
+    const stimulusGroupID = Number(ctx.stimulusGroupID || 0);
+    const nextType = String(questionType || "")
+      .trim()
+      .toLowerCase();
+
+    clearEditMode();
+    if (deps && deps.manuscriptForm) {
+      deps.manuscriptForm.reset();
+    }
+    resetEditors();
+    if (deps && deps.manuscriptQuestionSelect) {
+      deps.manuscriptQuestionSelect.value = "";
+    }
+    if (deps && deps.manuscriptSubjectSelect && subjectID > 0) {
+      deps.manuscriptSubjectSelect.value = String(subjectID);
+    }
+    if (typeof deps.syncManuscriptSubjectState === "function") {
+      deps.syncManuscriptSubjectState();
+    }
+    if (
+      typeof deps.fillLearningGoalSelect === "function" &&
+      deps.manuscriptLearningGoalSelect &&
+      subjectID > 0
+    ) {
+      deps.fillLearningGoalSelect(deps.manuscriptLearningGoalSelect, subjectID);
+    }
+    if (deps && deps.manuscriptLearningGoalSelect) {
+      deps.manuscriptLearningGoalSelect.value =
+        learningGoalID > 0 ? String(learningGoalID) : "";
+    }
+    if (
+      typeof deps.fillQuestionCodeSelect === "function" &&
+      deps.manuscriptQuestionCodeSelect &&
+      subjectID > 0
+    ) {
+      deps.fillQuestionCodeSelect(
+        deps.manuscriptQuestionCodeSelect,
+        subjectID,
+        true,
+      );
+    }
+    if (deps && deps.manuscriptQuestionCodeSelect) {
+      deps.manuscriptQuestionCodeSelect.value =
+        questionCodeID > 0 ? String(questionCodeID) : "";
+    }
+    if (deps && deps.manuscriptQuestionTypeUI) {
+      deps.manuscriptQuestionTypeUI.value = nextType || "";
+    }
+    applyTypeUI(false);
+    if (subjectID > 0) {
+      await loadStimulusGroups(stimulusGroupID);
+    } else {
+      applyStimulusGroupSelection(stimulusGroupID);
+    }
+    if (
+      deps &&
+      deps.manuscriptStemEditor &&
+      deps.manuscriptStemEditor.scrollIntoView
+    ) {
+      deps.manuscriptStemEditor.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+    if (
+      manuscriptStemQuill &&
+      typeof manuscriptStemQuill.focus === "function"
+    ) {
+      manuscriptStemQuill.focus();
+    }
+  }
+
+  async function startDraftFromStimulusGroup(questionType) {
+    const ctx = collectDraftContext();
+    if (ctx.subjectID <= 0) {
+      showFormMessage("Pilih mapel terlebih dahulu.", 3000);
+      return;
+    }
+    if (ctx.learningGoalID <= 0) {
+      showFormMessage(
+        "Pilih tujuan pembelajaran terlebih dahulu sebelum menambah butir baru.",
+        4000,
+      );
+      return;
+    }
+    if (ctx.stimulusGroupID <= 0) {
+      showFormMessage("Pilih atau buat stimulus group terlebih dahulu.", 4000);
+      return;
+    }
+    try {
+      await primeDraftContext(ctx, questionType);
+      showFormMessage(
+        "Butir soal baru siap. Stimulus group tetap dipakai untuk soal ini.",
+        3500,
+      );
+      setMsg("");
+    } catch (err) {
+      showFormMessage("Gagal menyiapkan butir soal baru: " + err.message, 5000);
+    }
   }
 
   function rebuildOptionRowsForLayoutChange() {
@@ -2867,6 +3026,19 @@
             setMsg("");
             done();
           }
+        },
+      );
+    }
+    if (deps.manuscriptStimulusGroupQuickActions) {
+      deps.manuscriptStimulusGroupQuickActions.addEventListener(
+        "click",
+        function (e) {
+          const btn =
+            e.target && e.target.closest("[data-stimulus-group-quick-type]");
+          if (!btn) return;
+          startDraftFromStimulusGroup(
+            btn.getAttribute("data-stimulus-group-quick-type") || "",
+          );
         },
       );
     }
