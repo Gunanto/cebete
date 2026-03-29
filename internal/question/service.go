@@ -16,22 +16,23 @@ import (
 )
 
 var (
-	ErrInvalidInput         = errors.New("invalid input")
-	ErrSubjectNotFound      = errors.New("subject not found")
-	ErrLearningGoalNotFound = errors.New("learning goal not found")
-	ErrQuestionCodeNotFound = errors.New("question code not found")
-	ErrQuestionCodeExists   = errors.New("question code already exists")
-	ErrForbidden            = errors.New("forbidden")
-	ErrExamNotFound         = errors.New("exam not found")
-	ErrQuestionNotFound     = errors.New("question not found")
-	ErrParallelNotFound     = errors.New("question parallel not found")
-	ErrQuestionNotInExam    = errors.New("question not in exam")
-	ErrVersionNotFound      = errors.New("question version not found")
-	ErrReviewTaskNotFound   = errors.New("review task not found")
-	ErrReviewForbidden      = errors.New("review forbidden")
-	ErrReopenNotAllowed     = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
-	ErrReopenPending        = errors.New("permintaan reopen final masih menunggu persetujuan")
-	ErrUserNotFound         = errors.New("user not found")
+	ErrInvalidInput          = errors.New("invalid input")
+	ErrSubjectNotFound       = errors.New("subject not found")
+	ErrLearningGoalNotFound  = errors.New("learning goal not found")
+	ErrQuestionCodeNotFound  = errors.New("question code not found")
+	ErrQuestionCodeExists    = errors.New("question code already exists")
+	ErrForbidden             = errors.New("forbidden")
+	ErrExamNotFound          = errors.New("exam not found")
+	ErrQuestionNotFound      = errors.New("question not found")
+	ErrParallelNotFound      = errors.New("question parallel not found")
+	ErrQuestionNotInExam     = errors.New("question not in exam")
+	ErrVersionNotFound       = errors.New("question version not found")
+	ErrStimulusGroupNotFound = errors.New("stimulus group not found")
+	ErrReviewTaskNotFound    = errors.New("review task not found")
+	ErrReviewForbidden       = errors.New("review forbidden")
+	ErrReopenNotAllowed      = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
+	ErrReopenPending         = errors.New("permintaan reopen final masih menunggu persetujuan")
+	ErrUserNotFound          = errors.New("user not found")
 )
 
 type DuplicateQuestionError struct {
@@ -44,6 +45,28 @@ func (e *DuplicateQuestionError) Error() string {
 
 type Service struct {
 	db *sql.DB
+}
+
+func (s *Service) ensureSubjectAccess(ctx context.Context, subjectID, actorID int64, enforceOwner bool) error {
+	if subjectID <= 0 {
+		return ErrInvalidInput
+	}
+	var createdBy sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT created_by
+		FROM subjects
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, subjectID).Scan(&createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrSubjectNotFound
+		}
+		return fmt.Errorf("load subject access: %w", err)
+	}
+	if enforceOwner && (!createdBy.Valid || createdBy.Int64 != actorID) {
+		return ErrForbidden
+	}
+	return nil
 }
 
 type CreateQuestionInput struct {
@@ -84,6 +107,7 @@ type QuestionBlueprint struct {
 
 type CreateQuestionVersionInput struct {
 	QuestionID      int64
+	StimulusGroupID *int64
 	StimulusType    *string
 	StimulusContent json.RawMessage
 	StimulusHTML    *string
@@ -145,6 +169,7 @@ type AssignQuestionLearningGoalInput struct {
 type UpdateQuestionVersionInput struct {
 	QuestionID      int64
 	VersionNo       int
+	StimulusGroupID *int64
 	StimulusType    *string
 	StimulusContent json.RawMessage
 	StimulusHTML    *string
@@ -170,6 +195,7 @@ type QuestionVersion struct {
 	ID              int64                 `json:"id"`
 	QuestionID      int64                 `json:"question_id"`
 	VersionNo       int                   `json:"version_no"`
+	StimulusGroupID *int64                `json:"stimulus_group_id,omitempty"`
 	StimulusType    *string               `json:"stimulus_type,omitempty"`
 	StimulusContent json.RawMessage       `json:"stimulus_content,omitempty"`
 	StimulusHTML    *string               `json:"stimulus_html,omitempty"`
@@ -187,6 +213,41 @@ type QuestionVersion struct {
 	Options         []QuestionOptionInput `json:"options,omitempty"`
 	CreatedBy       *int64                `json:"created_by,omitempty"`
 	CreatedAt       time.Time             `json:"created_at"`
+}
+
+type CreateStimulusGroupInput struct {
+	SubjectID       int64
+	Title           string
+	StimulusType    *string
+	StimulusContent json.RawMessage
+	StimulusHTML    *string
+	CreatedBy       int64
+	EnforceOwner    bool
+}
+
+type UpdateStimulusGroupInput struct {
+	ID              int64
+	SubjectID       int64
+	Title           *string
+	StimulusType    *string
+	StimulusContent json.RawMessage
+	StimulusHTML    *string
+	ActorID         int64
+	EnforceOwner    bool
+}
+
+type StimulusGroup struct {
+	ID              int64           `json:"id"`
+	SubjectID       int64           `json:"subject_id"`
+	Title           string          `json:"title"`
+	StimulusType    *string         `json:"stimulus_type,omitempty"`
+	StimulusContent json.RawMessage `json:"stimulus_content,omitempty"`
+	StimulusHTML    *string         `json:"stimulus_html,omitempty"`
+	IsActive        bool            `json:"is_active"`
+	CreatedBy       *int64          `json:"created_by,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       *time.Time      `json:"updated_at,omitempty"`
+	LinkedQuestions int             `json:"linked_questions,omitempty"`
 }
 
 type ExportQuestionData struct {
@@ -209,6 +270,7 @@ type ExportQuestionData struct {
 	Objective            string
 	CognitiveLevel       string
 	Difficulty           *int
+	StimulusGroupID      *int64
 	StimulusType         *string
 	StimulusContent      json.RawMessage
 	StimulusHTML         *string
@@ -396,6 +458,182 @@ func populateBlueprintMetadata(out *QuestionBlueprint, raw json.RawMessage) {
 	out.Material = getText("material")
 	out.Objective = getText("objective")
 	out.CognitiveLevel = getText("cognitive_level")
+}
+
+func (s *Service) CreateStimulusGroup(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error) {
+	if in.SubjectID <= 0 || in.CreatedBy <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := s.ensureSubjectAccess(ctx, in.SubjectID, in.CreatedBy, in.EnforceOwner); err != nil {
+		return nil, err
+	}
+	stimType, stimContent, stimHTML, err := normalizeStimulusFields(in.StimulusType, in.StimulusContent, in.StimulusHTML)
+	if err != nil {
+		return nil, err
+	}
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		title = "Stimulus"
+	}
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO stimulus_groups (
+			subject_id, title, stimulus_type, stimulus_content, stimulus_html, is_active, created_by, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4::jsonb, $5, TRUE, NULLIF($6, 0), now(), now()
+		)
+		RETURNING id, subject_id, title, stimulus_type, stimulus_content, stimulus_html, is_active, created_by, created_at, updated_at, 0::bigint
+	`, in.SubjectID, title, nullStringPtr(stimType), nullJSONBytes(stimContent), nullStringPtr(stimHTML), in.CreatedBy)
+	out, err := scanStimulusGroup(row)
+	if err != nil {
+		return nil, fmt.Errorf("insert stimulus group: %w", err)
+	}
+	return out, nil
+}
+
+func (s *Service) ListStimulusGroups(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error) {
+	query := `
+		SELECT sg.id, sg.subject_id, sg.title, sg.stimulus_type, sg.stimulus_content, sg.stimulus_html,
+			sg.is_active, sg.created_by, sg.created_at, sg.updated_at,
+			COUNT(DISTINCT qv.question_id) AS linked_questions
+		FROM stimulus_groups sg
+		LEFT JOIN question_versions qv ON qv.stimulus_group_id = sg.id
+		WHERE sg.is_active = TRUE
+	`
+	args := make([]any, 0, 2)
+	if subjectID > 0 {
+		query += fmt.Sprintf(" AND sg.subject_id = $%d", len(args)+1)
+		args = append(args, subjectID)
+	}
+	if ownerID != nil && *ownerID > 0 {
+		query += fmt.Sprintf(" AND sg.created_by = $%d", len(args)+1)
+		args = append(args, *ownerID)
+	}
+	query += ` GROUP BY sg.id ORDER BY sg.id DESC`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query stimulus groups: %w", err)
+	}
+	defer rows.Close()
+	items := make([]StimulusGroup, 0)
+	for rows.Next() {
+		item, err := scanStimulusGroup(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan stimulus group: %w", err)
+		}
+		items = append(items, *item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stimulus groups: %w", err)
+	}
+	return items, nil
+}
+
+func (s *Service) UpdateStimulusGroup(ctx context.Context, in UpdateStimulusGroupInput) (*StimulusGroup, error) {
+	if in.ID <= 0 || in.ActorID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT subject_id, title, stimulus_type, stimulus_content, stimulus_html, created_by
+		FROM stimulus_groups
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, in.ID)
+	var subjectID int64
+	var title string
+	var stimType sql.NullString
+	var stimContent []byte
+	var stimHTML sql.NullString
+	var createdBy sql.NullInt64
+	if err := row.Scan(&subjectID, &title, &stimType, &stimContent, &stimHTML, &createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrStimulusGroupNotFound
+		}
+		return nil, fmt.Errorf("load stimulus group: %w", err)
+	}
+	if in.SubjectID > 0 && in.SubjectID != subjectID {
+		if err := s.ensureSubjectAccess(ctx, in.SubjectID, in.ActorID, in.EnforceOwner); err != nil {
+			return nil, err
+		}
+		subjectID = in.SubjectID
+	} else if in.EnforceOwner && (!createdBy.Valid || createdBy.Int64 != in.ActorID) {
+		return nil, ErrForbidden
+	}
+	nextTitle := title
+	if in.Title != nil {
+		nextTitle = strings.TrimSpace(*in.Title)
+		if nextTitle == "" {
+			nextTitle = "Stimulus"
+		}
+	}
+	var currentStimType *string
+	if stimType.Valid {
+		currentStimType = &stimType.String
+	}
+	var currentStimHTML *string
+	if stimHTML.Valid {
+		currentStimHTML = &stimHTML.String
+	}
+	currentStimContent := json.RawMessage(nil)
+	if len(bytes.TrimSpace(stimContent)) > 0 {
+		currentStimContent = append(json.RawMessage(nil), stimContent...)
+	}
+	nextStimType, nextStimContent, nextStimHTML := currentStimType, currentStimContent, currentStimHTML
+	if in.StimulusType != nil || len(bytes.TrimSpace(in.StimulusContent)) > 0 || in.StimulusHTML != nil {
+		var err error
+		nextStimType, nextStimContent, nextStimHTML, err = normalizeStimulusFields(in.StimulusType, in.StimulusContent, in.StimulusHTML)
+		if err != nil {
+			return nil, err
+		}
+	}
+	updated := s.db.QueryRowContext(ctx, `
+		UPDATE stimulus_groups
+		SET subject_id = $2,
+			title = $3,
+			stimulus_type = $4,
+			stimulus_content = $5::jsonb,
+			stimulus_html = $6,
+			updated_at = now()
+		WHERE id = $1
+		  AND is_active = TRUE
+		RETURNING id, subject_id, title, stimulus_type, stimulus_content, stimulus_html, is_active, created_by, created_at, updated_at, 0::bigint
+	`, in.ID, subjectID, nextTitle, nullStringPtr(nextStimType), nullJSONBytes(nextStimContent), nullStringPtr(nextStimHTML))
+	out, err := scanStimulusGroup(updated)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrStimulusGroupNotFound
+		}
+		return nil, fmt.Errorf("update stimulus group: %w", err)
+	}
+	return out, nil
+}
+
+func (s *Service) DeleteStimulusGroup(ctx context.Context, id, actorID int64, enforceOwner bool) error {
+	if id <= 0 || actorID <= 0 {
+		return ErrInvalidInput
+	}
+	var createdBy sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT created_by
+		FROM stimulus_groups
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, id).Scan(&createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrStimulusGroupNotFound
+		}
+		return fmt.Errorf("load stimulus group delete: %w", err)
+	}
+	if enforceOwner && (!createdBy.Valid || createdBy.Int64 != actorID) {
+		return ErrForbidden
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE stimulus_groups
+		SET is_active = FALSE, updated_at = now()
+		WHERE id = $1
+	`, id); err != nil {
+		return fmt.Errorf("delete stimulus group: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error) {
@@ -952,6 +1190,36 @@ func (s *Service) AssignQuestionLearningGoal(ctx context.Context, in AssignQuest
 	return out, nil
 }
 
+func (s *Service) validateStimulusGroupForQuestion(ctx context.Context, tx *sql.Tx, stimulusGroupID *int64, subjectID, actorID int64, enforceOwner bool) (*int64, error) {
+	if stimulusGroupID == nil {
+		return nil, nil
+	}
+	if *stimulusGroupID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	var groupSubjectID int64
+	var createdBy sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT subject_id, created_by
+		FROM stimulus_groups
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, *stimulusGroupID).Scan(&groupSubjectID, &createdBy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrStimulusGroupNotFound
+		}
+		return nil, fmt.Errorf("load stimulus group for question: %w", err)
+	}
+	if groupSubjectID != subjectID {
+		return nil, fmt.Errorf("%w: stimulus_group subject mismatch", ErrInvalidInput)
+	}
+	if enforceOwner && (!createdBy.Valid || createdBy.Int64 != actorID) {
+		return nil, ErrForbidden
+	}
+	v := *stimulusGroupID
+	return &v, nil
+}
+
 func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error) {
 	if in.QuestionID <= 0 {
 		return nil, ErrInvalidInput
@@ -993,6 +1261,12 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	base, nextVersion, err := s.loadBaseVersionForCreate(ctx, tx, in.QuestionID, currentStem)
 	if err != nil {
 		return nil, err
+	}
+	if in.StimulusGroupID != nil {
+		base.StimulusGroupID, err = s.validateStimulusGroupForQuestion(ctx, tx, in.StimulusGroupID, subjectID, in.CreatedBy, in.EnforceOwner)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if in.StimulusType != nil || len(bytes.TrimSpace(in.StimulusContent)) > 0 || in.StimulusHTML != nil {
@@ -1127,17 +1401,17 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 
 	row := tx.QueryRowContext(ctx, `
 			INSERT INTO question_versions (
-				question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+				question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
 				content_hash, created_by, created_at
 			) VALUES (
-				$1, $2, $3, $4::jsonb, $5, $6, $7, $8,
-				$9::jsonb, $10::jsonb, 'draft', FALSE, TRUE, $11, $12, $13,
-				$14, NULLIF($15, 0), now()
+				$1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9,
+				$10::jsonb, $11::jsonb, 'draft', FALSE, TRUE, $12, $13, $14,
+				$15, NULLIF($16, 0), now()
 			)
-			RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+			RETURNING id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		`, in.QuestionID, nextVersion, nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.QuestionContent), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
+		`, in.QuestionID, nextVersion, nullInt64Ptr(base.StimulusGroupID), nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.QuestionContent), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
@@ -1183,7 +1457,7 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+			SELECT id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
@@ -1222,7 +1496,7 @@ func (s *Service) FinalizeQuestionVersion(ctx context.Context, questionID int64,
 	}
 
 	refetch := tx.QueryRowContext(ctx, `
-			SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+			SELECT id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 			FROM question_versions
 			WHERE question_id = $1 AND version_no = $2
@@ -1438,7 +1712,7 @@ func (s *Service) ListQuestionVersions(ctx context.Context, questionID int64, ow
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1
@@ -1546,7 +1820,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 	}
 	var verQuery strings.Builder
 	verQuery.WriteString(`
-		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html, question_content, answer_key
+		SELECT version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html, question_content, answer_key
 		FROM question_versions
 		WHERE question_id = $1
 		  AND ($2 <= 0 OR created_by = $2)
@@ -1557,6 +1831,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 		args = append(args, versionNo)
 	}
 	verQuery.WriteString(" ORDER BY is_active DESC, version_no DESC LIMIT 1")
+	var stimulusGroupID sql.NullInt64
 	var stimulusType sql.NullString
 	var stimulusContent []byte
 	var stimulus sql.NullString
@@ -1564,6 +1839,7 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 	var hint sql.NullString
 	if err := s.db.QueryRowContext(ctx, verQuery.String(), args...).Scan(
 		&out.VersionNo,
+		&stimulusGroupID,
 		&stimulusType,
 		&stimulusContent,
 		&stimulus,
@@ -1583,6 +1859,9 @@ func (s *Service) GetQuestionExportData(ctx context.Context, questionID int64, v
 	}
 	if stimulusType.Valid {
 		out.StimulusType = &stimulusType.String
+	}
+	if stimulusGroupID.Valid {
+		out.StimulusGroupID = &stimulusGroupID.Int64
 	}
 	if len(bytes.TrimSpace(stimulusContent)) > 0 {
 		out.StimulusContent = append(json.RawMessage(nil), stimulusContent...)
@@ -1866,7 +2145,7 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
 		FROM question_versions
 		WHERE question_id = $1 AND version_no = $2
@@ -1883,11 +2162,18 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 		return nil, ErrForbidden
 	}
 	var questionType string
+	var subjectID int64
 	if err := tx.QueryRowContext(ctx, `SELECT question_type FROM questions WHERE id = $1`, in.QuestionID).Scan(&questionType); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrQuestionNotFound
 		}
 		return nil, fmt.Errorf("load question type: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT subject_id FROM questions WHERE id = $1`, in.QuestionID).Scan(&subjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrQuestionNotFound
+		}
+		return nil, fmt.Errorf("load question subject: %w", err)
 	}
 
 	next := *item
@@ -1900,6 +2186,12 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 		next.StimulusType = stimType
 		next.StimulusContent = stimContent
 		next.StimulusHTML = stimHTML
+	}
+	if in.StimulusGroupID != nil {
+		next.StimulusGroupID, err = s.validateStimulusGroupForQuestion(ctx, tx, in.StimulusGroupID, subjectID, in.ActorID, in.EnforceOwner)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if in.StemHTML != nil {
 		v := strings.TrimSpace(*in.StemHTML)
@@ -1989,22 +2281,23 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 
 	updatedRow := tx.QueryRowContext(ctx, `
 		UPDATE question_versions
-		SET stimulus_type = $3,
-			stimulus_content = $4::jsonb,
-			stimulus_html = $5,
-			stem_html = $6,
-			explanation_html = $7,
-			hint_html = $8,
-			question_content = $9::jsonb,
-			answer_key = $10::jsonb,
-			duration_seconds = $11,
-			weight = $12,
-			change_note = $13,
-			content_hash = $14
+		SET stimulus_group_id = $3,
+			stimulus_type = $4,
+			stimulus_content = $5::jsonb,
+			stimulus_html = $6,
+			stem_html = $7,
+			explanation_html = $8,
+			hint_html = $9,
+			question_content = $10::jsonb,
+			answer_key = $11::jsonb,
+			duration_seconds = $12,
+			weight = $13,
+			change_note = $14,
+			content_hash = $15
 		WHERE question_id = $1 AND version_no = $2
-		RETURNING id, question_id, version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+		RETURNING id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-	`, in.QuestionID, in.VersionNo, nullStringPtr(next.StimulusType), nullJSONBytes(next.StimulusContent), nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.QuestionContent), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
+	`, in.QuestionID, in.VersionNo, nullInt64Ptr(next.StimulusGroupID), nullStringPtr(next.StimulusType), nullJSONBytes(next.StimulusContent), nullStringPtr(next.StimulusHTML), next.StemHTML, nullStringPtr(next.ExplanationHTML), nullStringPtr(next.HintHTML), []byte(next.QuestionContent), []byte(next.AnswerKey), nullIntPtr(next.DurationSeconds), next.Weight, nullStringPtr(next.ChangeNote), contentHash)
 	out, err := scanQuestionVersion(updatedRow)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2596,6 +2889,7 @@ func (s *Service) ensureExamAndQuestionLinked(ctx context.Context, examID, quest
 }
 
 type baseVersionData struct {
+	StimulusGroupID *int64
 	StimulusType    *string
 	StimulusContent json.RawMessage
 	StimulusHTML    *string
@@ -2735,7 +3029,7 @@ func (s *Service) canCreateVersionTx(ctx context.Context, tx *sql.Tx, questionID
 
 func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, questionID int64, defaultStem string) (*baseVersionData, int, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT version_no, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
+		SELECT version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 			question_content, answer_key, duration_seconds, weight, change_note
 		FROM question_versions
 		WHERE question_id = $1
@@ -2745,6 +3039,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	`, questionID)
 
 	var versionNo int
+	var stimulusGroupID sql.NullInt64
 	var stimulusType sql.NullString
 	var stimulusContent []byte
 	var stimulusHTML sql.NullString
@@ -2756,7 +3051,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	var duration sql.NullInt64
 	var weight float64
 	var change sql.NullString
-	if err := row.Scan(&versionNo, &stimulusType, &stimulusContent, &stimulusHTML, &stemHTML, &explanation, &hint, &questionContent, &answerKey, &duration, &weight, &change); err != nil {
+	if err := row.Scan(&versionNo, &stimulusGroupID, &stimulusType, &stimulusContent, &stimulusHTML, &stemHTML, &explanation, &hint, &questionContent, &answerKey, &duration, &weight, &change); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, fmt.Errorf("load latest version: %w", err)
 		}
@@ -2772,6 +3067,10 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 		}, 1, nil
 	}
 
+	var stimulusGroupIDPtr *int64
+	if stimulusGroupID.Valid {
+		stimulusGroupIDPtr = &stimulusGroupID.Int64
+	}
 	var stimulusTypePtr *string
 	if stimulusType.Valid {
 		stimulusTypePtr = &stimulusType.String
@@ -2809,6 +3108,7 @@ func (s *Service) loadBaseVersionForCreate(ctx context.Context, tx *sql.Tx, ques
 	}
 
 	return &baseVersionData{
+		StimulusGroupID: stimulusGroupIDPtr,
 		StimulusType:    stimulusTypePtr,
 		StimulusContent: stimulusContentRaw,
 		StimulusHTML:    stimulusHTMLPtr,
@@ -3741,8 +4041,53 @@ func scanQuestionCode(scanner interface{ Scan(dest ...any) error }) (*QuestionCo
 	return &out, nil
 }
 
+func scanStimulusGroup(scanner interface{ Scan(dest ...any) error }) (*StimulusGroup, error) {
+	var out StimulusGroup
+	var stimType sql.NullString
+	var stimContent []byte
+	var stimHTML sql.NullString
+	var createdBy sql.NullInt64
+	var updatedAt sql.NullTime
+	var linkedQuestions sql.NullInt64
+	if err := scanner.Scan(
+		&out.ID,
+		&out.SubjectID,
+		&out.Title,
+		&stimType,
+		&stimContent,
+		&stimHTML,
+		&out.IsActive,
+		&createdBy,
+		&out.CreatedAt,
+		&updatedAt,
+		&linkedQuestions,
+	); err != nil {
+		return nil, err
+	}
+	if stimType.Valid {
+		out.StimulusType = &stimType.String
+	}
+	if len(bytes.TrimSpace(stimContent)) > 0 {
+		out.StimulusContent = append(json.RawMessage(nil), stimContent...)
+	}
+	if stimHTML.Valid {
+		out.StimulusHTML = &stimHTML.String
+	}
+	if createdBy.Valid {
+		out.CreatedBy = &createdBy.Int64
+	}
+	if updatedAt.Valid {
+		out.UpdatedAt = &updatedAt.Time
+	}
+	if linkedQuestions.Valid {
+		out.LinkedQuestions = int(linkedQuestions.Int64)
+	}
+	return &out, nil
+}
+
 func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*QuestionVersion, error) {
 	var out QuestionVersion
+	var stimulusGroupID sql.NullInt64
 	var stimulusType sql.NullString
 	var stimulusContent []byte
 	var stimulusHTML sql.NullString
@@ -3756,6 +4101,7 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.ID,
 		&out.QuestionID,
 		&out.VersionNo,
+		&stimulusGroupID,
 		&stimulusType,
 		&stimulusContent,
 		&stimulusHTML,
@@ -3774,6 +4120,9 @@ func scanQuestionVersion(scanner interface{ Scan(dest ...any) error }) (*Questio
 		&out.CreatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if stimulusGroupID.Valid {
+		out.StimulusGroupID = &stimulusGroupID.Int64
 	}
 	if stimulusType.Valid {
 		out.StimulusType = &stimulusType.String

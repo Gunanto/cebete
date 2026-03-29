@@ -22,6 +22,10 @@ type Handler struct {
 }
 
 type questionService interface {
+	CreateStimulusGroup(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error)
+	ListStimulusGroups(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error)
+	UpdateStimulusGroup(ctx context.Context, in UpdateStimulusGroupInput) (*StimulusGroup, error)
+	DeleteStimulusGroup(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
 	ListQuestionCodes(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
 	UpdateQuestionCode(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
@@ -89,7 +93,24 @@ type assignQuestionLearningGoalRequest struct {
 	LearningGoalID int64 `json:"learning_goal_id"`
 }
 
+type createStimulusGroupRequest struct {
+	SubjectID       int64           `json:"subject_id"`
+	Title           string          `json:"title"`
+	StimulusType    *string         `json:"stimulus_type"`
+	StimulusContent json.RawMessage `json:"stimulus_content"`
+	StimulusHTML    *string         `json:"stimulus_html"`
+}
+
+type updateStimulusGroupRequest struct {
+	SubjectID       int64           `json:"subject_id"`
+	Title           *string         `json:"title"`
+	StimulusType    *string         `json:"stimulus_type"`
+	StimulusContent json.RawMessage `json:"stimulus_content"`
+	StimulusHTML    *string         `json:"stimulus_html"`
+}
+
 type createQuestionVersionRequest struct {
+	StimulusGroupID *int64                `json:"stimulus_group_id"`
 	StimulusType    *string               `json:"stimulus_type"`
 	StimulusContent json.RawMessage       `json:"stimulus_content"`
 	StimulusHTML    *string               `json:"stimulus_html"`
@@ -106,6 +127,7 @@ type createQuestionVersionRequest struct {
 }
 
 type updateQuestionVersionRequest struct {
+	StimulusGroupID *int64                `json:"stimulus_group_id"`
 	StimulusType    *string               `json:"stimulus_type"`
 	StimulusContent json.RawMessage       `json:"stimulus_content"`
 	StimulusHTML    *string               `json:"stimulus_html"`
@@ -164,6 +186,138 @@ type transferQuestionsRequest struct {
 
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+func (h *Handler) ListStimulusGroups(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	var subjectID int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("subject_id")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "subject_id must be positive"})
+			return
+		}
+		subjectID = parsed
+	}
+	var ownerID *int64
+	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		ownerID = &user.ID
+	}
+	items, err := h.svc.ListStimulusGroups(r.Context(), subjectID, ownerID)
+	if err != nil {
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
+}
+
+func (h *Handler) CreateStimulusGroup(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	var req createStimulusGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+	item, err := h.svc.CreateStimulusGroup(r.Context(), CreateStimulusGroupInput{
+		SubjectID:       req.SubjectID,
+		Title:           req.Title,
+		StimulusType:    req.StimulusType,
+		StimulusContent: req.StimulusContent,
+		StimulusHTML:    req.StimulusHTML,
+		CreatedBy:       user.ID,
+		EnforceOwner:    strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrSubjectNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, apiResponse{OK: true, Data: item})
+}
+
+func (h *Handler) UpdateStimulusGroup(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid stimulus group id"})
+		return
+	}
+	var req updateStimulusGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+	item, err := h.svc.UpdateStimulusGroup(r.Context(), UpdateStimulusGroupInput{
+		ID:              id,
+		SubjectID:       req.SubjectID,
+		Title:           req.Title,
+		StimulusType:    req.StimulusType,
+		StimulusContent: req.StimulusContent,
+		StimulusHTML:    req.StimulusHTML,
+		ActorID:         user.ID,
+		EnforceOwner:    strings.EqualFold(strings.TrimSpace(user.Role), "guru"),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrStimulusGroupNotFound), errors.Is(err, ErrSubjectNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
+}
+
+func (h *Handler) DeleteStimulusGroup(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid stimulus group id"})
+		return
+	}
+	if err := h.svc.DeleteStimulusGroup(r.Context(), id, user.ID, strings.EqualFold(strings.TrimSpace(user.Role), "guru")); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrStimulusGroupNotFound):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{"deleted": true}})
 }
 
 func (h *Handler) ListQuestionCodes(w http.ResponseWriter, r *http.Request) {
@@ -900,6 +1054,7 @@ func (h *Handler) CreateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 
 	item, err := h.svc.CreateQuestionVersion(r.Context(), CreateQuestionVersionInput{
 		QuestionID:      questionID,
+		StimulusGroupID: req.StimulusGroupID,
 		StimulusType:    req.StimulusType,
 		StimulusContent: req.StimulusContent,
 		StimulusHTML:    req.StimulusHTML,
@@ -1108,6 +1263,7 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 	item, err := h.svc.UpdateQuestionVersion(r.Context(), UpdateQuestionVersionInput{
 		QuestionID:      questionID,
 		VersionNo:       versionNo,
+		StimulusGroupID: req.StimulusGroupID,
 		StimulusType:    req.StimulusType,
 		StimulusContent: req.StimulusContent,
 		StimulusHTML:    req.StimulusHTML,

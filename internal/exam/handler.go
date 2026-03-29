@@ -63,6 +63,8 @@ type examService interface {
 	DeleteExamQuestion(ctx context.Context, examID, questionID int64) error
 	IsExamOwnedBy(ctx context.Context, examID, ownerID int64) (bool, error)
 	GetAttemptSummary(ctx context.Context, attemptID int64) (*AttemptSummary, error)
+	GetAttemptPages(ctx context.Context, attemptID int64) (*AttemptPageList, error)
+	GetAttemptPage(ctx context.Context, attemptID int64, pageNo int) (*AttemptPage, error)
 	GetAttemptQuestion(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error)
 	GetAttemptResult(ctx context.Context, attemptID int64) (*AttemptResult, error)
 	SaveAnswer(ctx context.Context, input SaveAnswerInput) error
@@ -1950,6 +1952,91 @@ func (h *Handler) GetAttemptQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.svc.GetAttemptQuestion(r.Context(), attemptID, no)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrAttemptNotFound), errors.Is(err, ErrQuestionNotInExam):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
+}
+
+func (h *Handler) GetAttemptPages(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	attemptID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || attemptID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid attempt id"})
+		return
+	}
+	if err := h.authorizeAttemptAccess(r, user, attemptID); err != nil {
+		switch {
+		case errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	item, err := h.svc.GetAttemptPages(r.Context(), attemptID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: item})
+}
+
+func (h *Handler) GetAttemptPage(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	attemptID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || attemptID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid attempt id"})
+		return
+	}
+	pageNo, err := strconv.Atoi(chi.URLParam(r, "pageNo"))
+	if err != nil || pageNo <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid page number"})
+		return
+	}
+	if err := h.authorizeAttemptAccess(r, user, attemptID); err != nil {
+		switch {
+		case errors.Is(err, ErrAttemptNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrAttemptForbidden):
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "forbidden"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	item, err := h.svc.GetAttemptPage(r.Context(), attemptID, pageNo)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrAttemptNotFound), errors.Is(err, ErrQuestionNotInExam):

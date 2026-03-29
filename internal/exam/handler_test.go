@@ -33,6 +33,7 @@ type mockExamService struct {
 	listExamsForTokenFn             func(ctx context.Context) ([]ExamTokenExam, error)
 	listPublishedExamsForStudentFn  func(ctx context.Context, studentID int64) ([]ExamTokenExam, error)
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
+	publishExamTokenFn              func(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
 	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	listExamParticipantResultsFn    func(ctx context.Context, examID int64) (*ExamParticipantResult, error)
 	listExamLearningGoalResultsFn   func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
@@ -55,6 +56,8 @@ type mockExamService struct {
 	deleteExamQuestionFn            func(ctx context.Context, examID, questionID int64) error
 	isExamOwnedByFn                 func(ctx context.Context, examID, ownerID int64) (bool, error)
 	getAttemptSummaryFn             func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
+	getAttemptPagesFn               func(ctx context.Context, attemptID int64) (*AttemptPageList, error)
+	getAttemptPageFn                func(ctx context.Context, attemptID int64, pageNo int) (*AttemptPage, error)
 	getAttemptQuestionFn            func(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error)
 	getAttemptResultFn              func(ctx context.Context, attemptID int64) (*AttemptResult, error)
 	saveAnswerFn                    func(ctx context.Context, input SaveAnswerInput) error
@@ -91,6 +94,13 @@ func (m *mockExamService) PreviewExamByTokenForStaff(ctx context.Context, examTo
 		return nil, errors.New("not implemented")
 	}
 	return m.previewExamByTokenForStaffFn(ctx, examToken)
+}
+
+func (m *mockExamService) PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error) {
+	if m.publishExamTokenFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.publishExamTokenFn(ctx, examID, publishedBy)
 }
 
 func (m *mockExamService) ListAdminExams(ctx context.Context, includeInactive bool) ([]ExamAdminRecord, error) {
@@ -345,6 +355,20 @@ func (m *mockExamService) GetAttemptSummary(ctx context.Context, attemptID int64
 	return m.getAttemptSummaryFn(ctx, attemptID)
 }
 
+func (m *mockExamService) GetAttemptPages(ctx context.Context, attemptID int64) (*AttemptPageList, error) {
+	if m.getAttemptPagesFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.getAttemptPagesFn(ctx, attemptID)
+}
+
+func (m *mockExamService) GetAttemptPage(ctx context.Context, attemptID int64, pageNo int) (*AttemptPage, error) {
+	if m.getAttemptPageFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.getAttemptPageFn(ctx, attemptID, pageNo)
+}
+
 func (m *mockExamService) GetAttemptQuestion(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error) {
 	if m.getAttemptQuestionFn == nil {
 		return nil, errors.New("not implemented")
@@ -545,6 +569,73 @@ func TestGetAttemptAllowedForAdmin(t *testing.T) {
 	}
 	if !calledSummary {
 		t.Fatalf("summary should be called")
+	}
+}
+
+func TestGetAttemptPagesOK(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		getAttemptPagesFn: func(ctx context.Context, attemptID int64) (*AttemptPageList, error) {
+			called = true
+			if attemptID != 21 {
+				t.Fatalf("unexpected attempt id: %d", attemptID)
+			}
+			return &AttemptPageList{
+				AttemptID:      attemptID,
+				TotalPages:     2,
+				TotalQuestions: 3,
+				Pages: []AttemptPageRef{
+					{PageNo: 1, QuestionNos: []int{1, 2}, QuestionIDs: []int64{11, 12}},
+					{PageNo: 2, QuestionNos: []int{3}, QuestionIDs: []int64{13}},
+				},
+			}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/21/pages", nil)
+	req = withChiParam(req, "id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "admin"}))
+	w := httptest.NewRecorder()
+
+	h.GetAttemptPages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !called {
+		t.Fatalf("expected get attempt pages to be called")
+	}
+	body := decodeBody(t, w)
+	if body["ok"] != true {
+		t.Fatalf("expected ok=true, got %+v", body)
+	}
+}
+
+func TestGetAttemptPageForbiddenForNonOwner(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		getAttemptOwnerFn: func(ctx context.Context, attemptID int64) (int64, error) {
+			return 99, nil
+		},
+		getAttemptPageFn: func(ctx context.Context, attemptID int64, pageNo int) (*AttemptPage, error) {
+			called = true
+			return &AttemptPage{AttemptID: attemptID, PageNo: pageNo}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/31/pages/2", nil)
+	req = withChiParam(req, "id", "31")
+	req = withChiParam(req, "pageNo", "2")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 1, Role: "siswa"}))
+	w := httptest.NewRecorder()
+
+	h.GetAttemptPage(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatalf("expected page lookup not called when forbidden")
 	}
 }
 

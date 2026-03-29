@@ -192,6 +192,7 @@ type AttemptSummary struct {
 	SubmittedAt     *time.Time `json:"submitted_at,omitempty"`
 	RemainingSecs   int64      `json:"remaining_secs"`
 	TotalQuestions  int        `json:"total_questions"`
+	TotalPages      int        `json:"total_pages"`
 	TotalWeight     float64    `json:"total_weight"`
 	ClassAvgScore   float64    `json:"class_average_score,omitempty"`
 	Answered        int        `json:"answered"`
@@ -610,6 +611,30 @@ type AttemptQuestion struct {
 	AnswerPayload   json.RawMessage  `json:"answer_payload"`
 	IsDoubt         bool             `json:"is_doubt"`
 	Options         []QuestionOption `json:"options,omitempty"`
+}
+
+type AttemptPageRef struct {
+	PageNo          int     `json:"page_no"`
+	QuestionNos     []int   `json:"question_nos"`
+	QuestionIDs     []int64 `json:"question_ids"`
+	StimulusGroupID *int64  `json:"stimulus_group_id,omitempty"`
+}
+
+type AttemptPageList struct {
+	AttemptID      int64            `json:"attempt_id"`
+	TotalPages     int              `json:"total_pages"`
+	TotalQuestions int              `json:"total_questions"`
+	Pages          []AttemptPageRef `json:"pages"`
+}
+
+type AttemptPage struct {
+	AttemptID       int64             `json:"attempt_id"`
+	PageNo          int               `json:"page_no"`
+	QuestionNos     []int             `json:"question_nos"`
+	QuestionIDs     []int64           `json:"question_ids"`
+	StimulusGroupID *int64            `json:"stimulus_group_id,omitempty"`
+	StimulusHTML    *string           `json:"stimulus_html,omitempty"`
+	Items           []AttemptQuestion `json:"items"`
 }
 
 type ExamQuestionDetail struct {
@@ -4760,38 +4785,7 @@ func (s *Service) ListExamsBySubject(ctx context.Context, subjectID int64) ([]Ex
 	return items, nil
 }
 
-func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error) {
-	if attemptID <= 0 || questionNo <= 0 {
-		return nil, ErrInvalidInput
-	}
-
-	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
-	if err != nil {
-		return nil, err
-	}
-	if row.Status == "in_progress" && time.Now().After(row.ExpiresAt) {
-		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
-			return nil, err
-		}
-	}
-
-	randomizeQuestions, randomizeOptions, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
-	if err != nil {
-		return nil, err
-	}
-
-	questionRefs, err := s.listExamQuestionRefs(ctx, row.ExamID)
-	if err != nil {
-		return nil, err
-	}
-	if questionNo > len(questionRefs) {
-		return nil, ErrQuestionNotInExam
-	}
-	if randomizeQuestions {
-		questionRefs = shuffleQuestionRefsByAttempt(questionRefs, attemptID)
-	}
-	target := questionRefs[questionNo-1]
-
+func (s *Service) loadAttemptQuestionByRef(ctx context.Context, attemptID int64, ref examQuestionRef, randomizeOptions bool) (*AttemptQuestion, error) {
 	r := s.db.QueryRowContext(ctx, `
 			SELECT
 				a.id,
@@ -4848,7 +4842,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		) qv_fallback ON TRUE
 		WHERE a.id = $1
 		  AND eq.question_id = $2
-	`, attemptID, target.QuestionID)
+	`, attemptID, ref.QuestionID)
 
 	var out AttemptQuestion
 	var versionStimulus sql.NullString
@@ -4872,7 +4866,7 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 		}
 		return nil, fmt.Errorf("query attempt question: %w", err)
 	}
-	out.SeqNo = questionNo
+	out.SeqNo = ref.DisplayNo
 	out.StimulusHTML = resolveAttemptStimulusHTML(versionStimulus, legacyStimulus, questionMetadata)
 
 	optRows, err := s.db.QueryContext(ctx, `
@@ -4901,6 +4895,138 @@ func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, quest
 	}
 
 	return &out, nil
+}
+
+func (s *Service) GetAttemptPages(ctx context.Context, attemptID int64) (*AttemptPageList, error) {
+	if attemptID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status == "in_progress" && time.Now().After(row.ExpiresAt) {
+		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+			return nil, err
+		}
+	}
+
+	randomizeQuestions, _, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	pages, err := s.buildAttemptPageRefs(ctx, row.ExamID, row.ID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
+	totalQuestions := 0
+	for _, page := range pages {
+		totalQuestions += len(page.QuestionIDs)
+	}
+	return &AttemptPageList{
+		AttemptID:      attemptID,
+		TotalPages:     len(pages),
+		TotalQuestions: totalQuestions,
+		Pages:          pages,
+	}, nil
+}
+
+func (s *Service) GetAttemptPage(ctx context.Context, attemptID int64, pageNo int) (*AttemptPage, error) {
+	if attemptID <= 0 || pageNo <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status == "in_progress" && time.Now().After(row.ExpiresAt) {
+		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+			return nil, err
+		}
+	}
+
+	randomizeQuestions, randomizeOptions, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	pages, err := s.buildAttemptPageRefs(ctx, row.ExamID, row.ID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
+	if pageNo > len(pages) {
+		return nil, ErrQuestionNotInExam
+	}
+	pageRef := pages[pageNo-1]
+	orderedRefs, err := s.orderedAttemptQuestionRefs(ctx, row.ExamID, row.ID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
+	refByQuestionID := make(map[int64]examQuestionRef, len(orderedRefs))
+	for _, ref := range orderedRefs {
+		refByQuestionID[ref.QuestionID] = ref
+	}
+
+	out := &AttemptPage{
+		AttemptID:   attemptID,
+		PageNo:      pageRef.PageNo,
+		QuestionNos: append([]int(nil), pageRef.QuestionNos...),
+		QuestionIDs: append([]int64(nil), pageRef.QuestionIDs...),
+		Items:       make([]AttemptQuestion, 0, len(pageRef.QuestionIDs)),
+	}
+	if pageRef.StimulusGroupID != nil {
+		id := *pageRef.StimulusGroupID
+		out.StimulusGroupID = &id
+	}
+	for _, questionID := range pageRef.QuestionIDs {
+		ref, ok := refByQuestionID[questionID]
+		if !ok {
+			return nil, ErrQuestionNotInExam
+		}
+		item, err := s.loadAttemptQuestionByRef(ctx, attemptID, ref, randomizeOptions)
+		if err != nil {
+			return nil, err
+		}
+		if out.StimulusHTML == nil && item.StimulusHTML != nil && strings.TrimSpace(*item.StimulusHTML) != "" {
+			stimulus := *item.StimulusHTML
+			out.StimulusHTML = &stimulus
+		}
+		if out.StimulusHTML != nil {
+			item.StimulusHTML = nil
+		}
+		out.Items = append(out.Items, *item)
+	}
+	return out, nil
+}
+
+func (s *Service) GetAttemptQuestion(ctx context.Context, attemptID int64, questionNo int) (*AttemptQuestion, error) {
+	if attemptID <= 0 || questionNo <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status == "in_progress" && time.Now().After(row.ExpiresAt) {
+		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+			return nil, err
+		}
+	}
+
+	randomizeQuestions, randomizeOptions, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	questionRefs, err := s.orderedAttemptQuestionRefs(ctx, row.ExamID, row.ID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
+	if questionNo > len(questionRefs) {
+		return nil, ErrQuestionNotInExam
+	}
+	return s.loadAttemptQuestionByRef(ctx, attemptID, questionRefs[questionNo-1], randomizeOptions)
 }
 
 func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error) {
@@ -5008,16 +5134,33 @@ func (s *Service) GetExamQuestionDetail(ctx context.Context, examID, questionID 
 }
 
 type examQuestionRef struct {
-	QuestionID int64
-	SeqNo      int
+	QuestionID      int64
+	SeqNo           int
+	DisplayNo       int
+	StimulusGroupID *int64
 }
 
 func (s *Service) listExamQuestionRefs(ctx context.Context, examID int64) ([]examQuestionRef, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT question_id, seq_no
-		FROM exam_questions
-		WHERE exam_id = $1
-		ORDER BY seq_no ASC
+		SELECT
+			eq.question_id,
+			eq.seq_no,
+			qv_current.stimulus_group_id
+		FROM exam_questions eq
+		JOIN questions q ON q.id = eq.question_id
+		LEFT JOIN LATERAL (
+			SELECT qv.stimulus_group_id
+			FROM question_versions qv
+			WHERE qv.question_id = q.id
+			ORDER BY CASE
+				WHEN qv.version_no = q.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv_current ON TRUE
+		WHERE eq.exam_id = $1
+		ORDER BY eq.seq_no ASC
 	`, examID)
 	if err != nil {
 		return nil, fmt.Errorf("list exam question refs: %w", err)
@@ -5027,8 +5170,13 @@ func (s *Service) listExamQuestionRefs(ctx context.Context, examID int64) ([]exa
 	refs := make([]examQuestionRef, 0)
 	for rows.Next() {
 		var ref examQuestionRef
-		if err := rows.Scan(&ref.QuestionID, &ref.SeqNo); err != nil {
+		var stimulusGroupID sql.NullInt64
+		if err := rows.Scan(&ref.QuestionID, &ref.SeqNo, &stimulusGroupID); err != nil {
 			return nil, fmt.Errorf("scan exam question refs: %w", err)
+		}
+		if stimulusGroupID.Valid {
+			id := stimulusGroupID.Int64
+			ref.StimulusGroupID = &id
 		}
 		refs = append(refs, ref)
 	}
@@ -5058,22 +5206,121 @@ func shuffleQuestionRefsByAttempt(items []examQuestionRef, attemptID int64) []ex
 	if len(items) <= 1 {
 		return items
 	}
-	shuffled := append([]examQuestionRef(nil), items...)
-	sort.SliceStable(shuffled, func(i, j int) bool {
-		ri := deterministicRankForAttempt(
-			attemptID,
-			fmt.Sprintf("q:%d:%d", shuffled[i].QuestionID, shuffled[i].SeqNo),
-		)
-		rj := deterministicRankForAttempt(
-			attemptID,
-			fmt.Sprintf("q:%d:%d", shuffled[j].QuestionID, shuffled[j].SeqNo),
-		)
+	blocks := buildQuestionRefBlocks(items)
+	sort.SliceStable(blocks, func(i, j int) bool {
+		ri := deterministicRankForAttempt(attemptID, blocks[i].rankKey())
+		rj := deterministicRankForAttempt(attemptID, blocks[j].rankKey())
 		if ri == rj {
-			return shuffled[i].SeqNo < shuffled[j].SeqNo
+			return blocks[i].order < blocks[j].order
 		}
 		return ri < rj
 	})
+	shuffled := make([]examQuestionRef, 0, len(items))
+	for _, block := range blocks {
+		shuffled = append(shuffled, block.refs...)
+	}
+	assignDisplayNumbers(shuffled)
 	return shuffled
+}
+
+type questionRefBlock struct {
+	order int
+	refs  []examQuestionRef
+}
+
+func (b questionRefBlock) rankKey() string {
+	parts := make([]string, 0, len(b.refs))
+	for _, ref := range b.refs {
+		parts = append(parts, fmt.Sprintf("%d:%d", ref.QuestionID, ref.SeqNo))
+	}
+	return "qb:" + strings.Join(parts, "|")
+}
+
+func buildQuestionRefBlocks(items []examQuestionRef) []questionRefBlock {
+	blocks := make([]questionRefBlock, 0, len(items))
+	for _, ref := range items {
+		if len(blocks) == 0 || !canGroupQuestionRefs(ref, blocks[len(blocks)-1].refs[len(blocks[len(blocks)-1].refs)-1]) {
+			blocks = append(blocks, questionRefBlock{
+				order: len(blocks),
+				refs:  []examQuestionRef{ref},
+			})
+			continue
+		}
+		blocks[len(blocks)-1].refs = append(blocks[len(blocks)-1].refs, ref)
+	}
+	return blocks
+}
+
+func canGroupQuestionRefs(current, previous examQuestionRef) bool {
+	if current.StimulusGroupID == nil || previous.StimulusGroupID == nil {
+		return false
+	}
+	return *current.StimulusGroupID == *previous.StimulusGroupID
+}
+
+func assignDisplayNumbers(items []examQuestionRef) {
+	for i := range items {
+		items[i].DisplayNo = i + 1
+	}
+}
+
+func countAttemptPages(refs []examQuestionRef) int {
+	if len(refs) == 0 {
+		return 0
+	}
+	count := 1
+	for i := 1; i < len(refs); i++ {
+		if !canGroupQuestionRefs(refs[i], refs[i-1]) {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *Service) orderedAttemptQuestionRefs(ctx context.Context, examID, attemptID int64, randomizeQuestions bool) ([]examQuestionRef, error) {
+	refs, err := s.listExamQuestionRefs(ctx, examID)
+	if err != nil {
+		return nil, err
+	}
+	if randomizeQuestions {
+		return shuffleQuestionRefsByAttempt(refs, attemptID), nil
+	}
+	ordered := append([]examQuestionRef(nil), refs...)
+	assignDisplayNumbers(ordered)
+	return ordered, nil
+}
+
+func canAppendRefToPage(ref examQuestionRef, page AttemptPageRef) bool {
+	if ref.StimulusGroupID == nil || page.StimulusGroupID == nil {
+		return false
+	}
+	return *ref.StimulusGroupID == *page.StimulusGroupID
+}
+
+func (s *Service) buildAttemptPageRefs(ctx context.Context, examID, attemptID int64, randomizeQuestions bool) ([]AttemptPageRef, error) {
+	refs, err := s.orderedAttemptQuestionRefs(ctx, examID, attemptID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
+	pages := make([]AttemptPageRef, 0, len(refs))
+	for _, ref := range refs {
+		if len(pages) == 0 || !canAppendRefToPage(ref, pages[len(pages)-1]) {
+			page := AttemptPageRef{
+				PageNo:      len(pages) + 1,
+				QuestionNos: []int{ref.DisplayNo},
+				QuestionIDs: []int64{ref.QuestionID},
+			}
+			if ref.StimulusGroupID != nil {
+				id := *ref.StimulusGroupID
+				page.StimulusGroupID = &id
+			}
+			pages = append(pages, page)
+			continue
+		}
+		pages[len(pages)-1].QuestionNos = append(pages[len(pages)-1].QuestionNos, ref.DisplayNo)
+		pages[len(pages)-1].QuestionIDs = append(pages[len(pages)-1].QuestionIDs, ref.QuestionID)
+	}
+	return pages, nil
 }
 
 func shuffleQuestionOptionsByAttempt(items []QuestionOption, attemptID int64, questionID int64) []QuestionOption {
@@ -5965,6 +6212,14 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 	if err != nil {
 		return nil, err
 	}
+	randomizeQuestions, _, err := s.loadExamRandomizeConfig(ctx, row.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	pageRefs, err := s.orderedAttemptQuestionRefs(ctx, row.ExamID, row.ID, randomizeQuestions)
+	if err != nil {
+		return nil, err
+	}
 	totalWeight, err := s.loadExamTotalWeight(ctx, q, row.ExamID)
 	if err != nil {
 		return nil, err
@@ -5986,6 +6241,7 @@ func (s *Service) buildSummaryFromRow(ctx context.Context, q queryable, row *att
 		ExamStartAt:    examStartAt,
 		ExamEndAt:      examEndAt,
 		TotalQuestions: totalQuestions,
+		TotalPages:     countAttemptPages(pageRefs),
 		TotalWeight:    totalWeight,
 		Answered:       answered,
 		Doubt:          doubt,

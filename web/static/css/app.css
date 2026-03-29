@@ -1486,6 +1486,28 @@ textarea:focus-visible {
     display: none !important;
 }
 
+#attempt-root #question-items-box {
+    display: grid;
+    gap: 18px;
+}
+
+#attempt-root .attempt-question-card {
+    padding: 16px;
+    background: #fff;
+}
+
+#attempt-root .attempt-question-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+#attempt-root .attempt-question-card .doubt-pill {
+    width: fit-content;
+}
+
 #attempt-root #stem-box {
     margin-bottom: 18px;
 }

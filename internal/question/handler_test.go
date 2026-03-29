@@ -15,6 +15,10 @@ import (
 )
 
 type mockQuestionService struct {
+	createStimulusGroupFn   func(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error)
+	listStimulusGroupsFn    func(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error)
+	updateStimulusGroupFn   func(ctx context.Context, in UpdateStimulusGroupInput) (*StimulusGroup, error)
+	deleteStimulusGroupFn   func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error
 	createQuestionCodeFn    func(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error)
 	listQuestionCodesFn     func(ctx context.Context, subjectID int64, q string, ownerID *int64) ([]QuestionCode, error)
 	updateQuestionCodeFn    func(ctx context.Context, in UpdateQuestionCodeInput) (*QuestionCode, error)
@@ -41,6 +45,34 @@ type mockQuestionService struct {
 	getQuestionExportDataFn func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error)
 	getUserRoleFn           func(ctx context.Context, userID int64) (string, error)
 	cloneQuestionFn         func(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error)
+}
+
+func (m *mockQuestionService) CreateStimulusGroup(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error) {
+	if m.createStimulusGroupFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.createStimulusGroupFn(ctx, in)
+}
+
+func (m *mockQuestionService) ListStimulusGroups(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error) {
+	if m.listStimulusGroupsFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listStimulusGroupsFn(ctx, subjectID, ownerID)
+}
+
+func (m *mockQuestionService) UpdateStimulusGroup(ctx context.Context, in UpdateStimulusGroupInput) (*StimulusGroup, error) {
+	if m.updateStimulusGroupFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.updateStimulusGroupFn(ctx, in)
+}
+
+func (m *mockQuestionService) DeleteStimulusGroup(ctx context.Context, id int64, actorID int64, enforceOwner bool) error {
+	if m.deleteStimulusGroupFn == nil {
+		return errors.New("not implemented")
+	}
+	return m.deleteStimulusGroupFn(ctx, id, actorID, enforceOwner)
 }
 
 func (m *mockQuestionService) CreateQuestionCode(ctx context.Context, in CreateQuestionCodeInput) (*QuestionCode, error) {
@@ -241,6 +273,77 @@ func withParam(r *http.Request, key, value string) *http.Request {
 	}
 	rctx.URLParams.Add(key, value)
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+func TestCreateStimulusGroupOK(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		createStimulusGroupFn: func(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error) {
+			if in.SubjectID != 3 || in.CreatedBy != 9 {
+				t.Fatalf("unexpected input: %+v", in)
+			}
+			return &StimulusGroup{ID: 10, SubjectID: 3, Title: "Stimulus A", IsActive: true}, nil
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimulus-groups", bytes.NewReader([]byte(`{"subject_id":3,"title":"Stimulus A","stimulus_html":"<p>Teks</p>"}`)))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+	h.CreateStimulusGroup(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", w.Code)
+	}
+}
+
+func TestListStimulusGroupsGuruOwnerOnly(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		listStimulusGroupsFn: func(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error) {
+			if subjectID != 3 {
+				t.Fatalf("unexpected subject_id: %d", subjectID)
+			}
+			if ownerID == nil || *ownerID != 9 {
+				t.Fatalf("expected ownerID=9, got %+v", ownerID)
+			}
+			return []StimulusGroup{{ID: 1, SubjectID: 3, Title: "Stimulus"}}, nil
+		},
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/stimulus-groups?subject_id=3", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+	h.ListStimulusGroups(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestUpdateStimulusGroupNotFound(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		updateStimulusGroupFn: func(ctx context.Context, in UpdateStimulusGroupInput) (*StimulusGroup, error) {
+			return nil, ErrStimulusGroupNotFound
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/stimulus-groups/5", bytes.NewReader([]byte(`{"title":"Baru"}`)))
+	req = withParam(req, "id", "5")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+	h.UpdateStimulusGroup(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestDeleteStimulusGroupForbidden(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		deleteStimulusGroupFn: func(ctx context.Context, id int64, actorID int64, enforceOwner bool) error {
+			return ErrForbidden
+		},
+	}}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/stimulus-groups/5", nil)
+	req = withParam(req, "id", "5")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+	h.DeleteStimulusGroup(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
 }
 
 func TestListQuestionsGuruDefaultsToOwnerOnly(t *testing.T) {

@@ -285,6 +285,21 @@
     const manuscriptQuestionTypeUI = document.getElementById(
       "guru-manuscript-question-type-ui",
     );
+    const manuscriptStimulusGroupSelect = document.getElementById(
+      "guru-manuscript-stimulus-group-select",
+    );
+    const manuscriptStimulusGroupInfo = document.getElementById(
+      "guru-manuscript-stimulus-group-info",
+    );
+    const manuscriptStimulusGroupRefreshBtn = document.getElementById(
+      "guru-manuscript-stimulus-group-refresh-btn",
+    );
+    const manuscriptStimulusGroupCreateBtn = document.getElementById(
+      "guru-manuscript-stimulus-group-create-btn",
+    );
+    const manuscriptStimulusGroupClearBtn = document.getElementById(
+      "guru-manuscript-stimulus-group-clear-btn",
+    );
     const manuscriptStimulusEditor = document.getElementById(
       "guru-manuscript-stimulus-editor",
     );
@@ -1941,6 +1956,11 @@
         manuscriptSubjectSelect: manuscriptSubjectSelect,
         manuscriptLearningGoalSelect: manuscriptLearningGoalSelect,
         manuscriptQuestionTypeUI: manuscriptQuestionTypeUI,
+        manuscriptStimulusGroupSelect: manuscriptStimulusGroupSelect,
+        manuscriptStimulusGroupInfo: manuscriptStimulusGroupInfo,
+        manuscriptStimulusGroupRefreshBtn: manuscriptStimulusGroupRefreshBtn,
+        manuscriptStimulusGroupCreateBtn: manuscriptStimulusGroupCreateBtn,
+        manuscriptStimulusGroupClearBtn: manuscriptStimulusGroupClearBtn,
         manuscriptStimulusEditor: manuscriptStimulusEditor,
         manuscriptStimulusType: manuscriptStimulusType,
         manuscriptStimulusSinglePanel: manuscriptStimulusSinglePanel,

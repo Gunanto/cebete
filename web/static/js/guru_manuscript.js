@@ -11,6 +11,7 @@
   var currentManuscriptQuestionType = "";
   var manuscriptEditingQuestionID = 0;
   var manuscriptEditSnapshot = null;
+  var stimulusGroupCache = [];
 
   function setDeps(opts) {
     deps = opts || {};
@@ -134,6 +135,158 @@
     }
   }
 
+  function getSelectedSubjectID() {
+    return Number(
+      (deps &&
+        deps.manuscriptSubjectSelect &&
+        deps.manuscriptSubjectSelect.value) ||
+        0,
+    );
+  }
+
+  function setStimulusGroupInfo(value) {
+    if (!deps || !deps.manuscriptStimulusGroupInfo) return;
+    deps.manuscriptStimulusGroupInfo.value = String(value || "").trim();
+  }
+
+  function findStimulusGroupByID(id) {
+    const target = Number(id || 0);
+    if (target <= 0) return null;
+    return stimulusGroupCache.find(function (it) {
+      return Number((it && it.id) || 0) === target;
+    });
+  }
+
+  function getStimulusGroupLabel(item) {
+    const title = String((item && item.title) || "").trim();
+    const linked = Number((item && item.linked_questions) || 0);
+    if (!title) return "Stimulus Group";
+    if (linked > 0) return title + " (" + String(linked) + " soal)";
+    return title;
+  }
+
+  function fillStimulusGroupSelect(selectedID) {
+    if (!deps || !deps.manuscriptStimulusGroupSelect) return;
+    const current = String(
+      typeof selectedID !== "undefined"
+        ? selectedID || ""
+        : deps.manuscriptStimulusGroupSelect.value || "",
+    );
+    deps.manuscriptStimulusGroupSelect.innerHTML =
+      '<option value="">Gunakan stimulus inline / tanpa stimulus group</option>';
+    stimulusGroupCache.forEach(function (item) {
+      const id = Number((item && item.id) || 0);
+      if (id <= 0) return;
+      const opt = document.createElement("option");
+      opt.value = String(id);
+      opt.textContent = getStimulusGroupLabel(item);
+      if (current && current === String(id)) {
+        opt.selected = true;
+      }
+      deps.manuscriptStimulusGroupSelect.appendChild(opt);
+    });
+  }
+
+  function setStimulusEditorsDisabled(disabled) {
+    const flag = !!disabled;
+    if (
+      manuscriptStimulusQuill &&
+      typeof manuscriptStimulusQuill.enable === "function"
+    ) {
+      manuscriptStimulusQuill.enable(!flag);
+    }
+    if (deps && deps.manuscriptStimulusType) {
+      deps.manuscriptStimulusType.disabled = flag;
+    }
+    if (deps && deps.manuscriptAddStimulusTabBtn) {
+      deps.manuscriptAddStimulusTabBtn.disabled = flag;
+    }
+    if (deps && deps.manuscriptStimulusTabsWrap) {
+      deps.manuscriptStimulusTabsWrap
+        .querySelectorAll("input, textarea, button, select")
+        .forEach(function (el) {
+          if (el === deps.manuscriptStimulusGroupRefreshBtn) return;
+          if (el === deps.manuscriptStimulusGroupCreateBtn) return;
+          if (el === deps.manuscriptStimulusGroupClearBtn) return;
+          el.disabled = flag;
+        });
+    }
+  }
+
+  function applyStimulusGroupSelection(groupID) {
+    const selected = Number(groupID || 0);
+    if (deps && deps.manuscriptStimulusGroupSelect) {
+      deps.manuscriptStimulusGroupSelect.value =
+        selected > 0 ? String(selected) : "";
+    }
+    if (selected <= 0) {
+      setStimulusEditorsDisabled(false);
+      setStimulusGroupInfo("Belum memilih stimulus group");
+      return;
+    }
+    const group = findStimulusGroupByID(selected);
+    if (!group) {
+      setStimulusEditorsDisabled(false);
+      setStimulusGroupInfo("Stimulus group tidak ditemukan di cache");
+      return;
+    }
+    const stimulusType = String((group && group.stimulus_type) || "single")
+      .trim()
+      .toLowerCase();
+    const stimulusContent =
+      group &&
+      group.stimulus_content &&
+      typeof group.stimulus_content === "object"
+        ? group.stimulus_content
+        : null;
+    if (deps && deps.manuscriptStimulusType) {
+      deps.manuscriptStimulusType.value =
+        stimulusType === "multiteks" ? "multiteks" : "single";
+    }
+    if (stimulusType === "multiteks") {
+      setStimulusTabRows(
+        stimulusContent && Array.isArray(stimulusContent.tabs)
+          ? stimulusContent.tabs
+          : [],
+      );
+      setQuillHTMLValue(manuscriptStimulusQuill, "");
+    } else {
+      const body =
+        stimulusContent && typeof stimulusContent.body === "string"
+          ? stimulusContent.body
+          : String((group && group.stimulus_html) || "").trim();
+      setQuillHTMLValue(manuscriptStimulusQuill, body);
+      if (deps && deps.manuscriptStimulusTabsWrap) {
+        deps.manuscriptStimulusTabsWrap.innerHTML = "";
+      }
+      ensureStimulusTabRows();
+    }
+    applyStimulusTypeUI();
+    syncHiddenInputs();
+    setStimulusEditorsDisabled(true);
+    setStimulusGroupInfo(getStimulusGroupLabel(group));
+  }
+
+  async function loadStimulusGroups(selectedID) {
+    if (!deps || typeof deps.api !== "function") return [];
+    const subjectID = getSelectedSubjectID();
+    if (subjectID <= 0) {
+      stimulusGroupCache = [];
+      fillStimulusGroupSelect("");
+      applyStimulusGroupSelection(0);
+      return [];
+    }
+    const items = await deps.api(
+      "/api/v1/stimulus-groups?subject_id=" +
+        encodeURIComponent(String(subjectID)),
+      "GET",
+    );
+    stimulusGroupCache = Array.isArray(items) ? items.slice() : [];
+    fillStimulusGroupSelect(selectedID);
+    applyStimulusGroupSelection(selectedID || 0);
+    return stimulusGroupCache;
+  }
+
   function syncHiddenInputs() {
     if (!deps) return;
     if (deps.manuscriptStimulusHTMLInput) {
@@ -184,6 +337,11 @@
     if (deps && deps.manuscriptOptionRightLabel) {
       deps.manuscriptOptionRightLabel.value = "Ulasan Buku II";
     }
+    if (deps && deps.manuscriptStimulusGroupSelect) {
+      deps.manuscriptStimulusGroupSelect.value = "";
+    }
+    setStimulusEditorsDisabled(false);
+    setStimulusGroupInfo("Belum memilih stimulus group");
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
@@ -1364,6 +1522,7 @@
       question_code_id: Number(
         (selectedQuestion && selectedQuestion.question_code_id) || 0,
       ),
+      stimulus_group_id: Number((item && item.stimulus_group_id) || 0),
       stimulus_type: String((item && item.stimulus_type) || "single").trim(),
       stimulus_content: stableStringify(
         (item && item.stimulus_content) || null,
@@ -1390,6 +1549,7 @@
       version_no: Number((data && data.version_no) || 0),
       learning_goal_id: Number((data && data.learning_goal_id) || 0),
       question_code_id: Number((data && data.question_code_id) || 0),
+      stimulus_group_id: Number((data && data.stimulus_group_id) || 0),
       stimulus_type: String((data && data.stimulus_type) || "single").trim(),
       stimulus_content: stableStringify(
         (data && data.stimulus_content) || null,
@@ -1415,6 +1575,7 @@
     return (
       a.question_id === b.question_id &&
       a.version_no === b.version_no &&
+      a.stimulus_group_id === b.stimulus_group_id &&
       a.stimulus_type === b.stimulus_type &&
       a.stimulus_content === b.stimulus_content &&
       a.stimulus_html === b.stimulus_html &&
@@ -1566,6 +1727,7 @@
     if (!item || !deps || !deps.manuscriptForm) return;
     const questionID = Number(item.question_id || 0);
     const versionNo = Number(item.version_no || 0);
+    const stimulusGroupID = Number((item && item.stimulus_group_id) || 0);
     if (questionID <= 0 || versionNo <= 0) return;
 
     if (deps.manuscriptQuestionSelect) {
@@ -1650,6 +1812,15 @@
       ensureStimulusTabRows();
     }
     applyStimulusTypeUI();
+    if (subjectID > 0) {
+      loadStimulusGroups(stimulusGroupID > 0 ? stimulusGroupID : 0).catch(
+        function () {
+          setStimulusGroupInfo("Gagal memuat stimulus group");
+        },
+      );
+    } else {
+      applyStimulusGroupSelection(stimulusGroupID);
+    }
     setQuillHTMLValue(manuscriptStemQuill, item.stem_html);
     setQuillHTMLValue(manuscriptExplanationQuill, item.explanation_html);
     setQuillHTMLValue(manuscriptHintQuill, item.hint_html);
@@ -2117,7 +2288,15 @@
       }
       const stimulusPayload = buildStimulusPayload();
       const stimulusHTML = String(stimulusPayload.html || "").trim();
+      const selectedStimulusGroupID = Number(
+        (deps &&
+          deps.manuscriptStimulusGroupSelect &&
+          deps.manuscriptStimulusGroupSelect.value) ||
+          0,
+      );
       const payload = {
+        stimulus_group_id:
+          selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
         stimulus_type: stimulusPayload.type,
         stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
@@ -2165,6 +2344,8 @@
         version_no: editingVersionNo,
         learning_goal_id: selectedLearningGoalID,
         question_code_id: selectedQuestionCodeID,
+        stimulus_group_id:
+          selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
         stimulus_type: stimulusPayload.type,
         stimulus_content: stimulusPayload.content,
         stimulus_html: stimulusHTML,
@@ -2211,6 +2392,9 @@
       if (typeof deps.syncManuscriptSubjectState === "function") {
         deps.syncManuscriptSubjectState();
       }
+      await loadStimulusGroups(0).catch(function () {
+        setStimulusGroupInfo("Gagal memuat stimulus group");
+      });
       if (typeof deps.fillBlueprintSelect === "function") {
         deps.fillBlueprintSelect(deps.manuscriptQuestionSelect);
       }
@@ -2348,6 +2532,9 @@
     if (typeof deps.syncManuscriptSubjectState === "function") {
       deps.syncManuscriptSubjectState();
     }
+    loadStimulusGroups(0).catch(function () {
+      setStimulusGroupInfo("Gagal memuat stimulus group");
+    });
     applyTypeUI(true);
   }
 
@@ -2378,6 +2565,9 @@
         true,
       );
     }
+    loadStimulusGroups(0).catch(function () {
+      setStimulusGroupInfo("Gagal memuat stimulus group");
+    });
   }
 
   function onQuestionTypeChange() {
@@ -2547,6 +2737,105 @@
       deps.manuscriptStimulusType.addEventListener(
         "change",
         onStimulusTypeChange,
+      );
+    }
+    if (deps.manuscriptStimulusGroupSelect) {
+      deps.manuscriptStimulusGroupSelect.addEventListener(
+        "change",
+        function () {
+          applyStimulusGroupSelection(
+            Number(deps.manuscriptStimulusGroupSelect.value || 0),
+          );
+        },
+      );
+    }
+    if (deps.manuscriptStimulusGroupRefreshBtn) {
+      deps.manuscriptStimulusGroupRefreshBtn.addEventListener(
+        "click",
+        async function () {
+          const done = deps.beginBusy(
+            deps.manuscriptStimulusGroupRefreshBtn,
+            deps.msg,
+            "Memuat stimulus group...",
+          );
+          try {
+            await loadStimulusGroups(
+              Number(
+                (deps.manuscriptStimulusGroupSelect &&
+                  deps.manuscriptStimulusGroupSelect.value) ||
+                  0,
+              ),
+            );
+            showFormMessage("Stimulus group berhasil dimuat.", 2500);
+          } catch (err) {
+            showFormMessage(
+              "Gagal memuat stimulus group: " + err.message,
+              4000,
+            );
+          } finally {
+            done();
+          }
+        },
+      );
+    }
+    if (deps.manuscriptStimulusGroupClearBtn) {
+      deps.manuscriptStimulusGroupClearBtn.addEventListener(
+        "click",
+        function () {
+          applyStimulusGroupSelection(0);
+          syncHiddenInputs();
+        },
+      );
+    }
+    if (deps.manuscriptStimulusGroupCreateBtn) {
+      deps.manuscriptStimulusGroupCreateBtn.addEventListener(
+        "click",
+        async function () {
+          const subjectID = getSelectedSubjectID();
+          if (subjectID <= 0) {
+            showFormMessage("Pilih mapel terlebih dahulu.", 3000);
+            return;
+          }
+          const stimulusPayload = buildStimulusPayload();
+          if (!stimulusPayload.html || !String(stimulusPayload.html).trim()) {
+            showFormMessage(
+              "Isi stimulus terlebih dahulu sebelum disimpan menjadi group.",
+              4000,
+            );
+            return;
+          }
+          const titleSeed = String(
+            (deps &&
+              deps.manuscriptQuestionSelect &&
+              deps.manuscriptQuestionSelect.selectedOptions &&
+              deps.manuscriptQuestionSelect.selectedOptions[0] &&
+              deps.manuscriptQuestionSelect.selectedOptions[0].textContent) ||
+              "",
+          ).trim();
+          const done = deps.beginBusy(
+            deps.manuscriptStimulusGroupCreateBtn,
+            deps.msg,
+            "Menyimpan stimulus group...",
+          );
+          try {
+            const created = await deps.api("/api/v1/stimulus-groups", "POST", {
+              subject_id: subjectID,
+              title: titleSeed || "Stimulus Baru",
+              stimulus_type: stimulusPayload.type,
+              stimulus_content: stimulusPayload.content,
+              stimulus_html: String(stimulusPayload.html || "").trim(),
+            });
+            await loadStimulusGroups(Number((created && created.id) || 0));
+            showFormMessage("Stimulus berhasil disimpan menjadi group.", 4000);
+          } catch (err) {
+            showFormMessage(
+              "Gagal menyimpan stimulus group: " + err.message,
+              5000,
+            );
+          } finally {
+            done();
+          }
+        },
       );
     }
     if (deps.manuscriptOptionLayout) {
@@ -2873,6 +3162,9 @@
   function init(opts) {
     setDeps(opts);
     bindEvents();
+    loadStimulusGroups(0).catch(function () {
+      setStimulusGroupInfo("Pilih mapel untuk memuat stimulus group");
+    });
   }
 
   window.GuruManuscript = {

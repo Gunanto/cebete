@@ -1012,6 +1012,59 @@
                         </select>
                     </label>
                     <section class="panel stimulus-editor-wrap">
+                        <h4>Stimulus Bersama (Opsional)</h4>
+                        <div class="form-grid">
+                            <label>
+                                Pilih Stimulus Group
+                                <select
+                                    id="guru-manuscript-stimulus-group-select"
+                                >
+                                    <option value="">
+                                        Gunakan stimulus inline / tanpa stimulus
+                                        group
+                                    </option>
+                                </select>
+                            </label>
+                            <label>
+                                Info
+                                <input
+                                    id="guru-manuscript-stimulus-group-info"
+                                    type="text"
+                                    value="Belum memilih stimulus group"
+                                    readonly
+                                />
+                            </label>
+                        </div>
+                        <div class="actions mt">
+                            <button
+                                id="guru-manuscript-stimulus-group-refresh-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Muat Stimulus Group
+                            </button>
+                            <button
+                                id="guru-manuscript-stimulus-group-create-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Simpan Stimulus Menjadi Group
+                            </button>
+                            <button
+                                id="guru-manuscript-stimulus-group-clear-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Lepas Group
+                            </button>
+                        </div>
+                        <p class="muted mt">
+                            Pilih stimulus group jika beberapa soal akan memakai
+                            stimulus yang sama. Jika tidak dipilih, soal tetap
+                            memakai stimulus inline seperti alur lama.
+                        </p>
+                    </section>
+                    <section class="panel stimulus-editor-wrap">
                         <h4>Stimulus</h4>
                         <label
                             >Tipe Stimulus
