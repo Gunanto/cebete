@@ -362,6 +362,7 @@
     showFormMessage("", 0);
     ensureStimulusTabRows();
     applyStimulusTypeUI();
+    applyTypeUI(false);
     syncOptionLayoutUI();
     syncHiddenInputs();
   }
@@ -3191,6 +3192,7 @@
   function init(opts) {
     setDeps(opts);
     bindEvents();
+    applyTypeUI(false);
     loadStimulusGroups(0).catch(function () {
       setStimulusGroupInfo("Pilih mapel untuk memuat stimulus group");
       setStimulusGroupStatus(
