@@ -1937,6 +1937,7 @@
         createQuillEditor: createQuillEditor,
         getQuillHTML: getQuillHTML,
         getCurrentQuestionType: getCurrentManuscriptQuestionType,
+        getCurrentManuscriptQuestionType: getCurrentManuscriptQuestionType,
         syncManuscriptSubjectState: syncManuscriptSubjectState,
         fillLearningGoalSelect: fillLearningGoalSelect,
         fillQuestionCodeSelect: fillQuestionCodeSelect,
