@@ -1936,6 +1936,7 @@
         beginBusy: beginBusy,
         setMsg: setMsg,
         msg: msg,
+        text: text,
         escapeHtml: escapeHtml,
         createQuillEditor: createQuillEditor,
         getQuillHTML: getQuillHTML,
