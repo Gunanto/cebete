@@ -2284,11 +2284,26 @@
     )
       .trim()
       .toLowerCase();
+    const selectedStimulusGroupID = Number(
+      (deps &&
+        deps.manuscriptStimulusGroupSelect &&
+        deps.manuscriptStimulusGroupSelect.value) ||
+        0,
+    );
     if (!selectedType) {
       setMsg("Tipe Soal wajib dipilih.");
       return;
     }
-    if (blueprintType && selectedType !== blueprintType) {
+    const forceNewQuestionFromStimulus =
+      !isEditMode &&
+      selectedStimulusGroupID > 0 &&
+      blueprintType &&
+      selectedType !== blueprintType;
+    if (
+      blueprintType &&
+      selectedType !== blueprintType &&
+      !forceNewQuestionFromStimulus
+    ) {
       setMsg(
         "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
           blueprintType +
@@ -2330,7 +2345,9 @@
     try {
       var questionID = isEditMode
         ? manuscriptEditingQuestionID
-        : Number(fd.get("question_id") || 0);
+        : forceNewQuestionFromStimulus
+          ? 0
+          : Number(fd.get("question_id") || 0);
       const selectedQuestionCodeID = Number(fd.get("question_code_id") || 0);
       const selectedLearningGoalID = Number(fd.get("learning_goal_id") || 0);
       var blueprintChanged = false;
@@ -2343,6 +2360,13 @@
               : null;
         if (!ensureQuestionFn) {
           throw new Error("Tidak bisa membuat soal baru.");
+        }
+        if (
+          forceNewQuestionFromStimulus &&
+          deps &&
+          deps.manuscriptQuestionSelect
+        ) {
+          deps.manuscriptQuestionSelect.value = "";
         }
         questionID = await ensureQuestionFn({
           question_id: questionID,
@@ -2364,12 +2388,6 @@
       }
       const stimulusPayload = buildStimulusPayload();
       const stimulusHTML = String(stimulusPayload.html || "").trim();
-      const selectedStimulusGroupID = Number(
-        (deps &&
-          deps.manuscriptStimulusGroupSelect &&
-          deps.manuscriptStimulusGroupSelect.value) ||
-          0,
-      );
       const payload = {
         stimulus_group_id:
           selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
