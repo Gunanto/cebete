@@ -263,12 +263,14 @@
     }
   }
 
-  function applyStimulusGroupSelection(groupID) {
+  function isStimulusGroupEditableInCurrentMode(groupID) {
+    if (Number(groupID || 0) <= 0) return true;
+    if (!deps || !deps.manuscriptEditingVersionNoInput) return false;
+    return Number(deps.manuscriptEditingVersionNoInput.value || 0) > 0;
+  }
+
+  function refreshStimulusGroupEditorState(groupID, group) {
     const selected = Number(groupID || 0);
-    if (deps && deps.manuscriptStimulusGroupSelect) {
-      deps.manuscriptStimulusGroupSelect.value =
-        selected > 0 ? String(selected) : "";
-    }
     if (selected <= 0) {
       setStimulusEditorsDisabled(false);
       setStimulusGroupInfo("Belum memilih stimulus group");
@@ -278,14 +280,40 @@
       syncStimulusGroupQuickActions(0);
       return;
     }
-    const group = findStimulusGroupByID(selected);
-    if (!group) {
+    const selectedGroup = group || findStimulusGroupByID(selected);
+    if (!selectedGroup) {
       setStimulusEditorsDisabled(false);
       setStimulusGroupInfo("Stimulus group tidak ditemukan di cache");
       setStimulusGroupStatus(
         "Editor stimulus tetap aktif karena stimulus group yang dipilih tidak ditemukan.",
       );
       syncStimulusGroupQuickActions(0);
+      return;
+    }
+    const editable = isStimulusGroupEditableInCurrentMode(selected);
+    setStimulusEditorsDisabled(!editable);
+    setStimulusGroupInfo(getStimulusGroupLabel(selectedGroup));
+    setStimulusGroupStatus(
+      editable
+        ? "Anda sedang mengedit stimulus group yang dipakai bersama. Perubahan stimulus akan ikut mengubah semua soal yang memakai group ini."
+        : 'Stimulus mengikuti group yang dipilih. Editor stimulus di bawah dikunci; gunakan "Lepas Group" jika ingin kembali mengedit stimulus inline.',
+    );
+    syncStimulusGroupQuickActions(selected);
+  }
+
+  function applyStimulusGroupSelection(groupID) {
+    const selected = Number(groupID || 0);
+    if (deps && deps.manuscriptStimulusGroupSelect) {
+      deps.manuscriptStimulusGroupSelect.value =
+        selected > 0 ? String(selected) : "";
+    }
+    if (selected <= 0) {
+      refreshStimulusGroupEditorState(0, null);
+      return;
+    }
+    const group = findStimulusGroupByID(selected);
+    if (!group) {
+      refreshStimulusGroupEditorState(selected, null);
       return;
     }
     const stimulusType = String((group && group.stimulus_type) || "single")
@@ -321,12 +349,7 @@
     }
     applyStimulusTypeUI();
     syncHiddenInputs();
-    setStimulusEditorsDisabled(true);
-    setStimulusGroupInfo(getStimulusGroupLabel(group));
-    setStimulusGroupStatus(
-      'Stimulus mengikuti group yang dipilih. Editor stimulus di bawah dikunci; gunakan "Lepas Group" jika ingin kembali mengedit stimulus inline.',
-    );
-    syncStimulusGroupQuickActions(selected);
+    refreshStimulusGroupEditorState(selected, group);
   }
 
   async function loadStimulusGroups(selectedID) {
@@ -1389,6 +1412,12 @@
     if (deps && deps.manuscriptCancelEditBtn) {
       deps.manuscriptCancelEditBtn.hidden = false;
     }
+    refreshStimulusGroupEditorState(
+      deps && deps.manuscriptStimulusGroupSelect
+        ? Number(deps.manuscriptStimulusGroupSelect.value || 0)
+        : 0,
+      null,
+    );
   }
 
   function clearEditMode() {
@@ -1403,6 +1432,12 @@
     if (deps && deps.manuscriptCancelEditBtn) {
       deps.manuscriptCancelEditBtn.hidden = true;
     }
+    refreshStimulusGroupEditorState(
+      deps && deps.manuscriptStimulusGroupSelect
+        ? Number(deps.manuscriptStimulusGroupSelect.value || 0)
+        : 0,
+      null,
+    );
   }
 
   function setQuillHTMLValue(quill, htmlValue) {
@@ -2388,6 +2423,28 @@
       }
       const stimulusPayload = buildStimulusPayload();
       const stimulusHTML = String(stimulusPayload.html || "").trim();
+      if (isEditMode && selectedStimulusGroupID > 0) {
+        const selectedGroup = findStimulusGroupByID(selectedStimulusGroupID);
+        const nextTitle =
+          buildStimulusTextSnippet(
+            stimulusHTML,
+            stimulusPayload.content && stimulusPayload.content.body,
+          ) ||
+          getStimulusGroupDisplayTitle(selectedGroup) ||
+          "Stimulus Group";
+        await deps.api(
+          "/api/v1/stimulus-groups/" + selectedStimulusGroupID,
+          "PUT",
+          {
+            subject_id: Number(fd.get("subject_id") || 0),
+            title: nextTitle,
+            stimulus_type: stimulusPayload.type,
+            stimulus_content: stimulusPayload.content,
+            stimulus_html: stimulusHTML,
+          },
+        );
+        await loadStimulusGroups(selectedStimulusGroupID);
+      }
       const payload = {
         stimulus_group_id:
           selectedStimulusGroupID > 0 ? selectedStimulusGroupID : null,
