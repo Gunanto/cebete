@@ -34,6 +34,8 @@ fi
 : "${CHAT_ID:?CHAT_ID not set}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+DAY_OF_MONTH="$(date +%d)"
+DAY_OF_WEEK="$(date +%u)"
 SQL_NAME="cebete_pg_${TIMESTAMP}.sql"
 ZIP_NAME="${SQL_NAME}.zip"
 SQL_PATH="${BACKUP_DIR}/${SQL_NAME}"
@@ -47,7 +49,13 @@ zip -j -P "${BACKUP_ZIP_PASSWORD}" "${ZIP_PATH}" "${SQL_PATH}" >/dev/null
 rm -f "${SQL_PATH}"
 
 if command -v rclone >/dev/null 2>&1; then
-  rclone copy "${ZIP_PATH}" "${RCLONE_REMOTE}"
+  RCLONE_TARGET="${RCLONE_REMOTE}/harian"
+  if [[ "${DAY_OF_MONTH}" == "01" ]]; then
+    RCLONE_TARGET="${RCLONE_REMOTE}/monthly"
+  elif [[ "${DAY_OF_WEEK}" == "1" ]]; then
+    RCLONE_TARGET="${RCLONE_REMOTE}/mingguan"
+  fi
+  rclone copy "${ZIP_PATH}" "${RCLONE_TARGET}"
 fi
 
 curl -fsS \
