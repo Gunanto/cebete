@@ -4,18 +4,28 @@ set -euo pipefail
 umask 077
 
 BASE_DIR="/home/pakgun/cebete-src"
-ENV_FILE="${BASE_DIR}/.env"
-MONITOR_ENV_FILE="${BASE_DIR}/.env.monitor"
+ENV_FILE="${ENV_FILE:-${BASE_DIR}/.env}"
+MONITOR_ENV_FILE="${MONITOR_ENV_FILE:-${BASE_DIR}/.env.monitor}"
+ALT_ENV_FILE="/home/pakgun/cebete/.env"
+ALT_MONITOR_ENV_FILE="/home/pakgun/cebete/.env.monitor"
 BACKUP_DIR="${BASE_DIR}/backups"
 CONTAINER_NAME="cebete_postgres"
 
 mkdir -p "${BACKUP_DIR}"
+
+if [[ ! -f "${ENV_FILE}" && -f "${ALT_ENV_FILE}" ]]; then
+  ENV_FILE="${ALT_ENV_FILE}"
+fi
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
   . "${ENV_FILE}"
   set +a
+fi
+
+if [[ ! -f "${MONITOR_ENV_FILE}" && -f "${ALT_MONITOR_ENV_FILE}" ]]; then
+  MONITOR_ENV_FILE="${ALT_MONITOR_ENV_FILE}"
 fi
 
 if [[ -f "${MONITOR_ENV_FILE}" ]]; then
