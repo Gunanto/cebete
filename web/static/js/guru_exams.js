@@ -419,12 +419,16 @@
         );
       }
       const tr = document.createElement("tr");
+      const stemPreview = deps.previewText(
+        (it && it.stem_preview) || (it && it.title) || "",
+        120,
+      );
       tr.innerHTML = [
         "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
         "<td>" +
           deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
           "</td>",
-        "<td>" + deps.escapeHtml(String(it.title || "")) + "</td>",
+        "<td>" + deps.escapeHtml(String(stemPreview || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.question_code || "-")) + "</td>",
         '<td class="cell-weight"><input type="number" min="0.1" step="0.1" value="' +
           deps.escapeHtml(String(weightValue > 0 ? weightValue : 1)) +

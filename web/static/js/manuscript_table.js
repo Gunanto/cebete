@@ -64,7 +64,7 @@
     if (!deps || !deps.body) return;
     if (!Array.isArray(items) || items.length === 0) {
       deps.body.innerHTML =
-        '<tr><td colspan="8" class="muted">Belum ada data versi naskah.</td></tr>';
+        '<tr><td colspan="9" class="muted">Belum ada data versi naskah.</td></tr>';
       updateBulkState([]);
       return;
     }
@@ -78,6 +78,7 @@
           '"' +
           (selectedKeys.has(key) ? " checked" : "") +
           " /></td>",
+        "<td>" + deps.escapeHtml(String(qid || "-")) + "</td>",
         "<td>" + deps.escapeHtml(deps.resolveQuestionCode(it) || "-") + "</td>",
         "<td>" + deps.escapeHtml(deps.resolveLearningGoal(it) || "-") + "</td>",
         "<td>" +

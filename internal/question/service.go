@@ -90,6 +90,7 @@ type QuestionBlueprint struct {
 	LearningGoalID int64           `json:"learning_goal_id"`
 	QuestionCodeID *int64          `json:"question_code_id,omitempty"`
 	QuestionCode   *string         `json:"question_code,omitempty"`
+	StemPreview    string          `json:"stem_preview,omitempty"`
 	EducationLevel string          `json:"education_level"`
 	SubjectType    string          `json:"subject_type"`
 	SubjectName    string          `json:"subject_name"`
@@ -764,10 +765,22 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {
 	query := `
 		SELECT q.id, q.subject_id, q.learning_goal_id, q.question_code_id, qc.code, s.education_level, s.subject_type, s.name,
-			q.question_type, q.difficulty, q.metadata, q.created_at, q.updated_at
+			q.question_type, q.difficulty, q.metadata, q.created_at, q.updated_at,
+			COALESCE(qv.stem_html, q.stem_html, '') AS stem_preview
 		FROM questions q
 		JOIN subjects s ON s.id = q.subject_id
 		LEFT JOIN question_codes qc ON qc.id = q.question_code_id
+		LEFT JOIN LATERAL (
+			SELECT qv.stem_html
+			FROM question_versions qv
+			WHERE qv.question_id = q.id
+			ORDER BY CASE
+				WHEN qv.version_no = q.version THEN 0
+				WHEN qv.status = 'final' THEN 1
+				ELSE 2
+			END, qv.is_active DESC, qv.version_no DESC
+			LIMIT 1
+		) qv ON TRUE
 		WHERE q.is_active = TRUE
 	`
 	args := make([]any, 0, 2)
@@ -811,6 +824,7 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 			&out.Metadata,
 			&out.CreatedAt,
 			&out.UpdatedAt,
+			&out.StemPreview,
 		); err != nil {
 			return nil, fmt.Errorf("scan question: %w", err)
 		}
