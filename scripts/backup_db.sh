@@ -3,7 +3,7 @@ set -euo pipefail
 
 umask 077
 
-BASE_DIR="/home/pakgun/cebete"
+BASE_DIR="/home/pakgun/cebete-src"
 ENV_FILE="${BASE_DIR}/.env"
 MONITOR_ENV_FILE="${BASE_DIR}/.env.monitor"
 BACKUP_DIR="${BASE_DIR}/backups"
