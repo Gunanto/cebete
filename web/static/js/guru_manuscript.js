@@ -135,6 +135,12 @@
     }
   }
 
+  function showPopupMessage(value) {
+    const message = String(value || "").trim();
+    if (!message || typeof window === "undefined") return;
+    window.alert(message);
+  }
+
   function getSelectedSubjectID() {
     return Number(
       (deps &&
@@ -2664,17 +2670,13 @@
           : "Naskah soal berhasil disimpan.",
       );
     } catch (err) {
-      showFormMessage(
+      const errorMessage =
         (isEditMode
           ? "Simpan perubahan naskah gagal: "
-          : "Simpan naskah gagal: ") + err.message,
-        5000,
-      );
-      setMsg(
-        (isEditMode
-          ? "Simpan perubahan naskah gagal: "
-          : "Simpan naskah gagal: ") + err.message,
-      );
+          : "Simpan naskah gagal: ") + err.message;
+      showFormMessage(errorMessage, 5000);
+      setMsg(errorMessage);
+      showPopupMessage(errorMessage);
     } finally {
       done();
     }

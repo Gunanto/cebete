@@ -2368,18 +2368,20 @@ func (s *Service) changeQuestionTypeTx(ctx context.Context, tx *sql.Tx, question
 		return fmt.Errorf("%w: tipe soal hanya bisa diubah antara MC dan MR", ErrInvalidInput)
 	}
 
-	var usedInExam bool
+	var usedInExamAttempt bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM exam_questions
-			WHERE question_id = $1
+			FROM exam_questions eq
+			JOIN attempts a
+			  ON a.exam_id = eq.exam_id
+			WHERE eq.question_id = $1
 		)
-	`, questionID).Scan(&usedInExam); err != nil {
-		return fmt.Errorf("check question exam usage: %w", err)
+	`, questionID).Scan(&usedInExamAttempt); err != nil {
+		return fmt.Errorf("check question exam attempt usage: %w", err)
 	}
-	if usedInExam {
-		return fmt.Errorf("%w: tipe soal tidak bisa diubah karena soal sudah dipakai di ujian", ErrInvalidInput)
+	if usedInExamAttempt {
+		return fmt.Errorf("%w: tipe soal tidak bisa diubah karena soal sudah punya attempt pada ujian", ErrInvalidInput)
 	}
 
 	rows, err := tx.QueryContext(ctx, `
