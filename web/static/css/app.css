@@ -2715,7 +2715,7 @@ body[data-page="attempt_content"] .bs-table tbody tr:focus-within {
 
 .exam-pick-table th.cell-actions,
 .exam-pick-table td.cell-actions {
-    width: 380px;
+    width: auto;
 }
 
 .exam-pick-table td.cell-weight .input-inline {
@@ -2723,31 +2723,21 @@ body[data-page="attempt_content"] .bs-table tbody tr:focus-within {
 }
 
 .exam-pick-table {
-    table-layout: fixed;
+    table-layout: auto;
 }
 
-.exam-pick-table .col-id {
-    width: 6%;
-}
-
-.exam-pick-table .col-type {
-    width: 9%;
-}
-
-.exam-pick-table .col-title {
-    width: 45%;
-}
-
-.exam-pick-table .col-code {
-    width: 10%;
-}
-
-.exam-pick-table .col-weight {
-    width: 16%;
-}
-
-.exam-pick-table .col-actions {
-    width: 14%;
+.exam-pick-table th:nth-child(1),
+.exam-pick-table td:nth-child(1),
+.exam-pick-table th:nth-child(2),
+.exam-pick-table td:nth-child(2),
+.exam-pick-table th:nth-child(4),
+.exam-pick-table td:nth-child(4),
+.exam-pick-table th:nth-child(5),
+.exam-pick-table td:nth-child(5),
+.exam-pick-table th:nth-child(6),
+.exam-pick-table td:nth-child(6) {
+    white-space: nowrap;
+    width: 1%;
 }
 
 .exam-pick-table td.cell-weight .input-inline {
