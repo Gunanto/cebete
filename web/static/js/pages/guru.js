@@ -1732,6 +1732,7 @@
         fmtDate: fmtDate,
         shortQuestionType: shortQuestionType,
         cleanStemPreview: cleanStemPreview,
+        previewText: previewText,
         questionCodeLabel: questionCodeLabel,
         fillQuestionCodeSelect: fillQuestionCodeSelect,
         refreshStats: refreshGuruSummaryStats,
