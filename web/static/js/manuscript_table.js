@@ -71,6 +71,8 @@
     deps.body.innerHTML = "";
     items.forEach(function (it) {
       var key = manuscriptRowKey(it);
+      var qid = Number((it && it.question_id) || 0);
+      var ver = Number((it && it.version_no) || 0);
       var tr = document.createElement("tr");
       tr.innerHTML = [
         '<td><input type="checkbox" data-manuscript-select="' +
@@ -95,8 +97,6 @@
       var tdAction = document.createElement("td");
       var actionWrap = document.createElement("span");
       actionWrap.className = "action-icons";
-      var qid = Number((it && it.question_id) || 0);
-      var ver = Number((it && it.version_no) || 0);
       var iconMap = {
         "preview-manuscript":
           '<svg viewBox="0 0 24 24" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
