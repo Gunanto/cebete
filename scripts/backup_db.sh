@@ -30,8 +30,15 @@ fi
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}"
 : "${BACKUP_ZIP_PASSWORD:?BACKUP_ZIP_PASSWORD not set}"
 : "${RCLONE_REMOTE:?RCLONE_REMOTE not set}"
-: "${BOT_TOKEN:?BOT_TOKEN not set}"
-: "${CHAT_ID:?CHAT_ID not set}"
+if [[ -z "${BOT_TOKEN:-}" && -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+fi
+if [[ -z "${CHAT_ID:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
+  CHAT_ID="${TELEGRAM_CHAT_ID}"
+fi
+
+: "${BOT_TOKEN:?BOT_TOKEN/TELEGRAM_BOT_TOKEN not set}"
+: "${CHAT_ID:?CHAT_ID/TELEGRAM_CHAT_ID not set}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 DAY_OF_MONTH="$(date +%d)"
