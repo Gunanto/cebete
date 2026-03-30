@@ -127,6 +127,7 @@ type createQuestionVersionRequest struct {
 }
 
 type updateQuestionVersionRequest struct {
+	QuestionType    *string               `json:"question_type"`
 	StimulusGroupID *int64                `json:"stimulus_group_id"`
 	StimulusType    *string               `json:"stimulus_type"`
 	StimulusContent json.RawMessage       `json:"stimulus_content"`
@@ -1263,6 +1264,7 @@ func (h *Handler) UpdateQuestionVersion(w http.ResponseWriter, r *http.Request) 
 	item, err := h.svc.UpdateQuestionVersion(r.Context(), UpdateQuestionVersionInput{
 		QuestionID:      questionID,
 		VersionNo:       versionNo,
+		QuestionType:    req.QuestionType,
 		StimulusGroupID: req.StimulusGroupID,
 		StimulusType:    req.StimulusType,
 		StimulusContent: req.StimulusContent,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-30 - in progress
+
+### Changed
+- Edit naskah soal sekarang bisa mengubah tipe soal secara aman antara `MC` (`pg_tunggal`) dan `MR` (`multi_jawaban`) pada endpoint update version.
+- Backend authoring menegakkan aturan perubahan tipe soal agar tidak ambigu:
+  - hanya `MC <-> MR`,
+  - `MR -> MC` hanya valid jika seluruh versi soal memiliki tepat satu jawaban benar,
+  - perubahan tipe ditolak jika soal sudah pernah dipakai di ujian.
+- Frontend editor naskah guru diselaraskan agar perubahan tipe soal ikut terdeteksi sebagai perubahan konten dan dikirim ke backend saat mode edit.
+- README disinkronkan dengan kondisi aplikasi terkini, termasuk migration sampai `000044`, route authoring `stimulus-groups`, `question-codes`, kontrak scoring `MATCH`/`short_answer`, serta aturan edit tipe soal `MC/MR`.
+
 ## 2026-03-10 - in progress
 
 ### Added

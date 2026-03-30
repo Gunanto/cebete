@@ -1618,6 +1618,13 @@
     return {
       question_id: Number(questionID || 0),
       version_no: Number(versionNo || 0),
+      question_type: String(
+        (item && item.question_type) ||
+          (selectedQuestion && selectedQuestion.question_type) ||
+          "",
+      )
+        .trim()
+        .toLowerCase(),
       learning_goal_id: Number(
         (selectedQuestion && selectedQuestion.learning_goal_id) || 0,
       ),
@@ -1649,6 +1656,9 @@
     return {
       question_id: Number((data && data.question_id) || 0),
       version_no: Number((data && data.version_no) || 0),
+      question_type: String((data && data.question_type) || "")
+        .trim()
+        .toLowerCase(),
       learning_goal_id: Number((data && data.learning_goal_id) || 0),
       question_code_id: Number((data && data.question_code_id) || 0),
       stimulus_group_id: Number((data && data.stimulus_group_id) || 0),
@@ -1677,6 +1687,7 @@
     return (
       a.question_id === b.question_id &&
       a.version_no === b.version_no &&
+      a.question_type === b.question_type &&
       a.stimulus_group_id === b.stimulus_group_id &&
       a.stimulus_type === b.stimulus_type &&
       a.stimulus_content === b.stimulus_content &&
@@ -1823,6 +1834,19 @@
       }
     }
     syncAnswerKeyPreview();
+  }
+
+  function isSafeEditQuestionTypeChange(fromType, toType) {
+    const from = String(fromType || "")
+      .trim()
+      .toLowerCase();
+    const to = String(toType || "")
+      .trim()
+      .toLowerCase();
+    return (
+      (from === "pg_tunggal" && to === "multi_jawaban") ||
+      (from === "multi_jawaban" && to === "pg_tunggal")
+    );
   }
 
   function beginEdit(item) {
@@ -2351,12 +2375,15 @@
     if (
       blueprintType &&
       selectedType !== blueprintType &&
-      !forceNewQuestionFromStimulus
+      !forceNewQuestionFromStimulus &&
+      !(isEditMode && isSafeEditQuestionTypeChange(blueprintType, selectedType))
     ) {
       setMsg(
-        "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
-          blueprintType +
-          ").",
+        isEditMode
+          ? "Perubahan tipe soal saat edit hanya diizinkan antara MC dan MR."
+          : "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
+              blueprintType +
+              ").",
       );
       return;
     }
@@ -2460,6 +2487,7 @@
         await loadStimulusGroups(effectiveStimulusGroupID);
       }
       const payload = {
+        question_type: selectedType,
         stimulus_group_id:
           effectiveStimulusGroupID > 0 ? effectiveStimulusGroupID : null,
         stimulus_type: stimulusPayload.type,
@@ -2507,6 +2535,7 @@
       const currentSnapshot = buildCurrentSnapshot({
         question_id: questionID,
         version_no: editingVersionNo,
+        question_type: selectedType,
         learning_goal_id: selectedLearningGoalID,
         question_code_id: selectedQuestionCodeID,
         stimulus_group_id:

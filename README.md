@@ -9,6 +9,12 @@ Redis dan MinIO bersifat opsional.
 docker compose -f deployments/docker-compose.yml up -d
 ```
 
+Shortcut yang setara:
+
+```bash
+make compose-up
+```
+
 ## Jalankan aplikasi
 
 ```bash
@@ -22,6 +28,13 @@ set +a
 go mod tidy
 ./scripts/migrate.sh up
 go run ./cmd/web
+```
+
+Shortcut:
+
+```bash
+make dev
+make run
 ```
 
 Aplikasi aktif di `http://localhost:8080`.
@@ -104,6 +117,21 @@ Urutan migration saat ini:
 - `000027_subject_owner_scope`
 - `000028_user_photo_data_url`
 - `000029_question_version_content_hash`
+- `000030_review_policy_score_only`
+- `000031_user_non_regular_flag`
+- `000032_auth_magic_links`
+- `000033_exam_non_regular_visibility`
+- `000034_school_city_province`
+- `000035_auth_google_oauth`
+- `000036_school_name_not_unique`
+- `000037_school_extra_fields`
+- `000038_registration_requests_school_fields`
+- `000039_question_version_stimulus_structured`
+- `000040_question_version_question_content`
+- `000041_user_school_scopes`
+- `000042_exam_kktp`
+- `000043_exam_token_publish`
+- `000044_stimulus_groups`
 
 Gunakan runner:
 
@@ -407,11 +435,21 @@ Standar format `answer_key` (di `question_versions.answer_key`) dan `answer_payl
 - `benar_salah_pernyataan`
   - `answer_key`: `{"statements":[{"id":"s1","correct":true},{"id":"s2","correct":false}]}`
   - `answer_payload`: `{"answers":[{"id":"s1","value":true},{"id":"s2","value":false}]}`
+- `menjodohkan_drag_drop`
+  - `question_content`: `{"prompts":[{"id":"P1","html":"<p>Prompt 1</p>"}],"choices":[{"id":"C1","html":"<p>Choice 1</p>"}],"note_html":"<p>Catatan opsional</p>"}`
+  - `answer_key`: `{"mode":"exact","pairs":[{"prompt_id":"P1","choice_id":"C1"}]}`
+  - `answer_payload`: `{"pairs":[{"prompt_id":"P1","choice_id":"C1"}]}`
+- `short_answer`
+  - `question_content`: `{"placeholder":"Ketik jawaban","input_type":"textarea","max_length":33}`
+  - `answer_key`: `{"accepted_answers":["Jakarta","DKI Jakarta"],"match_mode":"normalized_exact"}`
+  - `answer_payload`: `{"answer":"Jakarta"}`
 
 Aturan scoring:
 - `pg_tunggal`: benar penuh = `weight`, selain itu `0`.
 - `multi_jawaban`: harus exact match (set sama persis), benar penuh = `weight`, selain itu `0`.
 - `benar_salah_pernyataan`: skor per pernyataan = `weight / jumlah_pernyataan`, dijumlahkan.
+- `menjodohkan_drag_drop`: harus exact match seluruh pasangan prompt-choice, benar penuh = `weight`, selain itu `0`.
+- `short_answer`: jawaban dinormalisasi (`trim`, lower-case, spasi dirapikan) lalu dibandingkan exact dengan `accepted_answers`.
 - `unanswered`: `is_correct = null`, `earned_score = 0`.
 - `malformed_payload`: dianggap terjawab tapi salah, `is_correct = false`, `earned_score = 0`.
 - `malformed_answer_key`: aman (tidak panic), `earned_score = 0` dan perlu perbaikan data soal.
@@ -470,23 +508,26 @@ curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/attempts/1/events \
 curl -b cookie.txt -s 'http://localhost:8080/api/v1/attempts/1/events?limit=200'
 ```
 
-## 10) Stimulus API (authoring)
+## 10) Stimulus Group API (authoring)
 
-Role yang diizinkan: `admin`, `proktor`, `guru`.
+Role yang diizinkan: `admin`, `guru`.
 
-### Create stimulus
+Catatan:
+- Route authoring yang aktif adalah `stimulus-groups`, bukan `stimuli`.
+- Stimulus group dipakai untuk stimulus bersama lintas beberapa soal dalam mapel yang sama.
+
+### Create stimulus group
 
 ```bash
-curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/stimuli \
+curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/stimulus-groups \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
-    "subject_id": 1,
-    "title": "Stimulus Pecahan",
-    "stimulus_type": "single",
-    "content": {
-      "body": "<p>Bacaan/stimulus di sini</p>"
-    }
+    "subject_id":1,
+    "title":"Stimulus Pecahan",
+    "stimulus_type":"single",
+    "stimulus_content":{"body":"<p>Bacaan/stimulus di sini</p>"},
+    "stimulus_html":"<p>Bacaan/stimulus di sini</p>"
   }'
 ```
 
@@ -497,24 +538,108 @@ Contoh `multiteks`:
   "subject_id": 1,
   "title": "Stimulus Multi Teks",
   "stimulus_type": "multiteks",
-  "content": {
+  "stimulus_content": {
     "tabs": [
       {"title":"Teks 1","body":"Isi teks pertama"},
       {"title":"Teks 2","body":"Isi teks kedua"}
     ]
-  }
+  },
+  "stimulus_html": "<p>Ringkasan HTML opsional untuk preview</p>"
 }
 ```
 
-### List stimuli by subject
+### List stimulus groups by subject
 
 ```bash
-curl -b cookie.txt -s 'http://localhost:8080/api/v1/stimuli?subject_id=1'
+curl -b cookie.txt -s 'http://localhost:8080/api/v1/stimulus-groups?subject_id=1'
 ```
 
-## 11) Question versioning API
+### Update stimulus group
 
-Role yang diizinkan: `admin`, `proktor`, `guru`.
+```bash
+curl -b cookie.txt -s -X PUT http://localhost:8080/api/v1/stimulus-groups/5 \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title":"Stimulus Pecahan Revisi",
+    "stimulus_type":"single",
+    "stimulus_content":{"body":"<p>Isi revisi</p>"},
+    "stimulus_html":"<p>Isi revisi</p>"
+  }'
+```
+
+### Delete stimulus group
+
+```bash
+curl -b cookie.txt -s -X DELETE http://localhost:8080/api/v1/stimulus-groups/5 \
+  -H "X-CSRF-Token: $CSRF_TOKEN"
+```
+
+## 11) Question Code API
+
+Role yang diizinkan: `admin`, `guru`.
+
+### Create question code
+
+```bash
+curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/question-codes \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "subject_id":1,
+    "code":"ALG-001",
+    "name":"Aljabar Paket 1"
+  }'
+```
+
+### List question code
+
+```bash
+curl -b cookie.txt -s 'http://localhost:8080/api/v1/question-codes?subject_id=1&q=ALG'
+```
+
+### Assign / ubah code soal pada blueprint
+
+```bash
+curl -b cookie.txt -s -X PUT http://localhost:8080/api/v1/questions/10/code \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"question_code_id":3}'
+```
+
+## 12) Question Versioning API
+
+Role yang diizinkan: `admin`, `guru`.
+
+Tipe soal yang didukung:
+- `pg_tunggal` (MC)
+- `multi_jawaban` (MR)
+- `benar_salah_pernyataan` (TF)
+- `menjodohkan_drag_drop` (MATCH)
+- `short_answer` (SA)
+
+Catatan model data:
+- `questions` menyimpan blueprint utama termasuk `question_type`, mapel, TP, dan code soal.
+- `question_versions` menyimpan naskah versi: stem, stimulus, explanation, hint, `question_content`, `answer_key`, dan opsi.
+
+### Create question blueprint
+
+```bash
+curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "subject_id":1,
+    "learning_goal_id":12,
+    "question_code_id":3,
+    "question_type":"pg_tunggal",
+    "title":"Operasi pecahan",
+    "indicator":"",
+    "material":"",
+    "objective":"",
+    "cognitive_level":""
+  }'
+```
 
 ### Create new version
 
@@ -525,7 +650,18 @@ curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions/10/versions
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
+    "stimulus_group_id":5,
+    "stimulus_type":"single",
+    "stimulus_content":{"body":"<p>Bacaan pendukung</p>"},
+    "stimulus_html":"<p>Bacaan pendukung</p>",
     "stem_html":"<p>Soal versi terbaru</p>",
+    "question_content":{"layout":"standard"},
+    "options":[
+      {"option_key":"A","option_html":"<p>1/2</p>"},
+      {"option_key":"B","option_html":"<p>2/3</p>"},
+      {"option_key":"C","option_html":"<p>3/4</p>"},
+      {"option_key":"D","option_html":"<p>4/5</p>"}
+    ],
     "explanation_html":"<p>Pembahasan versi terbaru</p>",
     "hint_html":"<p>Hint singkat</p>",
     "answer_key":{"correct":"B"},
@@ -534,6 +670,34 @@ curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions/10/versions
     "change_note":"Perbaikan redaksi"
   }'
 ```
+
+### Update existing version
+
+Endpoint ini mengubah versi yang dipilih, bukan membuat versi baru.
+
+```bash
+curl -b cookie.txt -s -X PUT http://localhost:8080/api/v1/questions/10/versions/2 \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "question_type":"multi_jawaban",
+    "stem_html":"<p>Pilih semua jawaban yang benar.</p>",
+    "question_content":{"layout":"standard"},
+    "options":[
+      {"option_key":"A","option_html":"<p>Pernyataan A</p>"},
+      {"option_key":"B","option_html":"<p>Pernyataan B</p>"},
+      {"option_key":"C","option_html":"<p>Pernyataan C</p>"},
+      {"option_key":"D","option_html":"<p>Pernyataan D</p>"}
+    ],
+    "answer_key":{"correct":["A","C"],"mode":"exact"},
+    "explanation_html":"<p>Pembahasan revisi</p>"
+  }'
+```
+
+Aturan perubahan tipe soal saat edit:
+- hanya diizinkan antara `MC <-> MR`
+- `MR -> MC` hanya valid jika seluruh versi soal punya tepat 1 jawaban benar
+- perubahan tipe ditolak jika soal sudah pernah dipakai di ujian
 
 ### Finalize version
 
@@ -548,9 +712,42 @@ curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions/10/versions
 curl -b cookie.txt -s http://localhost:8080/api/v1/questions/10/versions
 ```
 
-## 12) Question parallels API (per exam)
+### Delete version
 
-Role yang diizinkan: `admin`, `proktor`, `guru`.
+```bash
+curl -b cookie.txt -s -X DELETE http://localhost:8080/api/v1/questions/10/versions/2 \
+  -H "X-CSRF-Token: $CSRF_TOKEN"
+```
+
+### Export / transfer question
+
+Export CSV:
+
+```bash
+curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions/export \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "items":[{"question_id":10,"version_no":2}]
+  }' -o naskah_soal.csv
+```
+
+Transfer ke guru lain:
+
+```bash
+curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/questions/transfer \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "target_user_id":77,
+    "target_subject_id":9,
+    "items":[{"question_id":10,"version_no":2}]
+  }'
+```
+
+## 13) Question parallels API (per exam)
+
+Role yang diizinkan: `admin`, `guru`.
 
 ### Create parallel mapping
 
@@ -593,9 +790,9 @@ curl -b cookie.txt -s -X DELETE http://localhost:8080/api/v1/exams/3/parallels/1
   -H "X-CSRF-Token: $CSRF_TOKEN"
 ```
 
-## 13) Review / Telaah API (Step 6)
+## 14) Review / Telaah API (Step 6)
 
-Role yang diizinkan: `admin`, `proktor`, `guru`.
+Role yang diizinkan: `admin`, `guru`.
 
 ### Assign review task
 
@@ -630,7 +827,7 @@ curl -b cookie.txt -s -X POST http://localhost:8080/api/v1/reviews/tasks/10/deci
 ### List review task (reviewer only by default)
 
 Untuk role `guru`, `reviewer_id` otomatis dipaksa ke user login.
-Untuk `admin/proktor`, bisa filter reviewer lain.
+Untuk `admin`, bisa filter reviewer lain.
 
 ```bash
 curl -b cookie.txt -s 'http://localhost:8080/api/v1/reviews/tasks?status=menunggu_reviu'
@@ -646,7 +843,7 @@ curl -b cookie.txt -s 'http://localhost:8080/api/v1/reviews/tasks?status=menungg
 curl -b cookie.txt -s http://localhost:8080/api/v1/questions/10/reviews
 ```
 
-## 13) Observability (Step 9)
+## 15) Observability (Step 9)
 
 ### Structured request log
 
@@ -681,7 +878,7 @@ Catatan:
   - `/api/v1/attempts/{id}/answers/{id}` untuk autosave
   - `/api/v1/attempts/{id}/submit` untuk submit
 
-## 14) Performa & Query Hardening (Step 10)
+## 16) Performa & Query Hardening (Step 10)
 
 Index tambahan untuk endpoint kritikal ditambahkan di migration:
 - `000010_performance_indexes`
@@ -703,7 +900,7 @@ docker exec -i cbtlms-postgres psql -U cbtlms -d cbtlms -c \
   "EXPLAIN ANALYZE SELECT id FROM attempts WHERE student_id=1001 AND status='in_progress';"
 ```
 
-## 15) Security Hardening (Step 12)
+## 17) Security Hardening (Step 12)
 
 ### Rate limit endpoint sensitif
 
@@ -743,7 +940,7 @@ scripts/csrf-curl.sh req GET /api/v1/auth/me
 scripts/csrf-curl.sh req POST /api/v1/auth/logout
 ```
 
-## 16) Load Test Baseline (Step 11)
+## 18) Load Test Baseline (Step 11)
 
 Skeleton load test tersedia:
 - `scripts/loadtest/attempts.js`
@@ -760,7 +957,7 @@ CSRF_TOKEN="$CSRF_TOKEN" \
 k6 run scripts/loadtest/attempts.js
 ```
 
-## 17) CI Workflow
+## 19) CI Workflow
 
 Workflow GitHub Actions tersedia di:
 - `.github/workflows/ci.yml`
@@ -769,7 +966,7 @@ Job yang ada:
 - `unit-test` (jalan pada push/PR)
 - `integration-test` Postgres (jalan saat `workflow_dispatch`)
 
-## 18) Backup & Restore Check Script
+## 20) Backup & Restore Check Script
 
 Script:
 - `scripts/backup.sh`

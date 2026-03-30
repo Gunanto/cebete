@@ -169,6 +169,7 @@ type AssignQuestionLearningGoalInput struct {
 type UpdateQuestionVersionInput struct {
 	QuestionID      int64
 	VersionNo       int
+	QuestionType    *string
 	StimulusGroupID *int64
 	StimulusType    *string
 	StimulusContent json.RawMessage
@@ -2163,17 +2164,22 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	}
 	var questionType string
 	var subjectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT question_type FROM questions WHERE id = $1`, in.QuestionID).Scan(&questionType); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT question_type, subject_id FROM questions WHERE id = $1 FOR UPDATE`, in.QuestionID).Scan(&questionType, &subjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrQuestionNotFound
 		}
 		return nil, fmt.Errorf("load question type: %w", err)
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT subject_id FROM questions WHERE id = $1`, in.QuestionID).Scan(&subjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrQuestionNotFound
+	originalQuestionType := questionType
+	requestedQuestionType := originalQuestionType
+	if in.QuestionType != nil && strings.TrimSpace(*in.QuestionType) != "" {
+		requestedQuestionType = strings.TrimSpace(strings.ToLower(*in.QuestionType))
+	}
+	if requestedQuestionType != originalQuestionType {
+		if err := s.changeQuestionTypeTx(ctx, tx, in.QuestionID, originalQuestionType, requestedQuestionType, in.VersionNo, in.AnswerKey); err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("load question subject: %w", err)
+		questionType = requestedQuestionType
 	}
 
 	next := *item
@@ -2235,6 +2241,13 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 	}
 	if len(next.AnswerKey) == 0 {
 		next.AnswerKey = json.RawMessage(`{}`)
+	}
+	if requestedQuestionType != originalQuestionType && len(in.AnswerKey) == 0 {
+		convertedKey, err := convertQuestionAnswerKey(originalQuestionType, requestedQuestionType, next.AnswerKey)
+		if err != nil {
+			return nil, err
+		}
+		next.AnswerKey = convertedKey
 	}
 	if len(bytes.TrimSpace(in.QuestionContent)) > 0 {
 		next.QuestionContent = in.QuestionContent
@@ -2343,6 +2356,150 @@ func (s *Service) UpdateQuestionVersion(ctx context.Context, in UpdateQuestionVe
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return out, nil
+}
+
+func (s *Service) changeQuestionTypeTx(ctx context.Context, tx *sql.Tx, questionID int64, currentType string, nextType string, editingVersionNo int, editingAnswerKey json.RawMessage) error {
+	currentType = strings.TrimSpace(strings.ToLower(currentType))
+	nextType = strings.TrimSpace(strings.ToLower(nextType))
+	if currentType == nextType {
+		return nil
+	}
+	if !isSafeQuestionTypeChange(currentType, nextType) {
+		return fmt.Errorf("%w: tipe soal hanya bisa diubah antara MC dan MR", ErrInvalidInput)
+	}
+
+	var usedInExam bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM exam_questions
+			WHERE question_id = $1
+		)
+	`, questionID).Scan(&usedInExam); err != nil {
+		return fmt.Errorf("check question exam usage: %w", err)
+	}
+	if usedInExam {
+		return fmt.Errorf("%w: tipe soal tidak bisa diubah karena soal sudah dipakai di ujian", ErrInvalidInput)
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT version_no, answer_key
+		FROM question_versions
+		WHERE question_id = $1
+		FOR UPDATE
+	`, questionID)
+	if err != nil {
+		return fmt.Errorf("list question versions for type change: %w", err)
+	}
+	defer rows.Close()
+
+	type versionAnswerKey struct {
+		VersionNo int
+		AnswerKey []byte
+	}
+	versions := make([]versionAnswerKey, 0)
+	for rows.Next() {
+		var item versionAnswerKey
+		if err := rows.Scan(&item.VersionNo, &item.AnswerKey); err != nil {
+			return fmt.Errorf("scan version answer key: %w", err)
+		}
+		versions = append(versions, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate version answer keys: %w", err)
+	}
+
+	for _, item := range versions {
+		targetAnswerKey := append([]byte(nil), item.AnswerKey...)
+		if item.VersionNo == editingVersionNo && len(editingAnswerKey) > 0 {
+			targetAnswerKey = append([]byte(nil), editingAnswerKey...)
+		} else {
+			targetAnswerKey, err = convertQuestionAnswerKey(currentType, nextType, targetAnswerKey)
+			if err != nil {
+				return fmt.Errorf("%w: versi %d tidak bisa dikonversi dari %s ke %s: %v", ErrInvalidInput, item.VersionNo, currentType, nextType, err)
+			}
+		}
+		if err := validateAnswerKey(nextType, targetAnswerKey); err != nil {
+			return fmt.Errorf("%w: versi %d tidak valid untuk tipe %s: %v", ErrInvalidInput, item.VersionNo, nextType, err)
+		}
+		if item.VersionNo == editingVersionNo {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE question_versions
+			SET answer_key = $2::jsonb
+			WHERE question_id = $1
+			  AND version_no = $3
+		`, questionID, []byte(targetAnswerKey), item.VersionNo); err != nil {
+			return fmt.Errorf("update version answer key for type change: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE questions
+		SET question_type = $2,
+			updated_at = now()
+		WHERE id = $1
+	`, questionID, nextType); err != nil {
+		return fmt.Errorf("update question type: %w", err)
+	}
+	return nil
+}
+
+func isSafeQuestionTypeChange(currentType, nextType string) bool {
+	currentType = strings.TrimSpace(strings.ToLower(currentType))
+	nextType = strings.TrimSpace(strings.ToLower(nextType))
+	return (currentType == "pg_tunggal" && nextType == "multi_jawaban") ||
+		(currentType == "multi_jawaban" && nextType == "pg_tunggal")
+}
+
+func convertQuestionAnswerKey(currentType, nextType string, raw json.RawMessage) (json.RawMessage, error) {
+	currentType = strings.TrimSpace(strings.ToLower(currentType))
+	nextType = strings.TrimSpace(strings.ToLower(nextType))
+	if currentType == nextType {
+		return append(json.RawMessage(nil), raw...), nil
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("answer_key must be object")
+	}
+
+	switch {
+	case currentType == "pg_tunggal" && nextType == "multi_jawaban":
+		correct, _ := obj["correct"].(string)
+		correct = strings.TrimSpace(strings.ToUpper(correct))
+		if correct == "" {
+			return nil, fmt.Errorf("pg_tunggal answer_key.correct (string) is required")
+		}
+		converted, err := json.Marshal(map[string]any{
+			"correct": []string{correct},
+			"mode":    "exact",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal converted answer_key: %w", err)
+		}
+		return json.RawMessage(converted), nil
+	case currentType == "multi_jawaban" && nextType == "pg_tunggal":
+		rawCorrect, _ := obj["correct"].([]any)
+		if len(rawCorrect) != 1 {
+			return nil, fmt.Errorf("multi_jawaban harus memiliki tepat 1 jawaban benar")
+		}
+		correct, _ := rawCorrect[0].(string)
+		correct = strings.TrimSpace(strings.ToUpper(correct))
+		if correct == "" {
+			return nil, fmt.Errorf("multi_jawaban answer_key.correct[0] must be non-empty string")
+		}
+		converted, err := json.Marshal(map[string]any{
+			"correct": correct,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal converted answer_key: %w", err)
+		}
+		return json.RawMessage(converted), nil
+	default:
+		return nil, fmt.Errorf("unsupported question type change")
+	}
 }
 
 func (s *Service) writeAuditTx(ctx context.Context, tx *sql.Tx, userID int64, action, entityType, entityID string, payload map[string]any) error {

@@ -130,6 +130,47 @@ func TestNormalizeAndValidateOptions(t *testing.T) {
 	})
 }
 
+func TestConvertQuestionAnswerKey(t *testing.T) {
+	t.Run("mc to mr", func(t *testing.T) {
+		got, err := convertQuestionAnswerKey("pg_tunggal", "multi_jawaban", json.RawMessage(`{"correct":"b"}`))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if string(got) != `{"correct":["B"],"mode":"exact"}` {
+			t.Fatalf("unexpected converted answer key: %s", string(got))
+		}
+	})
+
+	t.Run("mr to mc with single correct", func(t *testing.T) {
+		got, err := convertQuestionAnswerKey("multi_jawaban", "pg_tunggal", json.RawMessage(`{"correct":["A"],"mode":"exact"}`))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if string(got) != `{"correct":"A"}` {
+			t.Fatalf("unexpected converted answer key: %s", string(got))
+		}
+	})
+
+	t.Run("mr to mc with multiple correct rejected", func(t *testing.T) {
+		_, err := convertQuestionAnswerKey("multi_jawaban", "pg_tunggal", json.RawMessage(`{"correct":["A","B"],"mode":"exact"}`))
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+	})
+}
+
+func TestIsSafeQuestionTypeChange(t *testing.T) {
+	if !isSafeQuestionTypeChange("pg_tunggal", "multi_jawaban") {
+		t.Fatalf("expected MC to MR to be allowed")
+	}
+	if !isSafeQuestionTypeChange("multi_jawaban", "pg_tunggal") {
+		t.Fatalf("expected MR to MC to be allowed")
+	}
+	if isSafeQuestionTypeChange("pg_tunggal", "short_answer") {
+		t.Fatalf("expected MC to short answer to be rejected")
+	}
+}
+
 func TestNormalizeQuestionContentAndMatchingReferences(t *testing.T) {
 	raw := json.RawMessage(`{
 		"prompts":[{"id":"P1","html":"<p>Satu</p>"},{"id":"P2","html":"<p>Dua</p>"}],

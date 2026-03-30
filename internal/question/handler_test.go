@@ -461,11 +461,14 @@ func TestUpdateQuestionVersionOK(t *testing.T) {
 			if in.QuestionID != 5 || in.VersionNo != 2 {
 				t.Fatalf("unexpected input: %+v", in)
 			}
+			if in.QuestionType == nil || *in.QuestionType != "multi_jawaban" {
+				t.Fatalf("expected question_type to be passed through, got %+v", in.QuestionType)
+			}
 			return &QuestionVersion{ID: 100, QuestionID: 5, VersionNo: 2, Status: "draft"}, nil
 		},
 	}}
 
-	payload := []byte(`{"stem_html":"<p>ubah</p>","answer_key":{"correct":"A"}}`)
+	payload := []byte(`{"question_type":"multi_jawaban","stem_html":"<p>ubah</p>","answer_key":{"correct":"A"}}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/questions/5/versions/2", bytes.NewReader(payload))
 	req = withParam(req, "id", "5")
 	req = withParam(req, "version", "2")
