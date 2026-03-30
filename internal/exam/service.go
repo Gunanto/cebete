@@ -3500,7 +3500,7 @@ func (s *Service) ListExamQuestions(ctx context.Context, examID int64) ([]ExamQu
 			q.question_type,
 			COALESCE(qc.code, '') AS question_code,
 			COALESCE(qc.name, '') AS question_title,
-			LEFT(COALESCE(qv.stem_html, q.stem_html, ''), 200) AS stem_preview,
+			COALESCE(qv.stem_html, q.stem_html, '') AS stem_preview,
 			q.subject_id,
 			s.name AS subject_name,
 			qv.version_no,

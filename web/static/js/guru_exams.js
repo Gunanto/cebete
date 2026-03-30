@@ -690,7 +690,7 @@
             deps.escapeHtml(deps.shortQuestionType(it.question_type)) +
             "</td>",
           "<td>" +
-            deps.escapeHtml(deps.cleanStemPreview(it.stem_preview)) +
+            deps.escapeHtml(deps.previewText(it.stem_preview, 120)) +
             "</td>",
           "<td>" + deps.escapeHtml(String(it.weight || 1)) + "</td>",
           '<td><button class="icon-only-btn danger" type="button" data-exam-question-del="' +
@@ -751,7 +751,7 @@
     var pageItems = limit > 0 ? items.slice(start, end) : items.slice();
     deps.examQuestionsPreviewBody.innerHTML = "";
     pageItems.forEach(function (it) {
-      const title = deps.cleanStemPreview(it.stem_preview);
+      const title = deps.previewText(it.stem_preview, 120);
       const tr = document.createElement("tr");
       tr.innerHTML = [
         "<td>" + deps.escapeHtml(String(it.question_id || "")) + "</td>",
