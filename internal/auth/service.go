@@ -201,17 +201,19 @@ type AdminUserRecord struct {
 }
 
 type AdminDashboardStats struct {
-	AdminCount             int64 `json:"admin_count"`
-	ProktorCount           int64 `json:"proktor_count"`
-	GuruCount              int64 `json:"guru_count"`
-	SiswaCount             int64 `json:"siswa_count"`
-	SchoolCount            int64 `json:"school_count"`
-	UniqueParticipantCount int64 `json:"unique_participant_count"`
-	CompletedExamCount     int64 `json:"completed_exam_count"`
-	InProgressCount        int64 `json:"in_progress_count"`
-	ActiveUserCountDaily   int64 `json:"active_user_count_daily"`
-	ActiveUserCountWeekly  int64 `json:"active_user_count_weekly"`
-	ActiveUserCountMonthly int64 `json:"active_user_count_monthly"`
+	AdminCount                 int64 `json:"admin_count"`
+	ProktorCount               int64 `json:"proktor_count"`
+	GuruCount                  int64 `json:"guru_count"`
+	SiswaCount                 int64 `json:"siswa_count"`
+	RegularParticipantCount    int64 `json:"regular_participant_count"`
+	NonRegularParticipantCount int64 `json:"non_regular_participant_count"`
+	SchoolCount                int64 `json:"school_count"`
+	UniqueParticipantCount     int64 `json:"unique_participant_count"`
+	CompletedExamCount         int64 `json:"completed_exam_count"`
+	InProgressCount            int64 `json:"in_progress_count"`
+	ActiveUserCountDaily       int64 `json:"active_user_count_daily"`
+	ActiveUserCountWeekly      int64 `json:"active_user_count_weekly"`
+	ActiveUserCountMonthly     int64 `json:"active_user_count_monthly"`
 }
 
 type StudentExamProfile struct {
@@ -2766,9 +2768,18 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 			COUNT(*) FILTER (WHERE role = 'admin' AND is_active = TRUE),
 			COUNT(*) FILTER (WHERE role = 'proktor' AND is_active = TRUE),
 			COUNT(*) FILTER (WHERE role = 'guru' AND is_active = TRUE),
-			COUNT(*) FILTER (WHERE role = 'siswa' AND is_active = TRUE)
+			COUNT(*) FILTER (WHERE role = 'siswa' AND is_active = TRUE),
+			COUNT(*) FILTER (WHERE role = 'siswa' AND is_active = TRUE AND is_non_regular = FALSE),
+			COUNT(*) FILTER (WHERE role = 'siswa' AND is_active = TRUE AND is_non_regular = TRUE)
 		FROM users
-	`).Scan(&out.AdminCount, &out.ProktorCount, &out.GuruCount, &out.SiswaCount); err != nil {
+	`).Scan(
+		&out.AdminCount,
+		&out.ProktorCount,
+		&out.GuruCount,
+		&out.SiswaCount,
+		&out.RegularParticipantCount,
+		&out.NonRegularParticipantCount,
+	); err != nil {
 		return nil, fmt.Errorf("query user stats: %w", err)
 	}
 	if err := s.db.QueryRowContext(ctx, `
@@ -2816,15 +2827,18 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 		return nil, ErrInvalidInput
 	}
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT a.student_id)
+		SELECT
+			COUNT(DISTINCT a.student_id) FILTER (WHERE u.is_non_regular = FALSE),
+			COUNT(DISTINCT a.student_id) FILTER (WHERE u.is_non_regular = TRUE)
 		FROM attempts a
 		JOIN exams e ON e.id = a.exam_id
 		JOIN users u ON u.id = a.student_id
 		WHERE e.created_by = $1
 		  AND u.role = 'siswa'
-	`, guruID).Scan(&out.UniqueParticipantCount); err != nil {
+	`, guruID).Scan(&out.RegularParticipantCount, &out.NonRegularParticipantCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard unique participant count: %w", err)
 	}
+	out.UniqueParticipantCount = out.RegularParticipantCount + out.NonRegularParticipantCount
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT e.id)
 		FROM exams e

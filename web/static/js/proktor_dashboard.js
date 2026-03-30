@@ -24,6 +24,16 @@
       Number(stats.guru_count || 0) +
       Number(stats.siswa_count || 0);
     if (deps.statUsers) deps.statUsers.textContent = String(totalUsers);
+    if (deps.statRegularParticipants) {
+      deps.statRegularParticipants.textContent = String(
+        stats.regular_participant_count || 0,
+      );
+    }
+    if (deps.statNonRegularParticipants) {
+      deps.statNonRegularParticipants.textContent = String(
+        stats.non_regular_participant_count || 0,
+      );
+    }
     if (deps.statSchools)
       deps.statSchools.textContent = String(stats.school_count || 0);
     if (deps.statInProgress)

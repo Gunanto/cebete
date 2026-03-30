@@ -51,6 +51,12 @@
     const statProktor = document.getElementById("admin-stat-proktor");
     const statGuru = document.getElementById("admin-stat-guru");
     const statSiswa = document.getElementById("admin-stat-siswa");
+    const statRegularParticipants = document.getElementById(
+      "admin-stat-regular-participants",
+    );
+    const statNonRegularParticipants = document.getElementById(
+      "admin-stat-non-regular-participants",
+    );
     const statActiveUsers = document.getElementById("admin-stat-active-users");
     const statActiveUsersDaily = document.getElementById(
       "admin-stat-active-users-daily",
@@ -437,6 +443,16 @@
       if (statProktor) statProktor.textContent = String(out.proktor_count || 0);
       if (statGuru) statGuru.textContent = String(out.guru_count || 0);
       if (statSiswa) statSiswa.textContent = String(out.siswa_count || 0);
+      if (statRegularParticipants) {
+        statRegularParticipants.textContent = String(
+          out.regular_participant_count || 0,
+        );
+      }
+      if (statNonRegularParticipants) {
+        statNonRegularParticipants.textContent = String(
+          out.non_regular_participant_count || 0,
+        );
+      }
       if (statActiveUsers)
         statActiveUsers.textContent = String(
           out.active_user_count_monthly || 0,

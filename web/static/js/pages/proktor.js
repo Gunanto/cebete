@@ -42,6 +42,12 @@
     const msg = document.getElementById("proktor-message");
     const statPending = document.getElementById("proktor-stat-pending");
     const statUsers = document.getElementById("proktor-stat-users");
+    const statRegularParticipants = document.getElementById(
+      "proktor-stat-regular-participants",
+    );
+    const statNonRegularParticipants = document.getElementById(
+      "proktor-stat-non-regular-participants",
+    );
     const statSchools = document.getElementById("proktor-stat-schools");
     const statInProgress = document.getElementById("proktor-stat-in-progress");
     const dashboardMonitorRefreshBtn = document.getElementById(
@@ -928,6 +934,8 @@
         api: api,
         loadPendingRegistrations: loadPendingRegistrations,
         statUsers: statUsers,
+        statRegularParticipants: statRegularParticipants,
+        statNonRegularParticipants: statNonRegularParticipants,
         statSchools: statSchools,
         statInProgress: statInProgress,
       });

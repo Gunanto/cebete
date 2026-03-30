@@ -46,6 +46,12 @@
     );
     const statInProgress = document.getElementById("guru-stat-in-progress");
     const statResults = document.getElementById("guru-stat-results");
+    const statRegularParticipants = document.getElementById(
+      "guru-stat-regular-participants",
+    );
+    const statNonRegularParticipants = document.getElementById(
+      "guru-stat-non-regular-participants",
+    );
     const dashboardMonitorRefreshBtn = document.getElementById(
       "guru-dashboard-monitor-refresh-btn",
     );
@@ -691,6 +697,8 @@
     let guruUniqueParticipantCount = 0;
     let guruCompletedExamCount = 0;
     let guruInProgressCount = 0;
+    let guruRegularParticipantCount = 0;
+    let guruNonRegularParticipantCount = 0;
     let dashboardMonitorTimer = null;
     let dashboardMonitorLoading = false;
     let dashboardMonitorExamItems = [];
@@ -732,6 +740,16 @@
       if (statResults) {
         statResults.textContent = String(
           Number(guruUniqueParticipantCount || 0),
+        );
+      }
+      if (statRegularParticipants) {
+        statRegularParticipants.textContent = String(
+          Number(guruRegularParticipantCount || 0),
+        );
+      }
+      if (statNonRegularParticipants) {
+        statNonRegularParticipants.textContent = String(
+          Number(guruNonRegularParticipantCount || 0),
         );
       }
     }
@@ -2460,6 +2478,12 @@
       );
       guruInProgressCount = Number(
         (dashboardStats && dashboardStats.in_progress_count) || 0,
+      );
+      guruRegularParticipantCount = Number(
+        (dashboardStats && dashboardStats.regular_participant_count) || 0,
+      );
+      guruNonRegularParticipantCount = Number(
+        (dashboardStats && dashboardStats.non_regular_participant_count) || 0,
       );
       await Promise.all([
         loadEducationLevelsForGuruSubjectForm(),
