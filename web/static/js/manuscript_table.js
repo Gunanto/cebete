@@ -74,13 +74,14 @@
       var qid = Number((it && it.question_id) || 0);
       var ver = Number((it && it.version_no) || 0);
       var tr = document.createElement("tr");
+      var idLabel = qid > 0 && ver > 0 ? String(qid) + "-" + String(ver) : "-";
       tr.innerHTML = [
         '<td><input type="checkbox" data-manuscript-select="' +
           deps.escapeHtml(key) +
           '"' +
           (selectedKeys.has(key) ? " checked" : "") +
           " /></td>",
-        "<td>" + deps.escapeHtml(String(qid || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(idLabel) + "</td>",
         "<td>" + deps.escapeHtml(deps.resolveQuestionCode(it) || "-") + "</td>",
         "<td>" + deps.escapeHtml(deps.resolveLearningGoal(it) || "-") + "</td>",
         "<td>" +
