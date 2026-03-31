@@ -44,6 +44,9 @@
     if (!res || Number(res.status || 0) !== 401 || authRedirecting) {
       return false;
     }
+    if (window.location && window.location.pathname === "/login") {
+      return false;
+    }
     authRedirecting = true;
     window.setTimeout(function () {
       window.location.href = "/login";
