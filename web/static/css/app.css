@@ -2405,6 +2405,10 @@ textarea:focus-visible {
     word-break: break-word;
 }
 
+#guru-manuscript-form [data-statement-text] {
+    font-weight: 400;
+}
+
 .field-error {
     border-color: #ef9a9a;
     color: #8b1d1d;

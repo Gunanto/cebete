@@ -128,10 +128,12 @@
             container: [
               [{ header: [false, 2, 3] }],
               ["bold", "italic", "underline"],
+              [{ color: [] }, { background: [] }],
               [{ script: "sub" }, { script: "super" }],
               [{ align: [] }],
               [{ list: "ordered" }, { list: "bullet" }],
               ["link", "image", "formula"],
+              ["clean"],
             ],
             handlers: {
               image: function () {
@@ -153,8 +155,7 @@
                     }
                     throw new Error("url kosong");
                   } catch (err) {
-                    const msg =
-                      (err && err.message) || "Upload gambar gagal.";
+                    const msg = (err && err.message) || "Upload gambar gagal.";
                     try {
                       const base64 = await fileToDataURL(file);
                       quill.insertEmbed(index, "image", base64, "user");

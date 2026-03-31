@@ -3845,6 +3845,7 @@
               container: [
                 [{ header: [false, 2, 3] }],
                 ["bold", "italic", "underline"],
+                [{ color: [] }, { background: [] }],
                 [{ script: "sub" }, { script: "super" }],
                 [{ align: [] }],
                 [{ list: "ordered" }, { list: "bullet" }],
