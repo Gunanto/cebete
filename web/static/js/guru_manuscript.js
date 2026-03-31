@@ -110,15 +110,38 @@
     if (deps && typeof deps.setMsg === "function") deps.setMsg(value);
   }
 
-  function showFormMessage(value, durationMs) {
+  function setLocalMsg(value) {
+    if (deps && typeof deps.setLocalMsg === "function") deps.setLocalMsg(value);
+  }
+
+  function showFormMessage(value, durationMs, kind) {
     if (!deps || !deps.manuscriptFormMessage) return;
     const message = String(value || "").trim();
+    const tone = String(kind || "info")
+      .trim()
+      .toLowerCase();
     if (manuscriptFormMessageTimer) {
       clearTimeout(manuscriptFormMessageTimer);
       manuscriptFormMessageTimer = null;
     }
     deps.manuscriptFormMessage.textContent = message;
     deps.manuscriptFormMessage.hidden = message === "";
+    deps.manuscriptFormMessage.classList.remove(
+      "is-success",
+      "is-error",
+      "is-warning",
+      "is-info",
+    );
+    if (message) {
+      deps.manuscriptFormMessage.classList.add(
+        tone === "success" ||
+          tone === "error" ||
+          tone === "warning" ||
+          tone === "info"
+          ? "is-" + tone
+          : "is-info",
+      );
+    }
     if (!message) return;
     deps.manuscriptFormMessage.scrollIntoView({
       behavior: "smooth",
@@ -129,16 +152,16 @@
         if (deps && deps.manuscriptFormMessage) {
           deps.manuscriptFormMessage.hidden = true;
           deps.manuscriptFormMessage.textContent = "";
+          deps.manuscriptFormMessage.classList.remove(
+            "is-success",
+            "is-error",
+            "is-warning",
+            "is-info",
+          );
         }
         manuscriptFormMessageTimer = null;
       }, durationMs);
     }
-  }
-
-  function showPopupMessage(value) {
-    const message = String(value || "").trim();
-    if (!message || typeof window === "undefined") return;
-    window.alert(message);
   }
 
   function getSelectedSubjectID() {
@@ -2343,6 +2366,8 @@
     );
     const stemHTML = String(fd.get("stem_html") || "");
     if (isBlankHTML(stemHTML)) {
+      showFormMessage("Naskah Soal (Stem) wajib diisi.", 4000, "warning");
+      setLocalMsg("Naskah Soal (Stem) wajib diisi.");
       setMsg("Naskah Soal (Stem) wajib diisi.");
       return;
     }
@@ -2370,6 +2395,8 @@
         ? originalStimulusGroupID
         : selectedStimulusGroupID;
     if (!selectedType) {
+      showFormMessage("Tipe Soal wajib dipilih.", 4000, "warning");
+      setLocalMsg("Tipe Soal wajib dipilih.");
       setMsg("Tipe Soal wajib dipilih.");
       return;
     }
@@ -2384,13 +2411,14 @@
       !forceNewQuestionFromStimulus &&
       !(isEditMode && isSafeEditQuestionTypeChange(blueprintType, selectedType))
     ) {
-      setMsg(
-        isEditMode
-          ? "Perubahan tipe soal saat edit hanya diizinkan antara MC dan MR."
-          : "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
-              blueprintType +
-              ").",
-      );
+      const typeMessage = isEditMode
+        ? "Perubahan tipe soal saat edit hanya diizinkan antara MC dan MR."
+        : "Tipe Soal harus sama dengan tipe pada Soal terpilih (" +
+          blueprintType +
+          ").";
+      showFormMessage(typeMessage, 5000, "warning");
+      setLocalMsg(typeMessage);
+      setMsg(typeMessage);
       return;
     }
     currentManuscriptQuestionType = selectedType;
@@ -2416,6 +2444,12 @@
         );
       }
     } catch (err) {
+      showFormMessage(
+        "Kunci jawaban belum valid: " + err.message,
+        5000,
+        "warning",
+      );
+      setLocalMsg("Kunci jawaban belum valid: " + err.message);
       setMsg("Kunci jawaban belum valid: " + err.message);
       return;
     }
@@ -2570,7 +2604,9 @@
         showFormMessage(
           "Tidak ada perubahan pada naskah untuk disimpan.",
           4000,
+          "info",
         );
+        setLocalMsg("Tidak ada perubahan pada naskah untuk disimpan.");
         return;
       }
       if (typeof deps.loadBlueprints === "function") {
@@ -2663,6 +2699,12 @@
             ? "Naskah soal berhasil disimpan. Stimulus group tetap aktif; pilih tipe soal berikutnya dari panel stimulus."
             : "Naskah soal berhasil disimpan.",
         4000,
+        "success",
+      );
+      setLocalMsg(
+        isEditMode
+          ? "Naskah soal berhasil diperbarui."
+          : "Naskah soal berhasil disimpan.",
       );
       setMsg(
         isEditMode
@@ -2674,9 +2716,9 @@
         (isEditMode
           ? "Simpan perubahan naskah gagal: "
           : "Simpan naskah gagal: ") + err.message;
-      showFormMessage(errorMessage, 5000);
+      showFormMessage(errorMessage, 5000, "error");
+      setLocalMsg(errorMessage);
       setMsg(errorMessage);
-      showPopupMessage(errorMessage);
     } finally {
       done();
     }
@@ -2723,8 +2765,12 @@
         deps.renderManuscripts(versions);
       }
       setMsg("Data naskah berhasil dimuat ulang.");
+      setLocalMsg("Data naskah berhasil dimuat ulang.");
+      showFormMessage("Data naskah berhasil dimuat ulang.", 3000, "success");
     } catch (err) {
       setMsg("Gagal muat ulang naskah: " + err.message);
+      setLocalMsg("Gagal muat ulang naskah: " + err.message);
+      showFormMessage("Gagal muat ulang naskah: " + err.message, 5000, "error");
     } finally {
       done();
     }

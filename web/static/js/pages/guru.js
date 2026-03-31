@@ -763,7 +763,6 @@
     };
     const setManuscriptMsg = function (value) {
       text(manuscriptMessage, value);
-      text(manuscriptFormMessage, value);
     };
     const fmtDate = function (raw) {
       if (!raw) return "-";
@@ -1982,6 +1981,7 @@
         api: api,
         beginBusy: beginBusy,
         setMsg: setMsg,
+        setLocalMsg: setManuscriptMsg,
         msg: msg,
         text: text,
         escapeHtml: escapeHtml,
