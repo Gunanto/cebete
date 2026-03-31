@@ -2,6 +2,7 @@
   const core = window.AppCore || {};
   const api = core.api;
   const apiMultipart = core.apiMultipart;
+  const downloadCSV = core.downloadCSV;
   const extractAPIError = core.extractAPIError;
   const meOrNull = core.meOrNull;
   const text = core.text;
@@ -217,6 +218,9 @@
     );
     const manuscriptExportBtn = document.getElementById(
       "guru-manuscript-export-btn",
+    );
+    const manuscriptExportFormatInput = document.getElementById(
+      "guru-manuscript-export-format",
     );
     const manuscriptTransferBtn = document.getElementById(
       "guru-manuscript-transfer-btn",
