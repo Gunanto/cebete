@@ -1,5 +1,6 @@
 (function () {
   const core = (window.AppCore = window.AppCore || {});
+  let authRedirecting = false;
 
   function cookieValue(name) {
     const match = document.cookie.match(
@@ -39,6 +40,17 @@
     return statusText || "Request failed";
   }
 
+  function redirectToLoginOnUnauthorized(res) {
+    if (!res || Number(res.status || 0) !== 401 || authRedirecting) {
+      return false;
+    }
+    authRedirecting = true;
+    window.setTimeout(function () {
+      window.location.href = "/login";
+    }, 0);
+    return true;
+  }
+
   async function api(path, method, body) {
     const res = await fetch(path, {
       method,
@@ -49,6 +61,9 @@
     const json = await res.json().catch(function () {
       return {};
     });
+    if (redirectToLoginOnUnauthorized(res)) {
+      throw new Error("unauthorized");
+    }
     if (!res.ok || !json.ok) {
       const msg = extractAPIError(json, res.statusText || "Request failed");
       throw new Error(msg);
@@ -70,6 +85,9 @@
       headers: csrfHeaders("POST"),
       body: JSON.stringify(payload || {}),
     });
+    if (redirectToLoginOnUnauthorized(res)) {
+      throw new Error("unauthorized");
+    }
     if (!res.ok) {
       const json = await res.json().catch(function () {
         return {};
@@ -105,6 +123,9 @@
     const json = await res.json().catch(function () {
       return {};
     });
+    if (redirectToLoginOnUnauthorized(res)) {
+      throw new Error("unauthorized");
+    }
     if (!res.ok || !json.ok) {
       const msg = extractAPIError(json, res.statusText || "Request failed");
       throw new Error(msg);
