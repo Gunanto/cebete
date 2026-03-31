@@ -2181,6 +2181,9 @@
     const manuscriptExportBtn = document.getElementById(
       "guru-manuscript-export-btn",
     );
+    const manuscriptExportFormatInput = document.getElementById(
+      "guru-manuscript-export-format",
+    );
     const manuscriptTransferBtn = document.getElementById(
       "guru-manuscript-transfer-btn",
     );
@@ -3534,18 +3537,30 @@
             setManuscriptMsg("Tidak ada naskah yang bisa diekspor.");
             return;
           }
+          const exportFormat = String(
+            (manuscriptExportFormatInput &&
+              manuscriptExportFormatInput.value) ||
+              "csv",
+          )
+            .trim()
+            .toLowerCase();
           const done = beginBusy(
             manuscriptExportBtn,
             msg,
-            "Menyiapkan export naskah...",
+            "Menyiapkan export naskah " + exportFormat.toUpperCase() + "...",
           );
           try {
             await downloadCSV(
-              "/api/v1/questions/export",
+              "/api/v1/questions/export?format=" +
+                encodeURIComponent(exportFormat),
               { items: items },
-              "naskah_soal.csv",
+              "naskah_soal." + exportFormat,
             );
-            setManuscriptMsg("Export naskah berhasil dibuat.");
+            setManuscriptMsg(
+              "Export naskah " +
+                exportFormat.toUpperCase() +
+                " berhasil dibuat.",
+            );
           } catch (err) {
             setManuscriptMsg("Export naskah gagal: " + err.message);
           } finally {

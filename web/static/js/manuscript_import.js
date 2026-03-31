@@ -34,7 +34,7 @@
         if (manuscriptImportForm) manuscriptImportForm.reset();
         if (manuscriptImportOutput) {
           manuscriptImportOutput.textContent =
-            "Format didukung: (1) TYPE/Stimulus/Q/Opsi/Kunci + opsional KodeTP, atau (2) CSV header Mapel,Kode Soal,Kode TP,Nama Kode,stimulus,soal,opsi,kunci jawaban,Penjelasan,Hint,Tujuan Pembelajaran,Materi,Kelas,Semester. Mapel akan dipaksa ke pilihan dialog.";
+            "Format didukung: (1) blok TYPE MC/MR/TF/MATCH/SA + opsional KodeTP, atau (2) CSV header Mapel,Kode Soal,Kode TP,Nama Kode,stimulus,soal,opsi,kunci jawaban,Penjelasan,Hint,Tujuan Pembelajaran,Materi,Kelas,Semester. Mapel akan dipaksa ke pilihan dialog.";
         }
         if (
           manuscriptImportDialog &&
@@ -159,13 +159,13 @@
                   learningGoalID = ensured;
                 }
               }
-              let stimulusHTML = "";
+              let stimulusHTML = String(parsed.stimulus_html || "").trim();
               const questionCodeID = await deps.ensureQuestionCodeForImport(
                 subjectID,
                 parsed.question_code_code,
                 parsed.question_code_name,
               );
-              if (parsed.stimulus_text) {
+              if (!stimulusHTML && parsed.stimulus_text) {
                 const safeStimulus = deps.escapeHtml(parsed.stimulus_text);
                 stimulusHTML = "<p>" + safeStimulus + "</p>";
               }
@@ -193,6 +193,7 @@
                   stem_html: parsed.stem_html,
                   explanation_html: parsed.explanation_html || "",
                   hint_html: parsed.hint_html || "",
+                  question_content: parsed.question_content || {},
                   answer_key: parsed.answer_key,
                   options: parsed.options,
                 },

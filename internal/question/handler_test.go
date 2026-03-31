@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cbtlms/internal/auth"
+	mediasvc "cbtlms/internal/media"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -45,6 +48,17 @@ type mockQuestionService struct {
 	getQuestionExportDataFn func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error)
 	getUserRoleFn           func(ctx context.Context, userID int64) (string, error)
 	cloneQuestionFn         func(ctx context.Context, in CloneQuestionInput) (*CloneQuestionResult, error)
+}
+
+type mockQuestionMediaService struct {
+	downloadFn func(ctx context.Context, key string) (*mediasvc.ObjectResult, error)
+}
+
+func (m *mockQuestionMediaService) DownloadQuestionImage(ctx context.Context, key string) (*mediasvc.ObjectResult, error) {
+	if m.downloadFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.downloadFn(ctx, key)
 }
 
 func (m *mockQuestionService) CreateStimulusGroup(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error) {
@@ -367,6 +381,151 @@ func TestListQuestionsGuruDefaultsToOwnerOnly(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestExportQuestionsCSV(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		getQuestionExportDataFn: func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+			if questionID != 11 || versionNo != 2 {
+				t.Fatalf("unexpected export input: question=%d version=%d", questionID, versionNo)
+			}
+			if ownerID == nil || *ownerID != 9 {
+				t.Fatalf("expected ownerID=9, got %+v", ownerID)
+			}
+			explanation := "<p>Karena benar.</p>"
+			return &ExportQuestionData{
+				SubjectName:      "Matematika",
+				QuestionCode:     "MAT-001",
+				QuestionCodeName: "Paket A",
+				QuestionType:     "pg_tunggal",
+				StemHTML:         "<p>2 + 2 = ?</p>",
+				ExplanationHTML:  &explanation,
+				Options: []QuestionOptionInput{
+					{OptionKey: "A", OptionHTML: "<p>4</p>"},
+					{OptionKey: "B", OptionHTML: "<p>5</p>"},
+				},
+				AnswerKey: json.RawMessage(`{"correct":"A"}`),
+			}, nil
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions/export", bytes.NewBufferString(`{"items":[{"question_id":11,"version_no":2}]}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportQuestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/csv") {
+		t.Fatalf("expected csv content-type, got %q", ct)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Mapel,Kode Soal") {
+		t.Fatalf("expected csv header, got %q", body)
+	}
+	if !strings.Contains(body, "Matematika,MAT-001") {
+		t.Fatalf("expected csv row, got %q", body)
+	}
+}
+
+func TestExportQuestionsTXT(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		getQuestionExportDataFn: func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+			explanation := "<p>Cocokkan sinonimnya.</p>"
+			return &ExportQuestionData{
+				SubjectName:      "Bahasa Indonesia",
+				QuestionCode:     "BIN-001",
+				QuestionCodeName: "Sinonim",
+				QuestionType:     "menjodohkan_drag_drop",
+				StemHTML:         "<p>Pasangkan kata berikut.</p>",
+				ExplanationHTML:  &explanation,
+				QuestionContent: json.RawMessage(`{
+					"prompts":[{"id":"left-1","html":"<p>cermat</p>"},{"id":"left-2","html":"<p>gembira</p>"}],
+					"choices":[{"id":"right-1","html":"<p>teliti</p>"},{"id":"right-2","html":"<p>bahagia</p>"}]
+				}`),
+				AnswerKey: json.RawMessage(`{
+					"mode":"exact",
+					"pairs":[
+						{"prompt_id":"left-1","choice_id":"right-1"},
+						{"prompt_id":"left-2","choice_id":"right-2"}
+					]
+				}`),
+			}, nil
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions/export?format=txt", bytes.NewBufferString(`{"items":[{"question_id":12,"version_no":1}]}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportQuestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/plain") {
+		t.Fatalf("expected text content-type, got %q", ct)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"TYPE: MATCH",
+		"Mapel: Bahasa Indonesia",
+		"Q: Pasangkan kata berikut.",
+		"P1: cermat",
+		"A: teliti",
+		"Kunci Jawaban: P1->A, P2->B",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected body to contain %q, got %q", want, body)
+		}
+	}
+}
+
+func TestExportQuestionsCSVEncodesImages(t *testing.T) {
+	h := &Handler{
+		svc: &mockQuestionService{
+			getQuestionExportDataFn: func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+				return &ExportQuestionData{
+					SubjectName:      "IPA",
+					QuestionCode:     "IPA-001",
+					QuestionCodeName: "Gambar",
+					QuestionType:     "pg_tunggal",
+					StemHTML:         `<p>Lihat gambar berikut <img src="/api/v1/media/question-images/question-images/test.png"></p>`,
+					Options: []QuestionOptionInput{
+						{OptionKey: "A", OptionHTML: "<p>Benar</p>"},
+						{OptionKey: "B", OptionHTML: `<p><img src="/api/v1/media/question-images/question-images/test.png"></p>`},
+					},
+					AnswerKey: json.RawMessage(`{"correct":"A"}`),
+				}, nil
+			},
+		},
+		media: &mockQuestionMediaService{
+			downloadFn: func(ctx context.Context, key string) (*mediasvc.ObjectResult, error) {
+				if key != "question-images/test.png" {
+					t.Fatalf("unexpected key: %s", key)
+				}
+				raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+				return &mediasvc.ObjectResult{
+					ContentType: "image/png",
+					Size:        int64(len(raw)),
+					Reader:      io.NopCloser(bytes.NewReader(raw)),
+				}, nil
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions/export", bytes.NewBufferString(`{"items":[{"question_id":99,"version_no":1}]}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportQuestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "[[CBTIMG:") {
+		t.Fatalf("expected encoded image token, got %q", body)
 	}
 }
 

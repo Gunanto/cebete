@@ -69,7 +69,6 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	masterSvc := masterdata.NewService(db)
 	masterHandler := masterdata.NewHandler(masterSvc)
 	questionSvc := question.NewService(db)
-	questionHandler := question.NewHandler(questionSvc)
 	mediaSvc, err := media.NewService(media.ServiceConfig{
 		Endpoint:  cfg.MinIOEndpoint,
 		AccessKey: cfg.MinIOAccessKey,
@@ -82,6 +81,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		log.Printf("media warning: failed initializing minio storage: %v", err)
 		mediaSvc = media.NewDisabledService()
 	}
+	questionHandler := question.NewHandler(questionSvc, mediaSvc)
 	mediaHandler := media.NewHandler(mediaSvc)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

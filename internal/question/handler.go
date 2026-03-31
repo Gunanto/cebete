@@ -2,23 +2,33 @@ package question
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"cbtlms/internal/app/apiresp"
 	"cbtlms/internal/auth"
+	"cbtlms/internal/media"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	svc questionService
+	svc   questionService
+	media questionMediaService
+}
+
+type questionMediaService interface {
+	DownloadQuestionImage(ctx context.Context, key string) (*media.ObjectResult, error)
 }
 
 type questionService interface {
@@ -185,8 +195,12 @@ type transferQuestionsRequest struct {
 	TargetSubjectID int64                `json:"target_subject_id"`
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, mediaSvc ...questionMediaService) *Handler {
+	h := &Handler{svc: svc}
+	if len(mediaSvc) > 0 {
+		h.media = mediaSvc[0]
+	}
+	return h
 }
 
 func (h *Handler) ListStimulusGroups(w http.ResponseWriter, r *http.Request) {
@@ -649,23 +663,30 @@ func (h *Handler) ExportQuestions(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
 		ownerID = &user.ID
 	}
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format == "" {
+		format = "csv"
+	}
 	rows := make([][]string, 0, len(req.Items)+1)
-	rows = append(rows, []string{
-		"Mapel",
-		"Kode Soal",
-		"Kode TP",
-		"Nama Kode",
-		"Stimulus",
-		"Soal",
-		"Opsi",
-		"Kunci Jawaban",
-		"Penjelasan",
-		"Hint",
-		"Tujuan Pembelajaran",
-		"Materi",
-		"Kelas",
-		"Semester",
-	})
+	if format == "csv" {
+		rows = append(rows, []string{
+			"Mapel",
+			"Kode Soal",
+			"Kode TP",
+			"Nama Kode",
+			"Stimulus",
+			"Soal",
+			"Opsi",
+			"Kunci Jawaban",
+			"Penjelasan",
+			"Hint",
+			"Tujuan Pembelajaran",
+			"Materi",
+			"Kelas",
+			"Semester",
+		})
+	}
+	blocks := make([]string, 0, len(req.Items))
 	for _, it := range req.Items {
 		if it.QuestionID <= 0 {
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid question id"})
@@ -683,15 +704,41 @@ func (h *Handler) ExportQuestions(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		rows = append(rows, buildExportRow(data))
+		switch format {
+		case "csv":
+			row, err := h.buildExportRow(r.Context(), data)
+			if err != nil {
+				writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "gagal menyiapkan export gambar"})
+				return
+			}
+			rows = append(rows, row)
+		case "txt":
+			block, err := h.buildExportBlock(r.Context(), data)
+			if err != nil {
+				writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "gagal menyiapkan export gambar"})
+				return
+			}
+			blocks = append(blocks, block)
+		default:
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "format harus csv atau txt"})
+			return
+		}
 	}
 
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"naskah_soal_%s.csv\"", time.Now().Format("20060102")))
-	w.WriteHeader(http.StatusOK)
-	writer := csv.NewWriter(w)
-	_ = writer.WriteAll(rows)
-	writer.Flush()
+	switch format {
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"naskah_soal_%s.csv\"", time.Now().Format("20060102")))
+		w.WriteHeader(http.StatusOK)
+		writer := csv.NewWriter(w)
+		_ = writer.WriteAll(rows)
+		writer.Flush()
+	case "txt":
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"naskah_soal_%s.txt\"", time.Now().Format("20060102")))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(strings.Join(blocks, "\n\n")))
+	}
 }
 
 func (h *Handler) TransferQuestions(w http.ResponseWriter, r *http.Request) {
@@ -774,7 +821,9 @@ func (h *Handler) TransferQuestions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: report})
 }
 
-func buildExportRow(data *ExportQuestionData) []string {
+var exportImageTagPattern = regexp.MustCompile(`(?is)<img[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>`)
+
+func (h *Handler) buildExportRow(ctx context.Context, data *ExportQuestionData) ([]string, error) {
 	mapel := strings.TrimSpace(data.SubjectName)
 	kodeSoal := strings.TrimSpace(data.QuestionCode)
 	kodeTP := ""
@@ -782,11 +831,26 @@ func buildExportRow(data *ExportQuestionData) []string {
 		kodeTP = fmt.Sprintf("TP-%d", data.LearningGoalID)
 	}
 	namaKode := strings.TrimSpace(data.QuestionCodeName)
-	stimulus := stripHTML(ptrString(data.StimulusHTML))
-	soal := stripHTML(data.StemHTML)
-	penjelasan := stripHTML(ptrString(data.ExplanationHTML))
-	hint := stripHTML(ptrString(data.HintHTML))
-	opsi := buildExportOptions(data)
+	stimulus, err := h.serializeImportText(ctx, ptrString(data.StimulusHTML), true)
+	if err != nil {
+		return nil, err
+	}
+	soal, err := h.serializeImportText(ctx, data.StemHTML, true)
+	if err != nil {
+		return nil, err
+	}
+	penjelasan, err := h.serializeImportText(ctx, ptrString(data.ExplanationHTML), true)
+	if err != nil {
+		return nil, err
+	}
+	hint, err := h.serializeImportText(ctx, ptrString(data.HintHTML), true)
+	if err != nil {
+		return nil, err
+	}
+	opsi, err := h.buildExportOptions(ctx, data)
+	if err != nil {
+		return nil, err
+	}
 	kunci := buildExportAnswerKey(data)
 	return []string{
 		mapel,
@@ -803,7 +867,189 @@ func buildExportRow(data *ExportQuestionData) []string {
 		strings.TrimSpace(data.LearningGoalMateri),
 		strings.TrimSpace(data.LearningGoalKelas),
 		formatSemester(data.LearningGoalSemester),
+	}, nil
+}
+
+func (h *Handler) buildExportBlock(ctx context.Context, data *ExportQuestionData) (string, error) {
+	lines := []string{
+		"TYPE: " + exportQuestionTypeCode(data.QuestionType),
+		"Mapel: " + strings.TrimSpace(data.SubjectName),
+		"KodeSoal: " + strings.TrimSpace(data.QuestionCode),
+		"NamaKode: " + strings.TrimSpace(data.QuestionCodeName),
 	}
+	stimulus, err := h.serializeImportText(ctx, ptrString(data.StimulusHTML), false)
+	if err != nil {
+		return "", err
+	}
+	if stimulus != "" {
+		lines = append(lines, "S: "+stimulus)
+	}
+	soal, err := h.serializeImportText(ctx, data.StemHTML, false)
+	if err != nil {
+		return "", err
+	}
+	lines = append(lines, "Q: "+soal)
+	bodyLines, err := h.buildExportBodyLines(ctx, data)
+	if err != nil {
+		return "", err
+	}
+	lines = append(lines, bodyLines...)
+	lines = append(lines, "Kunci Jawaban: "+buildExportAnswerKey(data))
+	explanation, err := h.serializeImportText(ctx, ptrString(data.ExplanationHTML), false)
+	if err != nil {
+		return "", err
+	}
+	if explanation != "" {
+		lines = append(lines, "Penjelasan: "+explanation)
+	}
+	hint, err := h.serializeImportText(ctx, ptrString(data.HintHTML), false)
+	if err != nil {
+		return "", err
+	}
+	if hint != "" {
+		lines = append(lines, "Hint: "+hint)
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func exportQuestionTypeCode(questionType string) string {
+	switch strings.TrimSpace(strings.ToLower(questionType)) {
+	case "pg_tunggal":
+		return "MC"
+	case "multi_jawaban":
+		return "MR"
+	case "benar_salah_pernyataan":
+		return "TF"
+	case "menjodohkan_drag_drop":
+		return "MATCH"
+	case "short_answer":
+		return "SA"
+	default:
+		return strings.ToUpper(strings.TrimSpace(questionType))
+	}
+}
+
+func (h *Handler) buildExportBodyLines(ctx context.Context, data *ExportQuestionData) ([]string, error) {
+	qType := strings.TrimSpace(strings.ToLower(data.QuestionType))
+	switch qType {
+	case "benar_salah_pernyataan":
+		statements := extractTFStatements(data.AnswerKey)
+		lines := make([]string, 0, len(statements))
+		for i, st := range statements {
+			text, err := h.serializeImportText(ctx, st, false)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("P%d: %s", i+1, text))
+		}
+		return lines, nil
+	case "menjodohkan_drag_drop":
+		return h.buildExportMatchingLines(ctx, data.QuestionContent)
+	case "short_answer":
+		return nil, nil
+	default:
+		lines := make([]string, 0, len(data.Options))
+		for i, opt := range data.Options {
+			key := strings.TrimSpace(opt.OptionKey)
+			if key == "" {
+				key = string(rune('A' + i))
+			}
+			text, err := h.serializeImportText(ctx, opt.OptionHTML, false)
+			if err != nil {
+				return nil, err
+			}
+			if text == "" {
+				continue
+			}
+			lines = append(lines, strings.ToUpper(key)+": "+text)
+		}
+		return lines, nil
+	}
+}
+
+func (h *Handler) buildExportMatchingLines(ctx context.Context, raw json.RawMessage) ([]string, error) {
+	var payload struct {
+		Prompts []struct {
+			HTML string `json:"html"`
+		} `json:"prompts"`
+		Choices []struct {
+			HTML string `json:"html"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil, nil
+	}
+	lines := make([]string, 0, len(payload.Prompts)+len(payload.Choices))
+	for i, prompt := range payload.Prompts {
+		text, err := h.serializeImportText(ctx, prompt.HTML, false)
+		if err != nil {
+			return nil, err
+		}
+		if text == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("P%d: %s", i+1, text))
+	}
+	for i, choice := range payload.Choices {
+		text, err := h.serializeImportText(ctx, choice.HTML, false)
+		if err != nil {
+			return nil, err
+		}
+		if text == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", string(rune('A'+i)), text))
+	}
+	return lines, nil
+}
+
+func buildExportMatchingAnswerKey(questionContent, answerKey json.RawMessage) string {
+	var content struct {
+		Prompts []struct {
+			ID string `json:"id"`
+		} `json:"prompts"`
+		Choices []struct {
+			ID string `json:"id"`
+		} `json:"choices"`
+	}
+	var payload struct {
+		Pairs []struct {
+			PromptID string `json:"prompt_id"`
+			ChoiceID string `json:"choice_id"`
+		} `json:"pairs"`
+	}
+	if json.Unmarshal(questionContent, &content) != nil || json.Unmarshal(answerKey, &payload) != nil {
+		return ""
+	}
+	promptMap := make(map[string]string, len(content.Prompts))
+	choiceMap := make(map[string]string, len(content.Choices))
+	for i, prompt := range content.Prompts {
+		id := strings.TrimSpace(prompt.ID)
+		if id == "" {
+			continue
+		}
+		promptMap[id] = fmt.Sprintf("P%d", i+1)
+	}
+	for i, choice := range content.Choices {
+		id := strings.TrimSpace(choice.ID)
+		if id == "" {
+			continue
+		}
+		choiceMap[id] = string(rune('A' + i))
+	}
+	pairs := make([]string, 0, len(payload.Pairs))
+	for _, pair := range payload.Pairs {
+		promptID := promptMap[strings.TrimSpace(pair.PromptID)]
+		choiceID := choiceMap[strings.TrimSpace(pair.ChoiceID)]
+		if promptID == "" || choiceID == "" {
+			continue
+		}
+		pairs = append(pairs, promptID+"->"+choiceID)
+	}
+	return strings.Join(pairs, ", ")
 }
 
 func ptrString(val *string) string {
@@ -874,16 +1120,119 @@ func htmlUnescape(raw string) string {
 	).Replace(raw)
 }
 
-func buildExportOptions(data *ExportQuestionData) string {
+func (h *Handler) serializeImportText(ctx context.Context, raw string, singleLine bool) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	textWithTokens, err := h.replaceImageTagsWithTokens(ctx, trimmed)
+	if err != nil {
+		return "", err
+	}
+	out := stripHTML(textWithTokens)
+	if singleLine {
+		out = strings.Join(strings.Fields(out), " ")
+	}
+	return out, nil
+}
+
+func (h *Handler) replaceImageTagsWithTokens(ctx context.Context, raw string) (string, error) {
+	matches := exportImageTagPattern.FindAllStringSubmatchIndex(raw, -1)
+	if len(matches) == 0 {
+		return raw, nil
+	}
+	var b strings.Builder
+	last := 0
+	for _, match := range matches {
+		b.WriteString(raw[last:match[0]])
+		src := raw[match[2]:match[3]]
+		token, err := h.encodeImageSource(ctx, src)
+		if err != nil {
+			return "", err
+		}
+		if token != "" {
+			b.WriteString("\n")
+			b.WriteString(token)
+			b.WriteString("\n")
+		}
+		last = match[1]
+	}
+	b.WriteString(raw[last:])
+	return b.String(), nil
+}
+
+func (h *Handler) encodeImageSource(ctx context.Context, src string) (string, error) {
+	normalized := strings.TrimSpace(src)
+	if normalized == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(strings.ToLower(normalized), "data:image/") {
+		return encodeImageToken(normalized), nil
+	}
+	key := mediaObjectKeyFromSrc(normalized)
+	if key == "" {
+		return "", nil
+	}
+	if h.media == nil {
+		return "", fmt.Errorf("media service unavailable for export image")
+	}
+	obj, err := h.media.DownloadQuestionImage(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	defer obj.Reader.Close()
+	raw, err := io.ReadAll(io.LimitReader(obj.Reader, media.QuestionImageMaxBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(raw) == 0 || len(raw) > media.QuestionImageMaxBytes {
+		return "", nil
+	}
+	contentType := strings.TrimSpace(obj.ContentType)
+	if contentType == "" {
+		contentType = http.DetectContentType(raw)
+	}
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return "", nil
+	}
+	dataURL := "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(raw)
+	return encodeImageToken(dataURL), nil
+}
+
+func encodeImageToken(dataURL string) string {
+	return "[[CBTIMG:" + base64.RawURLEncoding.EncodeToString([]byte(dataURL)) + "]]"
+}
+
+func mediaObjectKeyFromSrc(src string) string {
+	parsed, err := url.Parse(strings.TrimSpace(src))
+	if err != nil {
+		return ""
+	}
+	pathValue := parsed.Path
+	if pathValue == "" {
+		pathValue = src
+	}
+	const prefix = "/api/v1/media/question-images/"
+	if strings.HasPrefix(pathValue, prefix) {
+		return strings.TrimPrefix(pathValue, prefix)
+	}
+	return ""
+}
+
+func (h *Handler) buildExportOptions(ctx context.Context, data *ExportQuestionData) (string, error) {
 	qType := strings.ToLower(strings.TrimSpace(data.QuestionType))
 	if qType == "benar_salah_pernyataan" {
 		statements := extractTFStatements(data.AnswerKey)
 		parts := make([]string, 0, len(statements))
 		for i, st := range statements {
-			label := fmt.Sprintf("P%d. %s", i+1, st)
+			text, err := h.serializeImportText(ctx, st, true)
+			if err != nil {
+				return "", err
+			}
+			label := fmt.Sprintf("P%d. %s", i+1, text)
 			parts = append(parts, label)
 		}
-		return strings.Join(parts, ", ")
+		return strings.Join(parts, ", "), nil
 	}
 	if qType == "menjodohkan_drag_drop" {
 		var payload struct {
@@ -898,23 +1247,31 @@ func buildExportOptions(data *ExportQuestionData) string {
 		}
 		if json.Unmarshal(data.QuestionContent, &payload) == nil {
 			prompts := make([]string, 0, len(payload.Prompts))
-			for _, it := range payload.Prompts {
-				if txt := stripHTML(it.HTML); txt != "" {
-					prompts = append(prompts, fmt.Sprintf("%s. %s", strings.TrimSpace(it.ID), txt))
+			for i, it := range payload.Prompts {
+				txt, err := h.serializeImportText(ctx, it.HTML, true)
+				if err != nil {
+					return "", err
+				}
+				if txt != "" {
+					prompts = append(prompts, fmt.Sprintf("P%d. %s", i+1, txt))
 				}
 			}
 			choices := make([]string, 0, len(payload.Choices))
-			for _, it := range payload.Choices {
-				if txt := stripHTML(it.HTML); txt != "" {
-					choices = append(choices, fmt.Sprintf("%s. %s", strings.TrimSpace(it.ID), txt))
+			for i, it := range payload.Choices {
+				txt, err := h.serializeImportText(ctx, it.HTML, true)
+				if err != nil {
+					return "", err
+				}
+				if txt != "" {
+					choices = append(choices, fmt.Sprintf("%s. %s", string(rune('A'+i)), txt))
 				}
 			}
-			return "Prompts: " + strings.Join(prompts, "; ") + " | Choices: " + strings.Join(choices, "; ")
+			return "Prompts: " + strings.Join(prompts, "; ") + " | Choices: " + strings.Join(choices, "; "), nil
 		}
-		return ""
+		return "", nil
 	}
 	if qType == "short_answer" {
-		return "Jawaban singkat"
+		return "Jawaban singkat", nil
 	}
 	parts := make([]string, 0, len(data.Options))
 	for i, opt := range data.Options {
@@ -922,13 +1279,16 @@ func buildExportOptions(data *ExportQuestionData) string {
 		if key == "" {
 			key = string(rune('A' + i))
 		}
-		text := stripHTML(opt.OptionHTML)
+		text, err := h.serializeImportText(ctx, opt.OptionHTML, true)
+		if err != nil {
+			return "", err
+		}
 		if text == "" {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s. %s", strings.ToUpper(key), text))
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", "), nil
 }
 
 func buildExportAnswerKey(data *ExportQuestionData) string {
@@ -981,24 +1341,7 @@ func buildExportAnswerKey(data *ExportQuestionData) string {
 		}
 	}
 	if qType == "menjodohkan_drag_drop" {
-		var payload struct {
-			Pairs []struct {
-				PromptID string `json:"prompt_id"`
-				ChoiceID string `json:"choice_id"`
-			} `json:"pairs"`
-		}
-		if json.Unmarshal(data.AnswerKey, &payload) == nil {
-			pairs := make([]string, 0, len(payload.Pairs))
-			for _, pair := range payload.Pairs {
-				promptID := strings.TrimSpace(pair.PromptID)
-				choiceID := strings.TrimSpace(pair.ChoiceID)
-				if promptID == "" || choiceID == "" {
-					continue
-				}
-				pairs = append(pairs, promptID+"->"+choiceID)
-			}
-			return strings.Join(pairs, "|")
-		}
+		return buildExportMatchingAnswerKey(data.QuestionContent, data.AnswerKey)
 	}
 	if qType == "short_answer" {
 		var payload struct {
@@ -1029,7 +1372,7 @@ func extractTFStatements(raw json.RawMessage) []string {
 	}
 	items := make([]string, 0, len(payload.Statements))
 	for _, st := range payload.Statements {
-		items = append(items, stripHTML(st.Statement))
+		items = append(items, strings.TrimSpace(st.Statement))
 	}
 	return items
 }

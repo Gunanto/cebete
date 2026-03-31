@@ -8,6 +8,51 @@
       .replace(/'/g, "&#39;");
   }
 
+  function decodeBase64Url(input) {
+    const raw = String(input || "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const padded = raw + "===".slice((raw.length + 3) % 4);
+    try {
+      return window.atob(padded);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function buildImportRichHTML(rawText) {
+    const text = String(rawText || "").trim();
+    if (!text) return "";
+    const tokenPattern = /\[\[CBTIMG:([A-Za-z0-9_-]+)\]\]/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match = tokenPattern.exec(text);
+    while (match) {
+      const before = text.slice(lastIndex, match.index);
+      if (before) {
+        parts.push(escapeHtml(before).replace(/\r?\n/g, "<br>"));
+      }
+      const dataURL = decodeBase64Url(match[1]);
+      if (dataURL && /^data:image\//i.test(dataURL)) {
+        parts.push('<img src="' + escapeHtml(dataURL) + '" alt="gambar soal">');
+      }
+      lastIndex = tokenPattern.lastIndex;
+      match = tokenPattern.exec(text);
+    }
+    const tail = text.slice(lastIndex);
+    if (tail) {
+      parts.push(escapeHtml(tail).replace(/\r?\n/g, "<br>"));
+    }
+    if (!parts.length) return "";
+    return "<p>" + parts.join("") + "</p>";
+  }
+
+  function buildImportPlainText(rawText) {
+    return String(rawText || "")
+      .replace(/\[\[CBTIMG:[A-Za-z0-9_-]+\]\]/g, "[gambar]")
+      .trim();
+  }
+
   function parseImportTabularRows(rawText) {
     if (!rawText) return [];
     const rows = String(rawText || "")
@@ -215,6 +260,17 @@
     if (t === "mr" || t === "multi") return "multi_jawaban";
     if (t === "tf" || t === "bs" || t === "benar_salah_pernyataan")
       return "benar_salah_pernyataan";
+    if (
+      t === "match" ||
+      t === "matching" ||
+      t === "menjodohkan_drag_drop" ||
+      t === "menjodohkan_drag_and_drop"
+    ) {
+      return "menjodohkan_drag_drop";
+    }
+    if (t === "sa" || t === "short_answer" || t === "shortanswer") {
+      return "short_answer";
+    }
     return t;
   }
 
@@ -224,10 +280,32 @@
     const statements = Array.isArray(item && item.statements)
       ? item.statements
       : [];
+    const opsi = String(item && item.opsi_raw ? item.opsi_raw : "")
+      .trim()
+      .toLowerCase();
+    if (key.indexOf("->") >= 0) return "menjodohkan_drag_drop";
+    if (opsi.indexOf("prompts:") === 0 || opsi.indexOf("choices:") >= 0) {
+      return "menjodohkan_drag_drop";
+    }
     if (statements.length) return "benar_salah_pernyataan";
+    if (
+      opsi === "jawaban singkat" ||
+      (!opts.length && key && key.indexOf(",") < 0)
+    ) {
+      return "short_answer";
+    }
     if (key.indexOf(",") >= 0) return "multi_jawaban";
     if (opts.length) return "pg_tunggal";
     return "";
+  }
+
+  function splitAnswerTokens(raw, delimiterPattern) {
+    return String(raw || "")
+      .split(delimiterPattern)
+      .map(function (v) {
+        return String(v || "").trim();
+      })
+      .filter(Boolean);
   }
 
   function buildExplanationHTML(rawExplanation) {
@@ -241,7 +319,9 @@
     item.question_type =
       mapImportQuestionType(item.type_raw) || inferImportQuestionType(item);
     if (!item.question_type) {
-      throw new Error("Blok " + String(blockNo) + ": TYPE harus MC/MR/TF.");
+      throw new Error(
+        "Blok " + String(blockNo) + ": TYPE harus MC/MR/TF/MATCH/SA.",
+      );
     }
     if (!item.question) {
       throw new Error("Blok " + String(blockNo) + ": soal wajib diisi.");
@@ -254,6 +334,7 @@
 
     let answerKey = {};
     let optionsPayload = [];
+    let questionContent = {};
     if (item.question_type === "pg_tunggal") {
       optionsPayload = item.options
         .map(function (it) {
@@ -261,7 +342,9 @@
             option_key: String((it && it.option_key) || "")
               .trim()
               .toUpperCase(),
-            option_html: String((it && it.option_html) || "").trim(),
+            option_html: buildImportRichHTML(
+              String((it && it.option_html) || "").trim(),
+            ),
           };
         })
         .filter(function (it) {
@@ -287,7 +370,9 @@
             option_key: String((it && it.option_key) || "")
               .trim()
               .toUpperCase(),
-            option_html: String((it && it.option_html) || "").trim(),
+            option_html: buildImportRichHTML(
+              String((it && it.option_html) || "").trim(),
+            ),
           };
         })
         .filter(function (it) {
@@ -310,14 +395,16 @@
         throw new Error("Blok " + String(blockNo) + ": kunci MR tidak valid.");
       }
       answerKey = { correct: keys, mode: "exact" };
-    } else {
+    } else if (item.question_type === "benar_salah_pernyataan") {
       const statements = item.statements
         .map(function (it) {
           return {
             id: String((it && it.id) || "")
               .trim()
               .toUpperCase(),
-            statement: String((it && it.statement) || "").trim(),
+            statement: buildImportRichHTML(
+              String((it && it.statement) || "").trim(),
+            ),
           };
         })
         .filter(function (it) {
@@ -360,22 +447,99 @@
           };
         }),
       };
+    } else if (item.question_type === "menjodohkan_drag_drop") {
+      const prompts = item.statements
+        .map(function (it, idx) {
+          return {
+            id:
+              String((it && it.id) || "")
+                .trim()
+                .toUpperCase() || "P" + String(idx + 1),
+            html: buildImportRichHTML(
+              String((it && it.statement) || "").trim(),
+            ),
+          };
+        })
+        .filter(function (it) {
+          return it.id && it.html;
+        });
+      const choices = item.options
+        .map(function (it, idx) {
+          return {
+            id:
+              String((it && it.option_key) || "")
+                .trim()
+                .toUpperCase() || String.fromCharCode(65 + idx),
+            html: buildImportRichHTML(
+              String((it && it.option_html) || "").trim(),
+            ),
+          };
+        })
+        .filter(function (it) {
+          return it.id && it.html;
+        });
+      if (!prompts.length || !choices.length) {
+        throw new Error(
+          "Blok " +
+            String(blockNo) +
+            ": soal MATCH butuh prompt P1/P2/... dan pilihan A/B/....",
+        );
+      }
+      const pairs = splitAnswerTokens(item.key_raw, /[,|]/)
+        .map(function (pair) {
+          const tokens = String(pair || "").split("->");
+          if (tokens.length !== 2) return null;
+          const promptID = String(tokens[0] || "")
+            .trim()
+            .toUpperCase();
+          const choiceID = String(tokens[1] || "")
+            .trim()
+            .toUpperCase();
+          if (!promptID || !choiceID) return null;
+          return { prompt_id: promptID, choice_id: choiceID };
+        })
+        .filter(Boolean);
+      if (pairs.length !== prompts.length) {
+        throw new Error(
+          "Blok " +
+            String(blockNo) +
+            ": jumlah pasangan MATCH harus sama dengan jumlah prompt.",
+        );
+      }
+      questionContent = { prompts: prompts, choices: choices };
+      answerKey = { mode: "exact", pairs: pairs };
+    } else if (item.question_type === "short_answer") {
+      const acceptedAnswers = splitAnswerTokens(item.key_raw, /\|/);
+      if (!acceptedAnswers.length) {
+        throw new Error(
+          "Blok " + String(blockNo) + ": kunci short answer tidak valid.",
+        );
+      }
+      questionContent = {
+        input_type: "textarea",
+        max_length: 33,
+      };
+      answerKey = {
+        accepted_answers: acceptedAnswers,
+        match_mode: "normalized_exact",
+      };
     }
 
-    const safeQuestion = escapeHtml(item.question || "");
-    const stemHTML = "<p>" + safeQuestion + "</p>";
-    const title = String(item.question || "").slice(0, 180);
+    const stemHTML = buildImportRichHTML(item.question || "");
+    const title = buildImportPlainText(item.question || "").slice(0, 180);
     return {
       question_type: item.question_type,
       title: title || "Import Soal",
       indicator: "Import Soal CSV Word",
-      material: item.stimulus || "Import Soal",
+      material: buildImportPlainText(item.stimulus || "") || "Import Soal",
       objective: "Import otomatis dari CSV Word",
       cognitive_level: "C2",
-      stimulus_text: String(item.stimulus || "").trim(),
+      stimulus_text: buildImportPlainText(item.stimulus || ""),
+      stimulus_html: buildImportRichHTML(item.stimulus || ""),
       stem_html: stemHTML,
-      explanation_html: buildExplanationHTML(item.explanation || ""),
-      hint_html: buildExplanationHTML(item.hint || ""),
+      explanation_html: buildImportRichHTML(item.explanation || ""),
+      hint_html: buildImportRichHTML(item.hint || ""),
+      question_content: questionContent,
       answer_key: answerKey,
       options: optionsPayload,
       mapel: String(item.mapel || "").trim(),
@@ -386,6 +550,7 @@
       learning_goal_materi: String(item.learning_goal_materi || "").trim(),
       learning_goal_kelas: String(item.learning_goal_kelas || "").trim(),
       learning_goal_semester: String(item.learning_goal_semester || "").trim(),
+      hint: String(item.hint || "").trim(),
     };
   }
 
@@ -411,6 +576,7 @@
       question_code_name: "",
       learning_goal_code: "",
       explanation: "",
+      hint: "",
       question_type: "",
       stimulus: "",
       question: "",
@@ -435,6 +601,10 @@
       if (lastField === "explanation") {
         item.explanation =
           (item.explanation ? item.explanation + "\n" : "") + extra;
+        return;
+      }
+      if (lastField === "hint") {
+        item.hint = (item.hint ? item.hint + "\n" : "") + extra;
         return;
       }
       if (lastField === "option" && lastOptionIdx >= 0) {
@@ -479,6 +649,8 @@
         keyCompact === "KODETP" ||
         keyCompact === "NAMAKODE" ||
         keyCompact === "NAMAKODESOAL" ||
+        keyCompact === "H" ||
+        keyCompact === "HINT" ||
         keyCompact === "PENJELASAN" ||
         keyCompact === "EXPLANATION" ||
         keyCompact === "E" ||
@@ -515,6 +687,11 @@
       if (keyCompact === "NAMAKODE" || keyCompact === "NAMAKODESOAL") {
         item.question_code_name = val;
         lastField = "nama";
+        return;
+      }
+      if (keyCompact === "H" || keyCompact === "HINT") {
+        item.hint = val;
+        lastField = "hint";
         return;
       }
       if (
@@ -576,6 +753,7 @@
       stimulus: String((record && record.stimulus) || "").trim(),
       question: String((record && record.soal) || "").trim(),
       key_raw: String((record && record.kunci) || "").trim(),
+      opsi_raw: String((record && record.opsi) || "").trim(),
       options: [],
       statements: [],
     };
@@ -602,6 +780,47 @@
           return { id: id, statement: statement };
         })
         .filter(Boolean);
+    } else if (inferredType === "menjodohkan_drag_drop") {
+      const splitSection = function (label) {
+        const pattern = new RegExp(label + "\\s*:\\s*", "i");
+        const raw = String(item.opsi_raw || "");
+        const chunks = raw.split("|");
+        const found = chunks.find(function (chunk) {
+          return pattern.test(chunk);
+        });
+        if (!found) return [];
+        return found
+          .replace(pattern, "")
+          .split(";")
+          .map(function (line) {
+            return String(line || "").trim();
+          })
+          .filter(Boolean);
+      };
+      item.statements = splitSection("Prompts")
+        .map(function (line, idx) {
+          const m = line.match(/^([A-Z0-9]+)[\.\):\-\s]+(.+)$/i);
+          const id = (
+            m && m[1] ? String(m[1]) : "P" + String(idx + 1)
+          ).toUpperCase();
+          const statement = m && m[2] ? String(m[2] || "").trim() : line;
+          if (!statement) return null;
+          return { id: id, statement: statement };
+        })
+        .filter(Boolean);
+      item.options = splitSection("Choices")
+        .map(function (line, idx) {
+          const m = line.match(/^([A-Z0-9]+)[\.\):\-\s]+(.+)$/i);
+          const optionKey = (
+            m && m[1] ? String(m[1]) : String.fromCharCode(65 + idx)
+          ).toUpperCase();
+          const optionText = m && m[2] ? String(m[2] || "").trim() : line;
+          if (!optionText) return null;
+          return { option_key: optionKey, option_html: optionText };
+        })
+        .filter(Boolean);
+    } else if (inferredType === "short_answer") {
+      item.options = [];
     } else {
       item.options = parts
         .map(function (line, idx) {
