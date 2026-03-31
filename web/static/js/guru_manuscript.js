@@ -5,6 +5,7 @@
   var manuscriptExplanationQuill = null;
   var manuscriptHintQuill = null;
   var manuscriptOptionQuillByRow = new WeakMap();
+  var manuscriptTFStatementQuillByRow = new WeakMap();
   var manuscriptStimulusTabQuillByRow = new WeakMap();
   var manuscriptDraggingStimulusTabRow = null;
   var manuscriptFormMessageTimer = null;
@@ -752,6 +753,11 @@
     const leftHidden = row.querySelector("[data-option-left-html]");
     const rightHidden = row.querySelector("[data-option-right-html]");
     const bindings = {};
+    function resetOptionEditorDefaultFormat(quill) {
+      if (!quill || typeof quill.format !== "function") return;
+      quill.setSelection(0, 0, "silent");
+      quill.format("bold", false, "silent");
+    }
     function bindSingle(host, hidden, placeholder, cacheKey) {
       if (!host || !hidden) return;
       const initialHTML = String(hidden.value || "").trim();
@@ -762,6 +768,7 @@
       if (initialHTML) {
         quill.clipboard.dangerouslyPasteHTML(initialHTML);
       }
+      resetOptionEditorDefaultFormat(quill);
       hidden.value = getQuillHTML(quill);
       quill.on("text-change", function () {
         hidden.value = getQuillHTML(quill);
@@ -1000,9 +1007,11 @@
       '<label>ID Pernyataan<input type="text" data-statement-id value="' +
       deps.escapeHtml(id) +
       '" placeholder="S1" /></label>' +
-      '<label class="mt">Teks Pernyataan<input type="text" data-statement-text value="' +
+      '<label class="mt">Teks Pernyataan</label>' +
+      '<div class="quill-editor-shell mt"><div class="manuscript-statement-editor"></div></div>' +
+      '<input type="hidden" data-statement-text value="' +
       deps.escapeHtml(statement) +
-      '" placeholder="Teks pernyataan" /></label>' +
+      '" />' +
       '<label class="mt">Nilai Benar/Salah<select data-statement-correct><option value="true"' +
       (correct ? " selected" : "") +
       '>Benar</option><option value="false"' +
@@ -1021,6 +1030,40 @@
         0,
       );
     }
+    bindTFStatementEditors();
+  }
+
+  function bindTFStatementEditor(row) {
+    if (!row || manuscriptTFStatementQuillByRow.has(row) || !window.Quill) {
+      return;
+    }
+    if (!deps || typeof deps.createQuillEditor !== "function") return;
+    const host = row.querySelector(".manuscript-statement-editor");
+    const hidden = row.querySelector("[data-statement-text]");
+    if (!host || !hidden) return;
+    const initialHTML = String(hidden.value || "").trim();
+    const quill = deps.createQuillEditor(host, "Tulis pernyataan...", {
+      defaultFontSize: "12pt",
+    });
+    if (!quill) return;
+    if (initialHTML) {
+      quill.clipboard.dangerouslyPasteHTML(initialHTML);
+    }
+    hidden.value = getQuillHTML(quill);
+    quill.on("text-change", function () {
+      hidden.value = getQuillHTML(quill);
+      syncAnswerKeyPreview();
+    });
+    manuscriptTFStatementQuillByRow.set(row, quill);
+  }
+
+  function bindTFStatementEditors() {
+    if (!deps || !deps.manuscriptStatementsWrap) return;
+    deps.manuscriptStatementsWrap
+      .querySelectorAll("[data-statement-row]")
+      .forEach(function (row) {
+        bindTFStatementEditor(row);
+      });
   }
 
   function createMatchContentRow(kind, data, idx) {
@@ -1790,6 +1833,7 @@
         return createTFStatementRow(it || {}, idx);
       })
       .join("");
+    bindTFStatementEditors();
   }
 
   function renderMatchRowsFromData(kind, items) {
@@ -2129,7 +2173,7 @@
         statements
           .map(function (it) {
             const id = deps.escapeHtml(String((it && it.id) || "-"));
-            const text = deps.escapeHtml(String((it && it.statement) || ""));
+            const text = String((it && it.statement) || "").trim();
             return "<li><strong>" + id + "</strong> " + text + "</li>";
           })
           .join("") +
@@ -3465,6 +3509,7 @@
               idx,
             ),
           );
+          bindTFStatementEditors();
           syncAnswerKeyPreview();
         });
       });
