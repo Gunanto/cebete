@@ -1672,23 +1672,10 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 		       status, review_note, reviewed_by, reviewed_at, created_at
 		FROM registration_requests
 		WHERE ($1 = '' OR status = $1)
-		  AND (
-			NOT $4
-			OR EXISTS (
-				SELECT 1
-				FROM user_school_scopes uss
-				JOIN schools s ON s.id = uss.school_id
-				WHERE uss.user_id = $5
-				  AND (
-					(NULLIF(registration_requests.npsn, '') IS NOT NULL AND s.code = registration_requests.npsn)
-					OR LOWER(s.name) = LOWER(COALESCE(registration_requests.school_name, ''))
-				  )
-			)
-		  )
 		ORDER BY created_at DESC, id DESC
 		LIMIT $2
 		OFFSET $3
-	`, status, limit, offset, restrictBySchoolScope, actorID)
+	`, status, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list registrations: %w", err)
 	}
@@ -1771,7 +1758,93 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate registrations: %w", err)
 	}
+	if restrictBySchoolScope {
+		scopedSchools, err := s.listScopedSchools(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+		filtered := make([]RegistrationRecord, 0, len(out))
+		for _, item := range out {
+			if matchesScopedSchool(item, scopedSchools) {
+				filtered = append(filtered, item)
+			}
+		}
+		return filtered, nil
+	}
 	return out, nil
+}
+
+type scopedSchool struct {
+	Code string
+	Name string
+}
+
+func (s *Service) listScopedSchools(ctx context.Context, userID int64) ([]scopedSchool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(s.code, ''), COALESCE(s.name, '')
+		FROM user_school_scopes uss
+		JOIN schools s ON s.id = uss.school_id
+		WHERE uss.user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list scoped schools: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]scopedSchool, 0)
+	for rows.Next() {
+		var item scopedSchool
+		if err := rows.Scan(&item.Code, &item.Name); err != nil {
+			return nil, fmt.Errorf("scan scoped school: %w", err)
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate scoped schools: %w", err)
+	}
+	return out, nil
+}
+
+func matchesScopedSchool(reg RegistrationRecord, scoped []scopedSchool) bool {
+	regCode := ""
+	if reg.NPSN != nil {
+		regCode = *reg.NPSN
+	}
+	regName := ""
+	if reg.SchoolName != nil {
+		regName = *reg.SchoolName
+	}
+	regCodeKey := normalizeSchoolMatchKey(regCode)
+	regNameKey := normalizeSchoolMatchKey(regName)
+	for _, item := range scoped {
+		if regCodeKey != "" && regCodeKey == normalizeSchoolMatchKey(item.Code) {
+			return true
+		}
+		if regNameKey != "" && regNameKey == normalizeSchoolMatchKey(item.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSchoolMatchKey(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return ""
+	}
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{"sekolah menengah pertama negeri", "smpn"},
+		{"sekolah menengah pertama swasta", "smps"},
+		{"smp negeri", "smpn"},
+		{"smp swasta", "smps"},
+	}
+	for _, item := range replacements {
+		v = strings.ReplaceAll(v, item.old, item.new)
+	}
+	return regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(v, "")
 }
 
 func (s *Service) ListRegistrationPending(ctx context.Context, limit int) ([]RegistrationRecord, error) {

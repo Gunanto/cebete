@@ -416,6 +416,11 @@
       const info = adminTitles[target] || adminTitles.dashboard;
       if (adminPageTitle) adminPageTitle.textContent = info.title;
       if (adminPageDesc) adminPageDesc.textContent = info.desc;
+      if (target === "registrations") {
+        loadPendingRegistrations().catch(function (err) {
+          setMsg("Gagal memuat pendaftaran pending: " + err.message);
+        });
+      }
     }
 
     function initAdminRegistrationsModule() {
@@ -435,6 +440,15 @@
         regRefreshBtn: adminRegistrationsRefreshBtn,
         regBody: adminRegistrationsBody,
       });
+    }
+
+    async function loadPendingRegistrations() {
+      if (
+        ProktorRegistrations &&
+        typeof ProktorRegistrations.loadPendingRegistrations === "function"
+      ) {
+        return ProktorRegistrations.loadPendingRegistrations();
+      }
     }
 
     async function loadDashboardStats() {
