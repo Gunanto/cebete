@@ -513,6 +513,9 @@ body[data-page="login_content"] .landing-footer small {
 
 .login-primary-btn,
 .login-secondary-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 0;
     border-radius: 13px;
     min-height: 50px;
@@ -520,6 +523,8 @@ body[data-page="login_content"] .landing-footer small {
     font-weight: 700;
     font-size: 15px;
     cursor: pointer;
+    text-align: center;
+    text-decoration: none;
 }
 
 .login-primary-btn {
@@ -926,15 +931,15 @@ textarea {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 18px;
+    gap: 16px;
 }
 
 .landing-btn-primary {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(120deg, #2563eb, #0284c7);
-    color: #eff6ff;
+    background: linear-gradient(180deg, #203b8f 0%, #1f255f 100%);
+    color: #f8fbff;
     text-decoration: none;
     font-weight: 700;
     font-size: clamp(18px, 3vw, 24px);
@@ -942,19 +947,43 @@ textarea {
     padding: 22px 28px;
     width: 100%;
     min-height: 88px;
+    border: 1px solid rgba(72, 126, 255, 0.6);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.2),
-        0 18px 42px rgba(37, 99, 235, 0.35);
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0 0 1px rgba(82, 130, 255, 0.12),
+        0 18px 42px rgba(19, 41, 117, 0.34);
     transition:
         transform 0.2s ease,
-        box-shadow 0.2s ease;
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
 }
 
 .landing-btn-primary:hover {
     transform: translateY(-2px);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.24),
-        0 22px 46px rgba(37, 99, 235, 0.42);
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        0 0 0 1px rgba(92, 151, 255, 0.16),
+        0 22px 46px rgba(19, 41, 117, 0.42);
+    border-color: rgba(97, 156, 255, 0.8);
+}
+
+.landing-btn-secondary-path {
+    margin-top: 18px;
+    background: linear-gradient(180deg, #465579 0%, #42506f 100%);
+    color: #efc57a;
+    border-color: rgba(232, 190, 110, 0.72);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 0 1px rgba(232, 190, 110, 0.12),
+        0 16px 38px rgba(232, 190, 110, 0.2);
+}
+
+.landing-btn-secondary-path:hover {
+    border-color: rgba(244, 204, 124, 0.9);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0 0 1px rgba(244, 204, 124, 0.16),
+        0 20px 44px rgba(232, 190, 110, 0.24);
 }
 
 .landing-choice-note {
