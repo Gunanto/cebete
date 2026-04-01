@@ -24,6 +24,16 @@
     return "-";
   }
 
+  function loginPathForUser(user) {
+    const role = String((user && user.role) || "")
+      .trim()
+      .toLowerCase();
+    if (role === "siswa" && Boolean(user && user.is_non_regular)) {
+      return "/login/non-reguler";
+    }
+    return "/login/reguler";
+  }
+
   async function initTopbarAuth() {
     const userLabel = document.getElementById("nav-user");
     const logoutBtn = document.getElementById("nav-logout");
@@ -45,6 +55,7 @@
     logoutBtn.hidden = false;
 
     logoutBtn.addEventListener("click", async function () {
+      const targetLoginPath = loginPathForUser(user);
       const done = beginBusy(logoutBtn, null, "");
       try {
         await api("/api/v1/auth/logout", "POST");
@@ -53,7 +64,7 @@
       } finally {
         done();
       }
-      window.location.href = "/login";
+      window.location.href = targetLoginPath;
     });
   }
 
