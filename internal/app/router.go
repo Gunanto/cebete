@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -94,12 +95,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 	renderPage := func(w http.ResponseWriter, contentTemplate, pageTitle string, extra map[string]any) {
 		assetVersion := resolveAssetVersion(
 			"web/static/css/app.css",
-			"web/static/js/app.js",
-			"web/static/js/guru_exams.js",
-			"web/static/js/guru_enroll.js",
-			"web/static/js/proktor_master.js",
-			"web/static/js/admin_master.js",
-			"web/static/js/proktor_exams.js",
+			"web/static/js",
 		)
 		data := map[string]any{
 			"Title":           pageTitle,
@@ -327,6 +323,19 @@ func resolveAssetVersion(paths ...string) string {
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			_ = filepath.Walk(p, func(path string, fileInfo os.FileInfo, walkErr error) error {
+				if walkErr != nil || fileInfo == nil || fileInfo.IsDir() {
+					return nil
+				}
+				mtime := fileInfo.ModTime().Unix()
+				if mtime > maxMtime {
+					maxMtime = mtime
+				}
+				return nil
+			})
 			continue
 		}
 		mtime := info.ModTime().Unix()
