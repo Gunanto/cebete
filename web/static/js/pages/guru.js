@@ -879,6 +879,18 @@
       return minutes * 60 * 1000;
     }
 
+    function isDashboardActiveAssignment(it) {
+      const row = it || {};
+      if (String((row.role || "")).toLowerCase() !== "siswa") return false;
+      const status = String(row.latest_attempt_status || "")
+        .trim()
+        .toLowerCase();
+      if (status === "in_progress") return true;
+      const startedAt = String(row.latest_started_at || "").trim();
+      const submittedAt = String(row.latest_submitted_at || "").trim();
+      return Boolean(startedAt) && !submittedAt;
+    }
+
     async function loadDashboardMonitorActivity(rows) {
       const items = Array.isArray(rows) ? rows : [];
       const examIDs = items
@@ -1078,12 +1090,7 @@
           }),
         );
         const activeRows = assignmentLists.flat().filter(function (it) {
-          return (
-            String((it && it.role) || "").toLowerCase() === "siswa" &&
-            String((it && it.latest_attempt_status) || "")
-              .trim()
-              .toLowerCase() === "in_progress"
-          );
+          return isDashboardActiveAssignment(it);
         });
         dashboardMonitorRows = await loadDashboardMonitorActivity(activeRows);
         guruInProgressCount = activeRows.length;

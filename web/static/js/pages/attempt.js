@@ -754,6 +754,8 @@
       const payload = parseJSONLoose(q.answer_payload, {});
       const qType = String(q.question_type || "").toLowerCase();
       const selected = new Set(readSelectedFromPayload(payload));
+      const questionInputName =
+        "option_" + String(Number((q && q.question_id) || 0));
 
       if (qType === "benar_salah_pernyataan") {
         const statements = readTFStatements(q);
@@ -775,11 +777,15 @@
             escapeHtml(String(label)) +
             "</td>" +
             '<td class="bs-choice"><input type="radio" name="bs_' +
+            escapeHtml(String(Number((q && q.question_id) || 0))) +
+            "_" +
             escapeHtml(id) +
             '" value="true" ' +
             (existing[id] === true ? "checked" : "") +
             "></td>" +
             '<td class="bs-choice"><input type="radio" name="bs_' +
+            escapeHtml(String(Number((q && q.question_id) || 0))) +
+            "_" +
             escapeHtml(id) +
             '" value="false" ' +
             (existing[id] === false ? "checked" : "") +
@@ -892,7 +898,11 @@
           '">' +
           '<input type="' +
           inputType +
-          '" name="option" value="' +
+          '" name="' +
+          escapeHtml(questionInputName) +
+          '" data-option-group="' +
+          escapeHtml(questionInputName) +
+          '" value="' +
           escapeHtml(opt.option_key) +
           '" ' +
           (isChecked ? "checked" : "") +
@@ -1001,10 +1011,15 @@
       if (qType === "benar_salah_pernyataan") {
         const statements = readTFStatements(q);
         const answers = [];
+        const questionID = String(Number((q && q.question_id) || 0));
         statements.forEach(function (s, idx) {
           const id = String((s && s.id) || "S" + (idx + 1));
           const selected = container.querySelector(
-            'input[name="bs_' + CSS.escape(id) + '"]:checked',
+            'input[name="bs_' +
+              CSS.escape(questionID) +
+              "_" +
+              CSS.escape(id) +
+              '"]:checked',
           );
           if (
             selected &&
@@ -1035,7 +1050,7 @@
         return { text: String((input && input.value) || "") };
       }
       const selected = Array.from(
-        container.querySelectorAll('input[name="option"]:checked'),
+        container.querySelectorAll('input[data-option-group]:checked'),
       )
         .map(function (n) {
           return String(n.value || "").trim();
