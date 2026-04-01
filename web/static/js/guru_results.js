@@ -995,7 +995,7 @@
     if (!list.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
-        String(8 + questions.length) +
+        String(9 + questions.length) +
         '" class="muted">Tidak ada data sesuai filter yang dipilih.</td></tr>';
       return;
     }
@@ -1038,6 +1038,7 @@
       const tr = document.createElement("tr");
       tr.innerHTML = [
         participantCell,
+        "<td>" + deps.escapeHtml(String(it.school_name || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
         "<td>" + deps.escapeHtml(String(it.attempt_ke || 0)) + "</td>",
         "<td>" + deps.escapeHtml(String(scoreValue)) + "</td>",
@@ -1432,12 +1433,12 @@
       if (deps.resultsPanel && !deps.resultsPanel.hidden) activateResultsMenu();
       if (deps.resultsMatrixHead) {
         deps.resultsMatrixHead.innerHTML =
-          "<th>Nama</th><th>Kelas</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
+          "<th>Nama</th><th>Sekolah</th><th>Kelas</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
       }
       updateAttemptFilterOptions([]);
       updateClassFilterOptions([]);
       deps.resultsAssignmentBody.innerHTML =
-        '<tr><td colspan="8" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
+        '<tr><td colspan="9" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       return;
     }
@@ -1468,6 +1469,7 @@
     if (deps.resultsMatrixHead) {
       const fixed = [
         "<th>Nama</th>",
+        "<th>Sekolah</th>",
         "<th>Kelas</th>",
         "<th>Attempt Ke-</th>",
         "<th>Skor Total</th>",
@@ -1485,7 +1487,7 @@
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
-        String(8 + questionNos.length) +
+        String(9 + questionNos.length) +
         '" class="muted">Belum ada peserta yang mengikuti ujian ini.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       setResultsExtra("Belum ada data untuk laporan/statistik/grafik.");

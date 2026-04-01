@@ -34,6 +34,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 
 	fixedHeaders := []string{
 		"Nama",
+		"Sekolah",
 		"Kelas",
 		"Attempt Ke-",
 		"Skor Total",
@@ -90,6 +91,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		}
 		values := []interface{}{
 			it.FullName,
+			strings.TrimSpace(derefString(it.SchoolName)),
 			strings.TrimSpace(derefString(it.ClassName)),
 			it.AttemptKe,
 			it.SkorTotal,
