@@ -12,6 +12,9 @@ type Config struct {
 	HTTPAddr            string
 	DBDSN               string
 	DefaultExamMinutes  int
+	AutoFinalizeEnabled bool
+	AutoFinalizeEveryS  int
+	AutoFinalizeBatch   int
 	DBMaxOpenConns      int
 	DBMaxIdleConns      int
 	DBConnMaxLifeMins   int
@@ -63,6 +66,9 @@ func LoadConfig() Config {
 		HTTPAddr:            addr,
 		DBDSN:               dsn,
 		DefaultExamMinutes:  90,
+		AutoFinalizeEnabled: boolOrDefault("AUTO_FINALIZE_EXPIRED_ATTEMPTS", true),
+		AutoFinalizeEveryS:  intOrDefault("AUTO_FINALIZE_EXPIRED_INTERVAL_SECONDS", 30),
+		AutoFinalizeBatch:   intOrDefault("AUTO_FINALIZE_EXPIRED_BATCH_SIZE", 50),
 		DBMaxOpenConns:      intOrDefault("DB_MAX_OPEN_CONNS", 25),
 		DBMaxIdleConns:      intOrDefault("DB_MAX_IDLE_CONNS", 25),
 		DBConnMaxLifeMins:   intOrDefault("DB_CONN_MAX_LIFETIME_MINUTES", 30),

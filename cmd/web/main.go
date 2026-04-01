@@ -10,6 +10,7 @@ import (
 
 	"cbtlms/internal/app"
 	"cbtlms/internal/db"
+	"cbtlms/internal/exam"
 )
 
 func isProductionEnv(v string) bool {
@@ -64,6 +65,11 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	if cfg.AutoFinalizeEnabled {
+		examSvc := exam.NewService(dbConn, cfg.DefaultExamMinutes)
+		startExpiredAttemptFinalizer(examSvc, cfg)
+	}
+
 	r := app.NewRouter(cfg, dbConn)
 
 	log.Printf("cbtlms web listening on %s", cfg.HTTPAddr)
@@ -71,4 +77,35 @@ func main() {
 		log.Printf("server stopped: %v", err)
 		os.Exit(1)
 	}
+}
+
+func startExpiredAttemptFinalizer(examSvc *exam.Service, cfg app.Config) {
+	if examSvc == nil {
+		return
+	}
+	interval := time.Duration(cfg.AutoFinalizeEveryS) * time.Second
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	batchSize := cfg.AutoFinalizeBatch
+	if batchSize <= 0 {
+		batchSize = 50
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(context.Background(), interval)
+			finalized, err := examSvc.FinalizeExpiredAttempts(ctx, batchSize)
+			cancel()
+			if err != nil {
+				log.Printf("expired attempt finalizer error: %v", err)
+				continue
+			}
+			if finalized > 0 {
+				log.Printf("expired attempt finalizer finalized=%d", finalized)
+			}
+		}
+	}()
 }

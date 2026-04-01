@@ -5908,6 +5908,46 @@ func (s *Service) finalizeExpiredAttemptsForExam(ctx context.Context, examID int
 	return nil
 }
 
+func (s *Service) FinalizeExpiredAttempts(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id
+		FROM attempts
+		WHERE status = 'in_progress'
+		  AND expires_at <= now()
+		ORDER BY expires_at ASC, id ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list expired attempts: %w", err)
+	}
+	defer rows.Close()
+
+	attemptIDs := make([]int64, 0, limit)
+	for rows.Next() {
+		var attemptID int64
+		if err := rows.Scan(&attemptID); err != nil {
+			return 0, fmt.Errorf("scan expired attempt: %w", err)
+		}
+		attemptIDs = append(attemptIDs, attemptID)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate expired attempts: %w", err)
+	}
+
+	finalized := 0
+	for _, attemptID := range attemptIDs {
+		if _, err := s.finalizeAttempt(ctx, attemptID, "expired"); err != nil {
+			return finalized, fmt.Errorf("finalize expired attempt %d: %w", attemptID, err)
+		}
+		finalized++
+	}
+	return finalized, nil
+}
+
 func (s *Service) recomputeFinalizedAttemptTx(ctx context.Context, tx *sql.Tx, attemptID int64) error {
 	row, err := s.loadAttemptRowForUpdate(ctx, tx, attemptID)
 	if err != nil {
