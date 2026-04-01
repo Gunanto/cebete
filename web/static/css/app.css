@@ -870,31 +870,43 @@ textarea {
 }
 
 .landing-main {
-    min-height: 78vh;
+    min-height: 82vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     text-align: center;
-    padding: 56px 20px 32px;
+    padding: 40px 20px 48px;
     position: relative;
     z-index: 2;
 }
 
+.landing-choice-card {
+    width: min(100%, 620px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 10px 20px 20px;
+}
+
 .landing-brand-logo {
-    width: min(156px, 38vw);
+    width: min(172px, 42vw);
     height: auto;
-    margin-bottom: 18px;
-    filter: drop-shadow(0 18px 48px rgba(14, 165, 233, 0.2));
+    margin-bottom: 20px;
+    filter: drop-shadow(0 22px 64px rgba(59, 130, 246, 0.28));
 }
 
 .landing-title {
     margin: 0;
-    font-size: clamp(46px, 8vw, 92px);
+    font-size: clamp(54px, 10vw, 104px);
     font-weight: 800;
     line-height: 0.95;
     color: #f8fafc;
-    letter-spacing: -1.6px;
+    letter-spacing: -2px;
+    text-shadow:
+        0 2px 0 rgba(255, 255, 255, 0.08),
+        0 10px 32px rgba(14, 165, 233, 0.12);
 }
 
 .landing-title span {
@@ -902,27 +914,37 @@ textarea {
 }
 
 .landing-subtitle {
-    margin: 16px 0 0;
-    color: #93c5fd;
-    font-size: clamp(17px, 2.2vw, 24px);
+    margin: 18px 0 0;
+    color: #dbeafe;
+    font-size: clamp(20px, 2.8vw, 30px);
+    text-shadow: 0 3px 14px rgba(15, 23, 42, 0.8);
 }
 
-.landing-actions {
-    margin-top: 32px;
+.landing-choice-stack {
+    width: min(100%, 500px);
+    margin-top: 46px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
 }
 
 .landing-btn-primary {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
     background: linear-gradient(120deg, #2563eb, #0284c7);
     color: #eff6ff;
     text-decoration: none;
     font-weight: 700;
-    border-radius: 16px;
-    padding: 18px 26px;
-    min-width: 270px;
-    box-shadow: 0 14px 32px rgba(37, 99, 235, 0.34);
+    font-size: clamp(18px, 3vw, 24px);
+    border-radius: 24px;
+    padding: 22px 28px;
+    width: 100%;
+    min-height: 88px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 18px 42px rgba(37, 99, 235, 0.35);
     transition:
         transform 0.2s ease,
         box-shadow 0.2s ease;
@@ -930,28 +952,29 @@ textarea {
 
 .landing-btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 16px 38px rgba(37, 99, 235, 0.42);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.24),
+        0 22px 46px rgba(37, 99, 235, 0.42);
 }
 
-.landing-meta {
-    margin-top: 20px;
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    color: #7dd3fc;
-    font-size: 14px;
+.landing-choice-note {
+    margin: 0 0 12px;
+    max-width: 460px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: clamp(16px, 2.8vw, 22px);
+    line-height: 1.2;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
 }
 
-.landing-ai-trigger {
-    border: 0;
-    background: transparent;
-    color: #38bdf8;
-    font-weight: 700;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
+.landing-sparkle {
+    position: absolute;
+    right: max(24px, 10vw);
+    bottom: 110px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 64px;
+    line-height: 1;
+    text-shadow: 0 0 22px rgba(255, 255, 255, 0.45);
+    z-index: 2;
 }
 
 .landing-footer {
@@ -997,6 +1020,16 @@ textarea {
     left: -12vw;
     bottom: -16vw;
     background: #0891b2;
+}
+
+.landing-radial-c {
+    width: 34vw;
+    height: 34vw;
+    top: 18vh;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(59, 130, 246, 0.28);
+    opacity: 0.5;
 }
 
 .landing-noise {
@@ -1121,28 +1154,31 @@ textarea {
         min-height: 72vh;
     }
 
+    .landing-choice-card {
+        padding-inline: 10px;
+    }
+
     .landing-brand-logo {
         width: min(132px, 42vw);
     }
 
     .landing-btn-primary {
-        min-width: 0;
         width: 100%;
-        max-width: 330px;
+        min-height: 78px;
+        border-radius: 20px;
     }
 
-    .home-ai-modal {
-        right: 12px;
-        bottom: 78px;
-        width: calc(100vw - 24px);
+    .landing-choice-note {
+        font-size: 15px;
+        max-width: 320px;
     }
 
-    .home-ai-fab {
-        right: 12px;
-        bottom: 12px;
+    .landing-sparkle {
+        right: 22px;
+        bottom: 120px;
+        font-size: 44px;
     }
 }
-
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
