@@ -1343,6 +1343,11 @@
     }, 0);
     const avgScore =
       totalAttempts > 0 ? (totalScore / totalAttempts).toFixed(2) : "0.00";
+    function fmtScale100(score) {
+      const raw = Number(score || 0);
+      if (totalWeight <= 0) return "0.00";
+      return ((raw / totalWeight) * 100).toFixed(2);
+    }
     if (mode === "report") {
       setResultsExtra(
         "Laporan: exam #" +
@@ -1374,10 +1379,19 @@
           String(totalAttempts) +
           ", rerata skor " +
           String(avgScore) +
+          " (" +
+          fmtScale100(avgScore) +
+          "/100)" +
           ", skor tertinggi " +
           String(maxScore) +
+          " (" +
+          fmtScale100(maxScore) +
+          "/100)" +
           ", skor terendah " +
           String(minScore) +
+          " (" +
+          fmtScale100(minScore) +
+          "/100)" +
           ".",
       );
       return;
@@ -2110,6 +2124,11 @@
     };
   }
 
+  function canLoadAttemptLearningGoalDetail(row) {
+    if (!row) return false;
+    return !!(row && row.submitted_at);
+  }
+
   function renderLearningGoalStudentSummary(view) {
     const current = view || {};
     return [
@@ -2248,10 +2267,14 @@
       return;
     }
     let detailResult = null;
-    try {
-      detailResult = await ensureAttemptLearningGoalResultLoaded(targetAttemptID);
-    } catch (_) {
-      detailResult = null;
+    if (canLoadAttemptLearningGoalDetail(attemptRow)) {
+      try {
+        detailResult = await ensureAttemptLearningGoalResultLoaded(
+          targetAttemptID,
+        );
+      } catch (_) {
+        detailResult = null;
+      }
     }
     let identityBase =
       latestLearningGoalIdentity && Number(latestLearningGoalExamID || 0) === examID
