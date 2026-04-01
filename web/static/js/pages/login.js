@@ -13,6 +13,10 @@
       .trim();
   }
 
+  function rawPassword(input) {
+    return String(input || "");
+  }
+
   async function initLoginPage() {
     const signinForm = document.getElementById("login-form");
     if (!signinForm) return;
@@ -560,15 +564,15 @@
 
     signinForm.addEventListener("submit", async function (e) {
       e.preventDefault();
-      const done = beginBusy(signinForm, msg, "Memproses login...");
-      const fd = new FormData(signinForm);
-      try {
-        const identifier = normalizeCredential(fd.get("identifier"));
-        const password = normalizeCredential(fd.get("password"));
-        await api("/api/v1/auth/login-password", "POST", {
-          identifier: identifier,
-          password: password,
-        });
+        const done = beginBusy(signinForm, msg, "Memproses login...");
+        const fd = new FormData(signinForm);
+        try {
+          const identifier = normalizeCredential(fd.get("identifier"));
+          const password = rawPassword(fd.get("password"));
+          await api("/api/v1/auth/login-password", "POST", {
+            identifier: identifier,
+            password: password,
+          });
         const me = await meOrNull();
         window.location.href = homeByRole(me);
       } catch (err) {

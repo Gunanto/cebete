@@ -533,7 +533,7 @@ func (s *Service) AuthenticatePassword(ctx context.Context, identifier, password
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, username, email, full_name, role, account_status, approved_at, is_non_regular, password_hash
 		FROM users
-		WHERE username = $1 OR email = $1
+		WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)
 		LIMIT 1
 	`, identifier)
 
