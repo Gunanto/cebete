@@ -960,7 +960,7 @@
       const items = Array.isArray(rows) ? rows : [];
       if (!items.length) {
         dashboardMonitorBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Belum ada peserta yang sedang mengerjakan ujian.</td></tr>';
+          '<tr><td colspan="7" class="muted">Belum ada peserta yang sedang mengerjakan ujian.</td></tr>';
         return;
       }
       dashboardMonitorBody.innerHTML = "";
@@ -978,6 +978,9 @@
             "<br><small>" +
             escapeHtml(String(it.username || "-")) +
             "</small></td>",
+          "<td>" +
+            escapeHtml(String(it.school_name || "-")) +
+            "</td>",
           "<td>" +
             escapeHtml(String(it.class_name || it.school_name || "-")) +
             "</td>",
