@@ -18,8 +18,11 @@
   }
 
   async function initLoginPage() {
+    const root = document.querySelector(".login-shell");
+    if (!root) return;
+    const loginVariant = String(root.dataset.loginVariant || "regular").trim();
+    const isNonRegularPage = loginVariant === "non_regular";
     const signinForm = document.getElementById("login-form");
-    if (!signinForm) return;
     const signupForm = document.getElementById("signup-form");
     const msg = document.getElementById("login-message");
     const passwordInput = document.getElementById("login-password");
@@ -97,7 +100,7 @@
     }
 
     function activateLoginTab(tab) {
-      const showSignup = tab === "signup";
+      const showSignup = isNonRegularPage ? true : tab === "signup";
       if (signinPanel) signinPanel.hidden = showSignup;
       if (signupPanel) signupPanel.hidden = !showSignup;
       if (signinTabBtn)
@@ -113,13 +116,13 @@
       text(
         msg,
         showSignup
-          ? "Login dengan Google untuk memulai pendaftaran non-reguler."
+          ? "Gunakan Google untuk login atau mendaftar non-reguler."
           : "Masukkan username/email dan password untuk login.",
       );
       if (loginSubHeader) {
         loginSubHeader.textContent = showSignup
-          ? "Gunakan Google untuk mendaftar non-reguler."
-          : "Silakan masuk untuk melanjutkan.";
+          ? "Gunakan akun Google untuk masuk atau mendaftar."
+          : "Masuk dengan username/email dan password.";
       }
       if (showSignup) resetSignupSteps();
     }
@@ -574,6 +577,10 @@
     }
     if (signupBackToLoginBtn) {
       signupBackToLoginBtn.addEventListener("click", function () {
+        if (isNonRegularPage) {
+          activateSignupStep("request");
+          return;
+        }
         activateLoginTab("signin");
       });
     }
@@ -582,7 +589,7 @@
         activateSignupStep("request");
       });
     }
-    activateLoginTab("signin");
+    activateLoginTab(isNonRegularPage ? "signup" : "signin");
 
     const params = new URLSearchParams(window.location.search || "");
     const oauthStatus = params.get("oauth");
@@ -644,8 +651,9 @@
       startRegistrationPolling(storedRegID);
     }
 
-    signinForm.addEventListener("submit", async function (e) {
-      e.preventDefault();
+    if (signinForm) {
+      signinForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
         const done = beginBusy(signinForm, msg, "Memproses login...");
         const fd = new FormData(signinForm);
         try {
@@ -662,7 +670,8 @@
       } finally {
         done();
       }
-    });
+      });
+    }
 
     if (signupForm) {
       signupForm.addEventListener("submit", async function (e) {

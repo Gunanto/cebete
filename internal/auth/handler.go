@@ -145,7 +145,7 @@ func NewHandler(svc *Service) *Handler {
 
 func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 	if !h.svc.GoogleOAuthEnabled() {
-		http.Redirect(w, r, "/login?oauth=disabled", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=disabled", http.StatusFound)
 		return
 	}
 	flow := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("flow")))
@@ -154,7 +154,7 @@ func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := h.svc.CreateOAuthState(r.Context(), flow)
 	if err != nil {
-		http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=error", http.StatusFound)
 		return
 	}
 	authURL := h.svc.GoogleOAuthConfig().AuthCodeURL(
@@ -167,34 +167,34 @@ func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	if !h.svc.GoogleOAuthEnabled() {
-		http.Redirect(w, r, "/login?oauth=disabled", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=disabled", http.StatusFound)
 		return
 	}
 	if errMsg := strings.TrimSpace(r.URL.Query().Get("error")); errMsg != "" {
-		http.Redirect(w, r, "/login?oauth=cancelled", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=cancelled", http.StatusFound)
 		return
 	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if state == "" || code == "" {
-		http.Redirect(w, r, "/login?oauth=invalid", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=invalid", http.StatusFound)
 		return
 	}
 	flow, err := h.svc.ConsumeOAuthState(r.Context(), state)
 	if err != nil {
-		http.Redirect(w, r, "/login?oauth=invalid", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=invalid", http.StatusFound)
 		return
 	}
 
 	token, err := h.svc.GoogleOAuthConfig().Exchange(r.Context(), code)
 	if err != nil {
-		http.Redirect(w, r, "/login?oauth=exchange_failed", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=exchange_failed", http.StatusFound)
 		return
 	}
 
 	info, err := fetchGoogleUserInfo(r.Context(), token.AccessToken)
 	if err != nil {
-		http.Redirect(w, r, "/login?oauth=userinfo_failed", http.StatusFound)
+		http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=userinfo_failed", http.StatusFound)
 		return
 	}
 
@@ -204,17 +204,17 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrEmailAlreadyUsed):
-				http.Redirect(w, r, "/login?oauth=registered", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=registered", http.StatusFound)
 			case errors.Is(err, ErrRegistrationState):
-				http.Redirect(w, r, "/login?oauth=registration_pending", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=registration_pending", http.StatusFound)
 			case errors.Is(err, ErrOAuthEmailUnverified), errors.Is(err, ErrOAuthDomainDenied):
-				http.Redirect(w, r, "/login?oauth=domain_denied", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=domain_denied", http.StatusFound)
 			default:
-				http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=error", http.StatusFound)
 			}
 			return
 		}
-		redirectWithParams(w, r, map[string]string{
+		redirectWithParamsTo(w, r, loginPathForGoogleFlow(flow), map[string]string{
 			"google_signup": "1",
 			"token":         signupToken,
 		})
@@ -224,20 +224,20 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrUserNotFound):
-				http.Redirect(w, r, "/login?oauth=not_registered", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=not_registered", http.StatusFound)
 			case errors.Is(err, ErrRegistrationState):
-				http.Redirect(w, r, "/login?oauth=registration_pending", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=registration_pending", http.StatusFound)
 			case errors.Is(err, ErrForbidden):
-				http.Redirect(w, r, "/login?oauth=inactive", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=inactive", http.StatusFound)
 			case errors.Is(err, ErrOAuthEmailUnverified), errors.Is(err, ErrOAuthDomainDenied):
-				http.Redirect(w, r, "/login?oauth=domain_denied", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=domain_denied", http.StatusFound)
 			default:
-				http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+				http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=error", http.StatusFound)
 			}
 			return
 		}
 		if err := h.establishSession(w, r, user); err != nil {
-			http.Redirect(w, r, "/login?oauth=error", http.StatusFound)
+			http.Redirect(w, r, loginPathForGoogleFlow(flow)+"?oauth=error", http.StatusFound)
 			return
 		}
 		http.Redirect(w, r, homeByRole(user), http.StatusFound)
@@ -1244,8 +1244,15 @@ func homeByRole(user *User) string {
 	}
 }
 
-func redirectWithParams(w http.ResponseWriter, r *http.Request, params map[string]string) {
-	u := url.URL{Path: "/login"}
+func loginPathForGoogleFlow(flow string) string {
+	if strings.EqualFold(strings.TrimSpace(flow), "signup") {
+		return "/login/non-reguler"
+	}
+	return "/login/non-reguler"
+}
+
+func redirectWithParamsTo(w http.ResponseWriter, r *http.Request, path string, params map[string]string) {
+	u := url.URL{Path: path}
 	q := u.Query()
 	for k, v := range params {
 		q.Set(k, v)

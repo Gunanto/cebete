@@ -115,7 +115,24 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 		renderPage(w, "home_content", "g-cbt - Sistem Ujian Terintegrasi", map[string]any{})
 	})
 	r.Get("/login", func(w http.ResponseWriter, r *http.Request) {
-		renderPage(w, "login_content", "Login CBT LMS", map[string]any{})
+		variant := "regular"
+		q := r.URL.Query()
+		if strings.TrimSpace(q.Get("oauth")) != "" || strings.TrimSpace(q.Get("google_signup")) != "" {
+			variant = "non_regular"
+		}
+		renderPage(w, "login_content", "Login CBT LMS", map[string]any{
+			"LoginVariant": variant,
+		})
+	})
+	r.Get("/login/reguler", func(w http.ResponseWriter, r *http.Request) {
+		renderPage(w, "login_content", "Login Peserta Reguler", map[string]any{
+			"LoginVariant": "regular",
+		})
+	})
+	r.Get("/login/non-reguler", func(w http.ResponseWriter, r *http.Request) {
+		renderPage(w, "login_content", "Login Peserta Non-Reguler", map[string]any{
+			"LoginVariant": "non_regular",
+		})
 	})
 	r.Get("/auth/first-login", authHandler.FirstLoginMagicLink)
 	r.Get("/auth/google/start", authHandler.GoogleStart)

@@ -1,37 +1,26 @@
 {{define "login_content"}}
-<section class="login-shell">
+<section
+    class="login-shell"
+    data-login-variant="{{if .LoginVariant}}{{.LoginVariant}}{{else}}regular{{end}}"
+>
     <section class="login-modern-card">
         <header class="login-brand-head" id="login-header-text">
             <div class="login-brand-badge" aria-hidden="true">
                 <img src="/static/brand/gcbt-icon.svg" alt="" />
             </div>
-            <h2>Selamat Datang</h2>
-            <p id="login-sub-header">Silakan masuk untuk melanjutkan.</p>
+            {{if eq .LoginVariant "non_regular"}}
+            <h2>Peserta Non-Reguler</h2>
+            <p id="login-sub-header">
+                Gunakan akun Google untuk masuk atau mendaftar.
+            </p>
+            {{else}}
+            <h2>Peserta Reguler</h2>
+            <p id="login-sub-header">
+                Masuk dengan username/email dan password.
+            </p>
+            {{end}}
         </header>
-        <div
-            class="login-modern-tabs login-main-tabs"
-            role="tablist"
-            aria-label="Akses akun"
-        >
-            <button
-                id="login-tab-signin"
-                type="button"
-                class="login-modern-tab is-active"
-                role="tab"
-                aria-pressed="true"
-            >
-                Masuk
-            </button>
-            <button
-                id="login-tab-signup"
-                type="button"
-                class="login-modern-tab"
-                role="tab"
-                aria-pressed="false"
-            >
-                Daftar Non-Reguler
-            </button>
-        </div>
+        {{if not (eq .LoginVariant "non_regular")}}
         <section id="login-signin-panel" class="login-modern-panel">
             <form id="login-form" class="login-modern-form">
                 <div class="login-input-group">
@@ -128,24 +117,10 @@
                 </div>
 
                 <button class="login-primary-btn" type="submit">Masuk</button>
-
+                <div class="login-divider">Akses lain</div>
                 <a
-                    id="login-google-btn"
-                    class="login-secondary-btn login-google-btn"
-                    href="/auth/google/start?flow=login"
-                >
-                    Masuk dengan Google
-                </a>
-                <p class="login-hint">
-                    Untuk peserta non-reguler, gunakan login Google.
-                </p>
-
-                <div class="login-divider">Atau jika belum punya akun</div>
-
-                <button
-                    id="login-show-signup-btn"
-                    type="button"
                     class="login-secondary-btn login-secondary-btn-icon"
+                    href="/login/non-reguler"
                 >
                     <span class="login-tab-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none">
@@ -158,11 +133,13 @@
                             />
                         </svg>
                     </span>
-                    Daftar Non-Reguler
-                </button>
+                    Buka Halaman Non-Reguler
+                </a>
             </form>
         </section>
-        <section id="login-signup-panel" class="login-modern-panel" hidden>
+        {{end}}
+        {{if eq .LoginVariant "non_regular"}}
+        <section id="login-signup-panel" class="login-modern-panel">
             <form id="signup-form" class="login-modern-form">
                 <input type="hidden" name="role_requested" value="siswa" />
                 <input
@@ -172,6 +149,7 @@
                 />
 
                 <div id="signup-step-request" class="login-otp-step">
+                    {{if not (eq .LoginVariant "non_regular")}}
                     <button
                         id="signup-back-to-login-btn"
                         type="button"
@@ -190,6 +168,7 @@
                         </span>
                         Kembali ke login
                     </button>
+                    {{end}}
                     <div class="login-state-card">
                         <div class="login-state-icon" aria-hidden="true">
                             <svg viewBox="0 0 24 24" fill="none">
@@ -211,11 +190,22 @@
                     </div>
 
                     <a
-                        id="signup-google-btn"
+                        id="signup-google-login-btn"
                         class="login-secondary-btn login-google-btn"
+                        href="/auth/google/start?flow=login"
+                    >
+                        Masuk dengan Google
+                    </a>
+                    <p class="login-hint">
+                        Untuk peserta non-reguler yang sudah disetujui.
+                    </p>
+
+                    <a
+                        id="signup-google-btn"
+                        class="login-primary-btn"
                         href="/auth/google/start?flow=signup"
                     >
-                        Daftar dengan Google
+                        Mendaftar Peserta Non-Reguler
                     </a>
                     <p class="login-hint">
                         Gunakan akun Gmail, sch.id, atau belajar.id.
@@ -460,6 +450,7 @@
                 </div>
             </form>
         </section>
+        {{end}}
     </section>
 
     <p
