@@ -44,7 +44,10 @@
     if (!res || Number(res.status || 0) !== 401 || authRedirecting) {
       return false;
     }
-    if (window.location && window.location.pathname === "/login") {
+    if (
+      window.location &&
+      String(window.location.pathname || "").startsWith("/login")
+    ) {
       return false;
     }
     authRedirecting = true;
