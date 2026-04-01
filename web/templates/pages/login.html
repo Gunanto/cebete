@@ -438,14 +438,20 @@
                     <div class="login-input-group">
                         <label for="signup-class-name">Kelas</label>
                         <div class="login-input-wrap login-input-wrap-plain">
-                            <input
+                            <select
                                 id="signup-class-name"
-                                type="text"
                                 name="class_name"
-                                placeholder="Contoh: Kelas 9.1"
                                 required
-                            />
+                                disabled
+                            >
+                                <option value="">
+                                    Pilih sekolah/NPSN dulu
+                                </option>
+                            </select>
                         </div>
+                        <p class="login-hint">
+                            Pilihan kelas menyesuaikan jenjang sekolah.
+                        </p>
                     </div>
 
                     <button class="login-primary-btn" type="submit">

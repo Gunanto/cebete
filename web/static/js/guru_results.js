@@ -15,6 +15,7 @@
   var latestLearningGoalIdentity = null;
   var latestLearningGoalStudentView = null;
   var latestLearningGoalStudentSchool = {};
+  var latestLearningGoalStudentResult = {};
   var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
 
@@ -351,6 +352,22 @@
       latestLearningGoalStudentSchool[key] = info;
       return info;
     }
+  }
+
+  async function ensureAttemptLearningGoalResultLoaded(attemptID) {
+    const key = String(attemptID || 0);
+    if (Object.prototype.hasOwnProperty.call(latestLearningGoalStudentResult, key)) {
+      return latestLearningGoalStudentResult[key];
+    }
+    if (!deps || typeof deps.api !== "function" || !attemptID) {
+      return null;
+    }
+    const out = await deps.api(
+      "/api/v1/attempts/" + Number(attemptID) + "/learning-goal-result",
+      "GET",
+    );
+    latestLearningGoalStudentResult[key] = out || null;
+    return latestLearningGoalStudentResult[key];
   }
 
   async function ensureExamClassNames(examID, fallbackRows) {
@@ -1407,6 +1424,7 @@
       latestLearningGoalExamID = 0;
       latestLearningGoalIdentity = null;
       latestLearningGoalStudentView = null;
+      latestLearningGoalStudentResult = {};
       if (deps && typeof deps.refreshStats === "function") {
         deps.refreshStats();
       }
@@ -1437,6 +1455,7 @@
     latestLearningGoalExamID = Number(examID || 0);
     latestLearningGoalIdentity = null;
     latestLearningGoalStudentView = null;
+    latestLearningGoalStudentResult = {};
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
@@ -2031,6 +2050,64 @@
     };
   }
 
+  function buildLearningGoalStudentAnalysisFromAttempt(result, row) {
+    if (!result || !row) return null;
+    const source = Array.isArray(result.items) ? result.items : [];
+    const rows = source
+      .map(function (item, idx) {
+        return {
+          key:
+            String(
+              item.learning_goal_id != null
+                ? item.learning_goal_id
+                : "none-" + idx,
+            ) +
+            "::" +
+            String(item.learning_goal_text || ""),
+          learning_goal_id: item.learning_goal_id,
+          learning_goal_text: String(item.learning_goal_text || "Tanpa TP"),
+          learning_goal_materi: String(item.learning_goal_materi || "-"),
+          earned_weight: Number((item && item.earned_weight) || 0),
+          total_weight: Number((item && item.total_weight) || 0),
+          percent: Number((item && item.percent) || 0),
+          achieved: !!(item && item.achieved),
+        };
+      })
+      .sort(function (a, b) {
+        return a.learning_goal_text.localeCompare(b.learning_goal_text);
+      });
+    const achievedCount = rows.filter(function (it) {
+      return it.achieved;
+    }).length;
+    const avgPercent = rows.length
+      ? rows.reduce(function (acc, it) {
+          return acc + Number(it.percent || 0);
+        }, 0) / rows.length
+      : 0;
+    const totalEarned = rows.reduce(function (acc, it) {
+      return acc + Number(it.earned_weight || 0);
+    }, 0);
+    const totalWeight = rows.reduce(function (acc, it) {
+      return acc + Number(it.total_weight || 0);
+    }, 0);
+    return {
+      participant: {
+        userID: Number((row && row.user_id) || 0),
+        fullName: String((row && row.full_name) || "-"),
+        className: String((row && row.class_name) || "-"),
+        attemptID: Number((row && row.attempt_id) || 0),
+        attemptKe: Number((row && row.attempt_ke) || 0),
+      },
+      items: rows,
+      totalGoals: rows.length,
+      achievedGoals: achievedCount,
+      unachievedGoals: rows.length - achievedCount,
+      averagePercent: avgPercent,
+      totalEarnedWeight: totalEarned,
+      totalWeight: totalWeight,
+    };
+  }
+
   function renderLearningGoalStudentSummary(view) {
     const current = view || {};
     return [
@@ -2145,6 +2222,14 @@
       (matrix && matrix.exam_id) || latestLearningGoalExamID || 0,
     );
     const targetAttemptID = Number(attemptID || 0);
+    const attemptRow =
+      filteredRows.find(function (it) {
+        return Number((it && it.attempt_id) || 0) === targetAttemptID;
+      }) ||
+      rows.find(function (it) {
+        return Number((it && it.attempt_id) || 0) === targetAttemptID;
+      }) ||
+      null;
     if (!matrix || !rows.length || examID <= 0 || targetAttemptID <= 0) {
       setLearningGoalStudentSubtitle("Belum ada data hasil ujian.");
       setLearningGoalStudentKKTP("70.00%");
@@ -2160,14 +2245,36 @@
       deps.learningGoalStudentDialog.showModal();
       return;
     }
-    const payload = await ensureLearningGoalResultLoaded(examID, filteredRows);
-    const result = payload.result || {};
-    const identityBase = payload.identity || {};
-    const items = Array.isArray(payload.items) ? payload.items : [];
-    const view = buildLearningGoalStudentAnalysis(items, targetAttemptID);
+    let detailResult = null;
+    try {
+      detailResult = await ensureAttemptLearningGoalResultLoaded(targetAttemptID);
+    } catch (_) {
+      detailResult = null;
+    }
+    let identityBase =
+      latestLearningGoalIdentity && Number(latestLearningGoalExamID || 0) === examID
+        ? latestLearningGoalIdentity
+        : null;
+    if (!identityBase) {
+      identityBase = await buildLearningGoalIdentity(examID, filteredRows);
+      latestLearningGoalIdentity = identityBase;
+    }
+    let view = buildLearningGoalStudentAnalysisFromAttempt(
+      detailResult,
+      attemptRow,
+    );
+    let kktp = detailResult && detailResult.kktp;
+    if (!view) {
+      const payload = await ensureLearningGoalResultLoaded(examID, filteredRows);
+      const result = payload.result || {};
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      identityBase = payload.identity || identityBase || {};
+      view = buildLearningGoalStudentAnalysis(items, targetAttemptID);
+      kktp = result && result.kktp;
+    }
     if (!view) {
       setLearningGoalStudentSubtitle("Data peserta tidak ditemukan.");
-      setLearningGoalStudentKKTP(percentText(result && result.kktp));
+      setLearningGoalStudentKKTP(percentText(kktp));
       setLearningGoalStudentSummaryHTML("");
       setLearningGoalStudentIdentityHTML(
         renderIdentityHTML(identityBase, "ANALISIS TP PER PESERTA"),
@@ -2192,25 +2299,13 @@
         String(identityBase.examTitle || "-") +
         " | " +
         String(participant.fullName || "-"),
-      startedAt: deps.fmtDate(
-        (
-          rows.find(function (it) {
-            return Number((it && it.attempt_id) || 0) === targetAttemptID;
-          }) || {}
-        ).started_at,
-      ),
-      endedAt: deps.fmtDate(
-        (
-          rows.find(function (it) {
-            return Number((it && it.attempt_id) || 0) === targetAttemptID;
-          }) || {}
-        ).ended_at,
-      ),
+      startedAt: deps.fmtDate((attemptRow || {}).started_at),
+      endedAt: deps.fmtDate((attemptRow || {}).ended_at),
     });
     setLearningGoalStudentIdentityHTML(
       renderIdentityHTML(studentIdentity, "ANALISIS TP PER PESERTA"),
     );
-    setLearningGoalStudentKKTP(percentText(result && result.kktp));
+    setLearningGoalStudentKKTP(percentText(kktp));
     setLearningGoalStudentSubtitle(
       "Peserta: " +
         String(participant.fullName || "-") +

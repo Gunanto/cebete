@@ -55,6 +55,7 @@
     const signupSchoolEmailInput = document.getElementById(
       "signup-school-email",
     );
+    const signupClassNameInput = document.getElementById("signup-class-name");
     const signupSchoolSuggest = document.getElementById(
       "signup-school-suggest",
     );
@@ -137,6 +138,7 @@
     function resetSignupSteps() {
       activateSignupStep("request");
       if (signupGoogleTokenInput) signupGoogleTokenInput.value = "";
+      syncSignupClassOptions();
     }
 
     function showSignupPanel() {
@@ -188,6 +190,7 @@
           if (signupJenjangInput) {
             const jenjang = item.nama_jenjang || "";
             signupJenjangInput.value = jenjang;
+            syncSignupClassOptions();
           }
           hideSchoolSuggest();
           if (item.npsn) {
@@ -222,6 +225,72 @@
     const schoolSearchCache = new Map();
     const schoolDetailCache = new Map();
     const schoolCacheTTL = 10 * 60 * 1000;
+    const signupClassOptions = {
+      sd: ["Kelas 4", "Kelas 5", "Kelas 6"],
+      smp: ["Kelas 7", "Kelas 8", "Kelas 9"],
+      sma: ["Kelas 10", "Kelas 11", "Kelas 12"],
+    };
+
+    function normalizeSchoolStage(value) {
+      const raw = String(value || "").trim().toUpperCase();
+      if (!raw) return "";
+      if (
+        raw.includes("SD") ||
+        raw.includes("SEKOLAH DASAR") ||
+        raw.includes("MI") ||
+        raw.includes("MADRASAH IBTIDAIYAH")
+      ) {
+        return "sd";
+      }
+      if (
+        raw.includes("SMP") ||
+        raw.includes("SEKOLAH MENENGAH PERTAMA") ||
+        raw.includes("MTS") ||
+        raw.includes("MADRASAH TSANAWIYAH")
+      ) {
+        return "smp";
+      }
+      if (
+        raw.includes("SMA") ||
+        raw.includes("SMK") ||
+        raw.includes("SEKOLAH MENENGAH ATAS") ||
+        raw.includes("SEKOLAH MENENGAH KEJURUAN") ||
+        raw.includes("MA") ||
+        raw.includes("MADRASAH ALIYAH")
+      ) {
+        return "sma";
+      }
+      return "";
+    }
+
+    function setSignupClassOptions(stage, selectedValue) {
+      if (!signupClassNameInput) return;
+      const options = signupClassOptions[stage] || [];
+      const preferred = String(selectedValue || "").trim();
+      const placeholder = options.length
+        ? "Pilih kelas..."
+        : "Pilih sekolah/NPSN dulu";
+      signupClassNameInput.innerHTML =
+        '<option value="">' + placeholder + "</option>";
+      options.forEach(function (value) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        if (preferred && preferred === value) option.selected = true;
+        signupClassNameInput.appendChild(option);
+      });
+      signupClassNameInput.disabled = options.length === 0;
+      if (!preferred || options.indexOf(preferred) === -1) {
+        signupClassNameInput.value = "";
+      }
+    }
+
+    function syncSignupClassOptions(preferred) {
+      const stage = normalizeSchoolStage(
+        signupJenjangInput && signupJenjangInput.value,
+      );
+      setSignupClassOptions(stage, preferred);
+    }
 
     async function fetchSchoolSuggestions(query) {
       const q = String(query || "").trim();
@@ -342,6 +411,9 @@
       }
       if (signupStatusSekolahInput && item.status_sekolah)
         signupStatusSekolahInput.value = item.status_sekolah;
+      syncSignupClassOptions(
+        signupClassNameInput ? signupClassNameInput.value : "",
+      );
     }
 
     if (signupSchoolInput) {
@@ -379,6 +451,16 @@
         }, 350);
       });
     }
+
+    if (signupJenjangInput) {
+      signupJenjangInput.addEventListener("input", function () {
+        syncSignupClassOptions(
+          signupClassNameInput ? signupClassNameInput.value : "",
+        );
+      });
+    }
+
+    syncSignupClassOptions();
 
     document.addEventListener("click", function (e) {
       if (!signupSchoolSuggest || signupSchoolSuggest.hidden) return;
