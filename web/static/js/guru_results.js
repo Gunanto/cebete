@@ -23,6 +23,24 @@
     deps = opts || {};
   }
 
+  function showDialog(dialog) {
+    if (!dialog) return;
+    if (dialog.hidden) dialog.hidden = false;
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      return;
+    }
+    if (typeof dialog.show === "function") {
+      if (!dialog.open) {
+        dialog.show();
+      }
+      return;
+    }
+    dialog.setAttribute("open", "open");
+  }
+
   function activateResultsMenu() {
     const fn =
       (deps && typeof deps.activateMenu === "function" && deps.activateMenu) ||
@@ -2263,7 +2281,7 @@
         "Tidak ada data untuk dianalisis. Pilih ujian lalu muat hasil ujian.",
         true,
       );
-      deps.learningGoalStudentDialog.showModal();
+      showDialog(deps.learningGoalStudentDialog);
       return;
     }
     let detailResult = null;
@@ -2311,7 +2329,7 @@
         "Coba ubah filter Attempt/Kelas atau muat ulang hasil ujian.",
         true,
       );
-      deps.learningGoalStudentDialog.showModal();
+      showDialog(deps.learningGoalStudentDialog);
       return;
     }
     latestLearningGoalStudentView = view;
@@ -2343,10 +2361,10 @@
     setLearningGoalStudentSummaryHTML(renderLearningGoalStudentSummary(view));
     setLearningGoalStudentBodyHTML(renderLearningGoalStudentRows(view.items));
     setLearningGoalStudentDetailHTML(
-      renderLearningGoalStudentDetail(view, result && result.kktp),
+      renderLearningGoalStudentDetail(view, kktp),
       false,
     );
-    deps.learningGoalStudentDialog.showModal();
+    showDialog(deps.learningGoalStudentDialog);
   }
 
   async function openLearningGoalDialog() {
