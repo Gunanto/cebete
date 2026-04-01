@@ -1060,7 +1060,7 @@
         dashboardMonitorRefreshBtn.disabled = true;
       }
       try {
-        const exams = await api("/api/v1/admin/exams", "GET");
+        const exams = await api("/api/v1/admin/exams/manage", "GET");
         const examItems = (Array.isArray(exams) ? exams : []).filter(
           function (it) {
             return Number((it && it.assigned_count) || 0) > 0;
