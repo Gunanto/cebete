@@ -236,10 +236,28 @@
                         Muat Pendaftaran Pending
                     </button>
                 </div>
+                <div class="admin-users-toolbar mt">
+                    <label class="inline-checkbox-label">
+                        <input
+                            id="admin-registrations-select-all"
+                            type="checkbox"
+                        />
+                        Pilih semua
+                    </label>
+                    <button
+                        id="admin-registrations-bulk-approve-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                        disabled
+                    >
+                        Setujui Terpilih
+                    </button>
+                </div>
                 <div class="table-wrap mt">
                     <table class="bs-table">
                         <thead>
                             <tr>
+                                <th>Pilih</th>
                                 <th>ID</th>
                                 <th>Nama</th>
                                 <th>Email</th>
@@ -252,7 +270,7 @@
                         </thead>
                         <tbody id="admin-registrations-body">
                             <tr>
-                                <td colspan="8" class="muted">
+                                <td colspan="9" class="muted">
                                     Belum ada data pendaftaran pending.
                                 </td>
                             </tr>

@@ -37,6 +37,12 @@
     const adminRegistrationsRefreshBtn = document.getElementById(
       "admin-registrations-refresh-btn",
     );
+    const adminRegistrationsSelectAll = document.getElementById(
+      "admin-registrations-select-all",
+    );
+    const adminRegistrationsBulkApproveBtn = document.getElementById(
+      "admin-registrations-bulk-approve-btn",
+    );
     const adminRegistrationsBody = document.getElementById(
       "admin-registrations-body",
     );
@@ -438,6 +444,8 @@
         escapeHtml: escapeHtml,
         fmtDate: fmtDate,
         regRefreshBtn: adminRegistrationsRefreshBtn,
+        regSelectAll: adminRegistrationsSelectAll,
+        regBulkApproveBtn: adminRegistrationsBulkApproveBtn,
         regBody: adminRegistrationsBody,
       });
     }
@@ -530,6 +538,7 @@
       await loadUsers();
       await loadDashboardStats();
       await loadMasterSummaryTable();
+      await loadPendingRegistrations();
       activateMenu("dashboard");
       setMsg("Dashboard admin siap.");
     } catch (err) {

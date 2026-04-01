@@ -95,6 +95,10 @@ type rejectRegistrationRequest struct {
 	Note string `json:"note"`
 }
 
+type bulkApproveRegistrationsRequest struct {
+	RegistrationIDs []int64 `json:"registration_ids"`
+}
+
 type adminCreateUserRequest struct {
 	Username         string  `json:"username"`
 	Email            string  `json:"email"`
@@ -941,6 +945,71 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]interface{}{"status": "approved", "user_id": userID, "first_login_link_sent": firstLoginLinkSent}})
+}
+
+func (h *Handler) ApproveRegistrationsBulk(w http.ResponseWriter, r *http.Request) {
+	admin, ok := CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+		return
+	}
+
+	var req bulkApproveRegistrationsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid request body"})
+		return
+	}
+
+	seen := make(map[int64]struct{}, len(req.RegistrationIDs))
+	ids := make([]int64, 0, len(req.RegistrationIDs))
+	for _, id := range req.RegistrationIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "registration_ids is required"})
+		return
+	}
+
+	successes := make([]map[string]any, 0, len(ids))
+	failures := make([]map[string]any, 0)
+	for _, id := range ids {
+		userID, firstLoginLinkSent, err := h.svc.ApproveRegistration(r.Context(), id, admin.ID)
+		if err != nil {
+			msg := "internal error"
+			switch {
+			case errors.Is(err, ErrRegistrationNotFound), errors.Is(err, ErrRegistrationState):
+				msg = err.Error()
+			default:
+				log.Printf("bulk approve registration failed registration_id=%d reviewer_id=%d err=%v", id, admin.ID, err)
+			}
+			failures = append(failures, map[string]any{
+				"id":    id,
+				"error": msg,
+			})
+			continue
+		}
+		successes = append(successes, map[string]any{
+			"id":                    id,
+			"user_id":               userID,
+			"first_login_link_sent": firstLoginLinkSent,
+			"status":                "approved",
+		})
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{
+		"requested_count": len(ids),
+		"approved_count":  len(successes),
+		"failed_count":    len(failures),
+		"items":           successes,
+		"failures":        failures,
+	}})
 }
 
 func (h *Handler) RegistrationStatus(w http.ResponseWriter, r *http.Request) {
