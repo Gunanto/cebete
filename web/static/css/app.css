@@ -584,6 +584,10 @@ body[data-page="login_content"] .landing-footer small {
     font-size: 12px;
 }
 
+.login-hint-center {
+    text-align: center;
+}
+
 .login-otp-note {
     margin: 0 0 2px;
     padding: 10px 12px;
