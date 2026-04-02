@@ -529,6 +529,47 @@ func TestExportQuestionsCSVEncodesImages(t *testing.T) {
 	}
 }
 
+func TestExportQuestionsCSVSkipsImagesWhenMediaUnavailable(t *testing.T) {
+	h := &Handler{
+		svc: &mockQuestionService{
+			getQuestionExportDataFn: func(ctx context.Context, questionID int64, versionNo int, ownerID *int64) (*ExportQuestionData, error) {
+				return &ExportQuestionData{
+					SubjectName:      "IPA",
+					QuestionCode:     "IPA-002",
+					QuestionCodeName: "Gambar",
+					QuestionType:     "pg_tunggal",
+					StemHTML:         `<p>Lihat gambar berikut <img src="/api/v1/media/question-images/question-images/test.png"></p>`,
+					Options: []QuestionOptionInput{
+						{OptionKey: "A", OptionHTML: "<p>Benar</p>"},
+					},
+					AnswerKey: json.RawMessage(`{"correct":"A"}`),
+				}, nil
+			},
+		},
+		media: &mockQuestionMediaService{
+			downloadFn: func(ctx context.Context, key string) (*mediasvc.ObjectResult, error) {
+				return nil, errors.New("storage unavailable")
+			},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions/export", bytes.NewBufferString(`{"items":[{"question_id":99,"version_no":1}]}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportQuestions(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Lihat gambar berikut") {
+		t.Fatalf("expected question text to be exported, got %q", body)
+	}
+	if strings.Contains(body, "[[CBTIMG:") {
+		t.Fatalf("expected no image token when media unavailable, got %q", body)
+	}
+}
+
 func TestListQuestionsAdminDefaultsAll(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
 		listQuestionsFn: func(ctx context.Context, subjectID int64, ownerID *int64) ([]QuestionBlueprint, error) {

@@ -1174,16 +1174,16 @@ func (h *Handler) encodeImageSource(ctx context.Context, src string) (string, er
 		return "", nil
 	}
 	if h.media == nil {
-		return "", fmt.Errorf("media service unavailable for export image")
+		return "", nil
 	}
 	obj, err := h.media.DownloadQuestionImage(ctx, key)
 	if err != nil {
-		return "", err
+		return "", nil
 	}
 	defer obj.Reader.Close()
 	raw, err := io.ReadAll(io.LimitReader(obj.Reader, media.QuestionImageMaxBytes+1))
 	if err != nil {
-		return "", err
+		return "", nil
 	}
 	if len(raw) == 0 || len(raw) > media.QuestionImageMaxBytes {
 		return "", nil
