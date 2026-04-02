@@ -1913,6 +1913,59 @@
       });
     }
 
+    function initManuscriptExportModule() {
+      if (!manuscriptExportBtn) return;
+      if (
+        manuscriptExportBtn.dataset &&
+        manuscriptExportBtn.dataset.bound === "1"
+      ) {
+        return;
+      }
+      if (manuscriptExportBtn.dataset) {
+        manuscriptExportBtn.dataset.bound = "1";
+      }
+      manuscriptExportBtn.addEventListener("click", async function () {
+        const items = collectManuscriptItems(true);
+        if (!items.length) {
+          setMsg("Tidak ada naskah yang bisa diekspor.");
+          return;
+        }
+        const exportFormat = String(
+          (manuscriptExportFormatInput &&
+            manuscriptExportFormatInput.value) ||
+            "csv",
+        )
+          .trim()
+          .toLowerCase();
+        if (typeof downloadCSV !== "function") {
+          setMsg("Fitur export belum siap. Muat ulang halaman.");
+          return;
+        }
+        const done = beginBusy(
+          manuscriptExportBtn,
+          msg,
+          "Menyiapkan export naskah " + exportFormat.toUpperCase() + "...",
+        );
+        try {
+          await downloadCSV(
+            "/api/v1/questions/export?format=" +
+              encodeURIComponent(exportFormat),
+            { items: items },
+            "naskah_soal." + exportFormat,
+          );
+          setMsg(
+            "Export naskah " +
+              exportFormat.toUpperCase() +
+              " berhasil dibuat.",
+          );
+        } catch (err) {
+          setMsg("Export naskah gagal: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
     function initGuruDashboardModule() {
       if (!GuruDashboard || typeof GuruDashboard.init !== "function") {
         return;
@@ -2540,6 +2593,7 @@
     initQuestionCodesModule();
     initManuscriptImportModule();
     initManuscriptTransferExportModule();
+    initManuscriptExportModule();
     initGuruExamsModule();
     initGuruEnrollModule();
     initGuruResultsModule();
