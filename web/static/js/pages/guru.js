@@ -655,25 +655,25 @@
       "guru-learning-goal-analysis-body",
     );
     const learningGoalAnalysisSummary = document.getElementById(
-      "guru-learning-goal-analysis-summary",
+      "guru-learning-goal-summary",
     );
     const learningGoalAnalysisIdentity = document.getElementById(
-      "guru-learning-goal-analysis-identity",
+      "guru-learning-goal-identity",
     );
     const learningGoalAnalysisDetail = document.getElementById(
-      "guru-learning-goal-analysis-detail",
+      "guru-learning-goal-detail",
     );
     const learningGoalAnalysisSubtitle = document.getElementById(
-      "guru-learning-goal-analysis-subtitle",
+      "guru-learning-goal-subtitle",
     );
     const learningGoalAnalysisExportBtn = document.getElementById(
-      "guru-learning-goal-analysis-export-btn",
+      "guru-learning-goal-export-btn",
     );
     const learningGoalAnalysisPrintBtn = document.getElementById(
-      "guru-learning-goal-analysis-print-btn",
+      "guru-learning-goal-print-btn",
     );
     const learningGoalAnalysisKKTP = document.getElementById(
-      "guru-learning-goal-analysis-kktp",
+      "guru-learning-goal-kktp",
     );
     const learningGoalStudentDialog = document.getElementById(
       "guru-learning-goal-student-dialog",
