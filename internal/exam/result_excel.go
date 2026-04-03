@@ -67,6 +67,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		"Nilai",
 		"Start Ujian",
 		"End Ujian",
+		"Durasi",
 	}
 	headers := append([]string{}, fixedHeaders...)
 	if matrix != nil {
@@ -124,6 +125,7 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 			fmt.Sprintf("%.2f", nilai),
 			it.StartedAt.Format(time.RFC3339),
 			it.EndedAt.Format(time.RFC3339),
+			formatExamResultDuration(it.StartedAt, it.EndedAt),
 		}
 		for _, ans := range it.Answers {
 			values = append(values, ans)
@@ -141,6 +143,17 @@ func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, er
 		return nil, fmt.Errorf("write excel: %w", err)
 	}
 	return b.Bytes(), nil
+}
+
+func formatExamResultDuration(startedAt, endedAt time.Time) string {
+	diff := endedAt.Sub(startedAt)
+	if diff < 0 {
+		diff = 0
+	}
+	totalSeconds := int(diff / time.Second)
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	return fmt.Sprintf("%d menit %d detik", minutes, seconds)
 }
 
 func derefString(v *string) string {

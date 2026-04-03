@@ -42,20 +42,26 @@ func TestBuildExamParticipantResultsExcelWritesAnswerKeyRow(t *testing.T) {
 	if got, err := f.GetCellValue(sheet, "A1"); err != nil || got != "Kunci Jawaban" {
 		t.Fatalf("A1 = %q, %v; want Kunci Jawaban", got, err)
 	}
-	if got, err := f.GetCellValue(sheet, "I1"); err != nil || got != "A" {
-		t.Fatalf("I1 = %q, %v; want A", got, err)
+	if got, err := f.GetCellValue(sheet, "I2"); err != nil || got != "Durasi" {
+		t.Fatalf("I2 = %q, %v; want Durasi", got, err)
 	}
-	if got, err := f.GetCellValue(sheet, "J1"); err != nil || got != "B,C" {
-		t.Fatalf("J1 = %q, %v; want B,C", got, err)
+	if got, err := f.GetCellValue(sheet, "J1"); err != nil || got != "A" {
+		t.Fatalf("J1 = %q, %v; want A", got, err)
 	}
-	if got, err := f.GetCellValue(sheet, "K1"); err != nil || got != "T,F" {
-		t.Fatalf("K1 = %q, %v; want T,F", got, err)
+	if got, err := f.GetCellValue(sheet, "K1"); err != nil || got != "B,C" {
+		t.Fatalf("K1 = %q, %v; want B,C", got, err)
 	}
-	if got, err := f.GetCellValue(sheet, "I2"); err != nil || got != "1" {
-		t.Fatalf("I2 = %q, %v; want 1", got, err)
+	if got, err := f.GetCellValue(sheet, "L1"); err != nil || got != "T,F" {
+		t.Fatalf("L1 = %q, %v; want T,F", got, err)
+	}
+	if got, err := f.GetCellValue(sheet, "J2"); err != nil || got != "1" {
+		t.Fatalf("J2 = %q, %v; want 1", got, err)
 	}
 	if got, err := f.GetCellValue(sheet, "A3"); err != nil || got != "Siswa Uji" {
 		t.Fatalf("A3 = %q, %v; want Siswa Uji", got, err)
+	}
+	if got, err := f.GetCellValue(sheet, "I3"); err != nil || got != "30 menit 0 detik" {
+		t.Fatalf("I3 = %q, %v; want 30 menit 0 detik", got, err)
 	}
 }
 

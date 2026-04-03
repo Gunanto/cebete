@@ -79,6 +79,16 @@
     deps.resultsExtra.classList.remove("muted");
   }
 
+  function formatResultDuration(startedAt, endedAt) {
+    const startMs = new Date(startedAt).getTime();
+    const endMs = new Date(endedAt).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return "-";
+    const totalSeconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return String(minutes) + " menit " + String(seconds) + " detik";
+  }
+
   function setItemAnalysisSubtitle(value) {
     if (!deps || !deps.itemAnalysisSubtitle) return;
     deps.text(deps.itemAnalysisSubtitle, value);
@@ -1038,7 +1048,7 @@
     if (!list.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
-        String(9 + questions.length) +
+        String(10 + questions.length) +
         '" class="muted">Tidak ada data sesuai filter yang dipilih.</td></tr>';
       return;
     }
@@ -1053,6 +1063,7 @@
         totalWeight > 0
           ? ((scoreValue / totalWeight) * 100).toFixed(2)
           : "0.00";
+      const durationText = formatResultDuration(it.started_at, it.ended_at);
       const answerCells = questions.map(function (_, idx) {
         const state = String(answerStates[idx] || "")
           .trim()
@@ -1088,6 +1099,7 @@
         "<td>" + deps.escapeHtml(String(nilai)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.started_at)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.ended_at)) + "</td>",
+        "<td>" + deps.escapeHtml(durationText) + "</td>",
         '<td><button class="btn btn-secondary btn-inline" type="button" data-attempt-delete="' +
           deps.escapeHtml(String(it.attempt_id || 0)) +
           '">Hapus</button></td>',
@@ -1524,14 +1536,14 @@
       if (deps.resultsPanel && !deps.resultsPanel.hidden) activateResultsMenu();
       if (deps.resultsMatrixHead) {
         deps.resultsMatrixHead.innerHTML =
-          "<th>Nama</th><th>Sekolah</th><th>Kelas</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Aksi</th>";
+          "<th>Nama</th><th>Sekolah</th><th>Kelas</th><th>Attempt Ke-</th><th>Skor Total</th><th>Nilai</th><th>Start Ujian</th><th>End Ujian</th><th>Durasi</th><th>Aksi</th>";
       }
       updateAttemptFilterOptions([]);
       updateClassFilterOptions([]);
       updateSchoolFilterOptions([]);
       updateResultsExportState();
       deps.resultsAssignmentBody.innerHTML =
-        '<tr><td colspan="9" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
+        '<tr><td colspan="10" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       return;
     }
@@ -1569,6 +1581,7 @@
         "<th>Nilai</th>",
         "<th>Start Ujian</th>",
         "<th>End Ujian</th>",
+        "<th>Durasi</th>",
         "<th>Aksi</th>",
       ];
       const dyn = questionNos.map(function (no) {
@@ -1581,7 +1594,7 @@
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
-        String(9 + questionNos.length) +
+        String(10 + questionNos.length) +
         '" class="muted">Belum ada peserta yang mengikuti ujian ini.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       setResultsExtra("Belum ada data untuk laporan/statistik/grafik.");
