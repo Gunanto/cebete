@@ -2022,6 +2022,49 @@ textarea:focus-visible {
     margin-top: 16px;
 }
 
+.admin-school-stats-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.admin-school-stats-card h5 {
+    margin: 0 0 12px;
+    color: #1f3f76;
+    font-size: 1rem;
+}
+
+.admin-school-stats-list {
+    display: grid;
+    gap: 10px;
+}
+
+.admin-school-stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f3f7ff;
+}
+
+.admin-school-stats-label {
+    font-weight: 600;
+    color: #35507c;
+}
+
+.admin-school-stats-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #12284a;
+}
+
+#admin-school-table-body tr.is-selected {
+    background: #eef5ff;
+}
+
 .admin-users-toolbar {
     display: flex;
     justify-content: flex-end;

@@ -4,6 +4,7 @@
     levelsByID: {},
     schoolsByID: {},
     classesByID: {},
+    selectedSchoolID: 0,
   };
 
   function setDeps(opts) {
@@ -89,10 +90,18 @@
       if (!schoolItems.length) {
         deps.schoolTableBody.innerHTML =
           '<tr><td colspan="11" class="muted">Belum ada data sekolah.</td></tr>';
+        renderSchoolStatsPlaceholder(
+          "Klik baris sekolah untuk melihat jumlah pengguna.",
+        );
       } else {
         deps.schoolTableBody.innerHTML = "";
         schoolItems.forEach(function (it) {
           const tr = document.createElement("tr");
+          const schoolID = Number(it.id || 0);
+          tr.setAttribute("data-school-id", String(schoolID));
+          if (schoolID > 0 && schoolID === masterSummaryState.selectedSchoolID) {
+            tr.classList.add("is-selected");
+          }
           tr.innerHTML = [
             "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
             "<td>" + deps.escapeHtml(String(it.name || "")) + "</td>",
@@ -171,7 +180,89 @@
     const schools = Array.isArray(all[1]) ? all[1] : [];
     const classes = Array.isArray(all[2]) ? all[2] : [];
     renderMasterSummaryTable(levels, schools, classes);
+    if (masterSummaryState.selectedSchoolID > 0) {
+      if (masterSummaryState.schoolsByID[String(masterSummaryState.selectedSchoolID)]) {
+        try {
+          await loadSchoolUserStats(masterSummaryState.selectedSchoolID);
+        } catch (_) {
+          // Message already rendered in the stats panel.
+        }
+      } else {
+        masterSummaryState.selectedSchoolID = 0;
+        renderSchoolStatsPlaceholder(
+          "Klik baris sekolah untuk melihat jumlah pengguna.",
+        );
+      }
+    }
     return { levels: levels, schools: schools, classes: classes };
+  }
+
+  function renderSchoolStatsPlaceholder(message) {
+    if (deps.schoolStatsPanel) deps.schoolStatsPanel.hidden = false;
+    if (deps.schoolStatsTitle) {
+      deps.schoolStatsTitle.textContent = "Informasi Pengguna Sekolah";
+    }
+    if (deps.schoolStatsBody) {
+      deps.schoolStatsBody.innerHTML =
+        '<div class="muted">' +
+        deps.escapeHtml(String(message || "")) +
+        "</div>";
+    }
+  }
+
+  function renderSchoolStats(stats) {
+    if (!deps.schoolStatsPanel || !deps.schoolStatsBody) return;
+    const schoolName = String((stats && stats.school_name) || "").trim() || "-";
+    if (deps.schoolStatsTitle) {
+      deps.schoolStatsTitle.textContent = "Informasi Pengguna " + schoolName;
+    }
+    deps.schoolStatsPanel.hidden = false;
+    deps.schoolStatsBody.innerHTML = [
+      ["Admin", Number((stats && stats.admin_count) || 0)],
+      ["Proktor", Number((stats && stats.proktor_count) || 0)],
+      ["Guru", Number((stats && stats.guru_count) || 0)],
+      ["Siswa", Number((stats && stats.siswa_count) || 0)],
+    ]
+      .map(function (item) {
+        return (
+          '<div class="admin-school-stats-row">' +
+          '<div class="admin-school-stats-label">' +
+          deps.escapeHtml(item[0]) +
+          "</div>" +
+          '<div class="admin-school-stats-value">' +
+          deps.escapeHtml(String(item[1])) +
+          "</div>" +
+          "</div>"
+        );
+      })
+      .join("");
+  }
+
+  async function loadSchoolUserStats(schoolID) {
+    const id = Number(schoolID || 0);
+    if (id <= 0) {
+      masterSummaryState.selectedSchoolID = 0;
+      renderSchoolStatsPlaceholder(
+        "Klik baris sekolah untuk melihat jumlah pengguna.",
+      );
+      return null;
+    }
+    masterSummaryState.selectedSchoolID = id;
+    renderSchoolStatsPlaceholder("Memuat jumlah pengguna sekolah...");
+    const out = await deps.api("/api/v1/admin/schools/" + id + "/user-stats", "GET");
+    renderSchoolStats(out || {});
+    if (deps.schoolTableBody) {
+      Array.prototype.forEach.call(
+        deps.schoolTableBody.querySelectorAll("tr[data-school-id]"),
+        function (row) {
+          row.classList.toggle(
+            "is-selected",
+            Number(row.getAttribute("data-school-id") || 0) === id,
+          );
+        },
+      );
+    }
+    return out;
   }
 
   function openLevelDialog(editItem) {
@@ -555,21 +646,46 @@
           e.target.closest(
             "button[data-master-entity][data-master-action][data-id]",
           );
-        if (!btn || !deps.isAdmin()) return;
-        const id = Number(btn.getAttribute("data-id") || 0);
-        const action = String(btn.getAttribute("data-master-action") || "");
-        const item = masterSummaryState.schoolsByID[String(id)];
-        if (!id || !item) return;
-        if (action === "edit") {
-          openSchoolDialog(item);
-        } else if (action === "delete") {
-          openDeleteDialog(
-            "school",
-            id,
-            "Hapus sekolah " + String(item.name || "") + "?",
-          );
+        if (btn) {
+          if (!deps.isAdmin()) return;
+          const id = Number(btn.getAttribute("data-id") || 0);
+          const action = String(btn.getAttribute("data-master-action") || "");
+          const item = masterSummaryState.schoolsByID[String(id)];
+          if (!id || !item) return;
+          if (action === "edit") {
+            openSchoolDialog(item);
+          } else if (action === "delete") {
+            openDeleteDialog(
+              "school",
+              id,
+              "Hapus sekolah " + String(item.name || "") + "?",
+            );
+          }
+          return;
         }
+
+        const row = e.target && e.target.closest("tr[data-school-id]");
+        if (!row) return;
+        const id = Number(row.getAttribute("data-school-id") || 0);
+        if (id <= 0) return;
+        loadSchoolUserStats(id).catch(function (err) {
+          renderSchoolStatsPlaceholder(
+            "Gagal memuat jumlah pengguna sekolah: " + err.message,
+          );
+          setMasterMsg("Gagal memuat statistik sekolah: " + err.message);
+        });
       });
+    }
+
+    if (deps.schoolStatsPanel && !deps.schoolStatsPanel.hidden) {
+      renderSchoolStatsPlaceholder(
+        "Klik baris sekolah untuk melihat jumlah pengguna.",
+      );
+    } else if (deps.schoolStatsPanel) {
+      deps.schoolStatsPanel.hidden = false;
+      renderSchoolStatsPlaceholder(
+        "Klik baris sekolah untuk melihat jumlah pengguna.",
+      );
     }
 
     if (deps.classTableBody) {

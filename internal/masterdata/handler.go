@@ -475,6 +475,28 @@ func (h *Handler) ListSchools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: items})
 }
 
+func (h *Handler) GetSchoolUserStats(w http.ResponseWriter, r *http.Request) {
+	schoolID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || schoolID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid school id"})
+		return
+	}
+
+	item, err := h.svc.GetSchoolUserStats(r.Context(), schoolID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "invalid school id"})
+		case errors.Is(err, sql.ErrNoRows):
+			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: "school not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: item})
+}
+
 func (h *Handler) ListClasses(w http.ResponseWriter, r *http.Request) {
 	activeOnly := true
 	if strings.TrimSpace(r.URL.Query().Get("all")) == "1" {

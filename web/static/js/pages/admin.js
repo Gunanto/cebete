@@ -136,6 +136,9 @@
     );
     const levelTableBody = document.getElementById("admin-level-table-body");
     const schoolTableBody = document.getElementById("admin-school-table-body");
+    const schoolStatsPanel = document.getElementById("admin-school-stats-panel");
+    const schoolStatsTitle = document.getElementById("admin-school-stats-title");
+    const schoolStatsBody = document.getElementById("admin-school-stats-body");
     const classTableBody = document.getElementById("admin-class-table-body");
     const levelDialog = document.getElementById("admin-level-dialog");
     const levelDialogForm = document.getElementById("admin-level-dialog-form");
@@ -273,6 +276,9 @@
         classImportTemplateBtn: classImportTemplateBtn,
         levelTableBody: levelTableBody,
         schoolTableBody: schoolTableBody,
+        schoolStatsPanel: schoolStatsPanel,
+        schoolStatsTitle: schoolStatsTitle,
+        schoolStatsBody: schoolStatsBody,
         classTableBody: classTableBody,
         levelDialog: levelDialog,
         levelDialogForm: levelDialogForm,

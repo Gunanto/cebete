@@ -51,6 +51,15 @@ type School struct {
 	SchoolEmail   string `json:"school_email,omitempty"`
 }
 
+type SchoolUserStats struct {
+	SchoolID     int64  `json:"school_id"`
+	SchoolName   string `json:"school_name"`
+	AdminCount   int64  `json:"admin_count"`
+	ProktorCount int64  `json:"proktor_count"`
+	GuruCount    int64  `json:"guru_count"`
+	SiswaCount   int64  `json:"siswa_count"`
+}
+
 type CreateClassInput struct {
 	SchoolID   int64
 	Name       string
@@ -154,6 +163,18 @@ type ImportRowError struct {
 
 func NewService(db *sql.DB) *Service {
 	return &Service{db: db, bcryptCost: bcrypt.DefaultCost}
+}
+
+func isUndefinedTableErr(err error, table string) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if table == "" {
+		return strings.Contains(lower, "does not exist") || strings.Contains(lower, "undefined_table")
+	}
+	return strings.Contains(lower, "relation \""+strings.ToLower(table)+"\" does not exist") ||
+		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
 }
 
 func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateSchoolInput) (*School, error) {
@@ -429,6 +450,199 @@ func (s *Service) ListSchools(ctx context.Context, activeOnly bool) ([]School, e
 		return nil, fmt.Errorf("iterate schools: %w", err)
 	}
 	return out, nil
+}
+
+func (s *Service) GetSchoolUserStats(ctx context.Context, schoolID int64) (*SchoolUserStats, error) {
+	if schoolID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	user, _ := auth.CurrentUser(ctx)
+	restrictByScope := user != nil && user.Role == "proktor"
+
+	query := `
+		SELECT
+			s.id,
+			s.name,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM (
+					SELECT DISTINCT u.id
+					FROM users u
+					JOIN (
+						SELECT DISTINCT ON (e.user_id)
+							e.user_id,
+							e.school_id
+						FROM enrollments e
+						WHERE e.status = 'active'
+						ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+					) latest_enrollment ON latest_enrollment.user_id = u.id
+					WHERE u.is_active = TRUE
+					  AND u.role = 'admin'
+					  AND latest_enrollment.school_id = s.id
+				) admins
+			), 0) AS admin_count,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM (
+					SELECT DISTINCT u.id
+					FROM users u
+					JOIN user_school_scopes uss ON uss.user_id = u.id
+					WHERE u.is_active = TRUE
+					  AND u.role = 'proktor'
+					  AND uss.school_id = s.id
+				) proktors
+			), 0) AS proktor_count,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM (
+					SELECT DISTINCT u.id
+					FROM users u
+					JOIN (
+						SELECT DISTINCT ON (e.user_id)
+							e.user_id,
+							e.school_id
+						FROM enrollments e
+						WHERE e.status = 'active'
+						ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+					) latest_enrollment ON latest_enrollment.user_id = u.id
+					WHERE u.is_active = TRUE
+					  AND u.role = 'guru'
+					  AND latest_enrollment.school_id = s.id
+				) gurus
+			), 0) AS guru_count,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM (
+					SELECT DISTINCT u.id
+					FROM users u
+					JOIN (
+						SELECT DISTINCT ON (e.user_id)
+							e.user_id,
+							e.school_id
+						FROM enrollments e
+						WHERE e.status = 'active'
+						ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+					) latest_enrollment ON latest_enrollment.user_id = u.id
+					WHERE u.is_active = TRUE
+					  AND u.role = 'siswa'
+					  AND latest_enrollment.school_id = s.id
+				) students
+			), 0) AS siswa_count
+		FROM schools s
+		WHERE s.id = $1
+	`
+
+	args := []interface{}{schoolID}
+	if restrictByScope {
+		query += `
+		  AND EXISTS (
+			SELECT 1
+			FROM user_school_scopes uss
+			WHERE uss.user_id = $2
+			  AND uss.school_id = s.id
+		  )`
+		args = append(args, user.ID)
+	}
+
+	var out SchoolUserStats
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(
+		&out.SchoolID,
+		&out.SchoolName,
+		&out.AdminCount,
+		&out.ProktorCount,
+		&out.GuruCount,
+		&out.SiswaCount,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		if isUndefinedTableErr(err, "user_school_scopes") && restrictByScope {
+			return nil, sql.ErrNoRows
+		}
+		if isUndefinedTableErr(err, "user_school_scopes") {
+			query = `
+				SELECT
+					s.id,
+					s.name,
+					COALESCE((
+						SELECT COUNT(*)
+						FROM (
+							SELECT DISTINCT u.id
+							FROM users u
+							JOIN (
+								SELECT DISTINCT ON (e.user_id)
+									e.user_id,
+									e.school_id
+								FROM enrollments e
+								WHERE e.status = 'active'
+								ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+							) latest_enrollment ON latest_enrollment.user_id = u.id
+							WHERE u.is_active = TRUE
+							  AND u.role = 'admin'
+							  AND latest_enrollment.school_id = s.id
+						) admins
+					), 0) AS admin_count,
+					0 AS proktor_count,
+					COALESCE((
+						SELECT COUNT(*)
+						FROM (
+							SELECT DISTINCT u.id
+							FROM users u
+							JOIN (
+								SELECT DISTINCT ON (e.user_id)
+									e.user_id,
+									e.school_id
+								FROM enrollments e
+								WHERE e.status = 'active'
+								ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+							) latest_enrollment ON latest_enrollment.user_id = u.id
+							WHERE u.is_active = TRUE
+							  AND u.role = 'guru'
+							  AND latest_enrollment.school_id = s.id
+						) gurus
+					), 0) AS guru_count,
+					COALESCE((
+						SELECT COUNT(*)
+						FROM (
+							SELECT DISTINCT u.id
+							FROM users u
+							JOIN (
+								SELECT DISTINCT ON (e.user_id)
+									e.user_id,
+									e.school_id
+								FROM enrollments e
+								WHERE e.status = 'active'
+								ORDER BY e.user_id, e.enrolled_at DESC, e.id DESC
+							) latest_enrollment ON latest_enrollment.user_id = u.id
+							WHERE u.is_active = TRUE
+							  AND u.role = 'siswa'
+							  AND latest_enrollment.school_id = s.id
+						) students
+					), 0) AS siswa_count
+				FROM schools s
+				WHERE s.id = $1
+			`
+			err = s.db.QueryRowContext(ctx, query, schoolID).Scan(
+				&out.SchoolID,
+				&out.SchoolName,
+				&out.AdminCount,
+				&out.ProktorCount,
+				&out.GuruCount,
+				&out.SiswaCount,
+			)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return nil, sql.ErrNoRows
+				}
+				return nil, fmt.Errorf("get school user stats fallback: %w", err)
+			}
+			return &out, nil
+		}
+		return nil, fmt.Errorf("get school user stats: %w", err)
+	}
+	return &out, nil
 }
 
 func (s *Service) ListClasses(ctx context.Context, schoolID int64, activeOnly bool) ([]ClassListItem, error) {

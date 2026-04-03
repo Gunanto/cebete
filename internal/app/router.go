@@ -280,6 +280,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Put("/admin/exams/{id}/question-incidents", examHandler.UpsertExamQuestionIncident)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/classes", masterHandler.ListClasses)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/schools", masterHandler.ListSchools)
+			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/schools/{id}/user-stats", masterHandler.GetSchoolUserStats)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/users", authHandler.ListUsers)
 
 			secure.Group(func(admin chi.Router) {
