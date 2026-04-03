@@ -590,6 +590,9 @@
     const resultsClassFilter = document.getElementById(
       "guru-results-class-filter",
     );
+    const resultsSchoolFilter = document.getElementById(
+      "guru-results-school-filter",
+    );
     const resultsAssignmentBody = document.getElementById(
       "guru-results-assignment-body",
     );
@@ -2156,6 +2159,7 @@
         resultsExamSelect: resultsExamSelect,
         resultsAttemptFilter: resultsAttemptFilter,
         resultsClassFilter: resultsClassFilter,
+        resultsSchoolFilter: resultsSchoolFilter,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
         resultsSummary: resultsSummary,

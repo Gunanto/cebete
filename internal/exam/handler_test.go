@@ -39,7 +39,7 @@ type mockExamService struct {
 	listExamLearningGoalResultsFn   func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	getAttemptLearningGoalResultFn  func(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
 	getAttemptStudentSchoolInfoFn   func(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
-	exportExamParticipantResultsFn  func(ctx context.Context, examID int64) ([]byte, string, error)
+	exportExamParticipantResultsFn  func(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error)
 	replaceExamAssignmentsFn        func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	replaceExamAssignmentsByClassFn func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	appendExamAssignmentsByClassFn  func(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -250,11 +250,11 @@ func (m *mockExamService) GetAttemptStudentSchoolInfo(ctx context.Context, attem
 	return m.getAttemptStudentSchoolInfoFn(ctx, attemptID)
 }
 
-func (m *mockExamService) ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error) {
+func (m *mockExamService) ExportExamParticipantResultsExcel(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error) {
 	if m.exportExamParticipantResultsFn == nil {
 		return nil, "", errors.New("not implemented")
 	}
-	return m.exportExamParticipantResultsFn(ctx, examID)
+	return m.exportExamParticipantResultsFn(ctx, examID, schoolFilter)
 }
 
 func (m *mockExamService) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error) {

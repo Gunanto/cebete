@@ -21,6 +21,17 @@
 
   function setDeps(opts) {
     deps = opts || {};
+    updateResultsExportState();
+  }
+
+  function updateResultsExportState() {
+    if (!deps || !deps.resultsExportBtn) return;
+    const hasExam = Number((deps.resultsExamSelect && deps.resultsExamSelect.value) || 0) > 0;
+    const hasSchool = Boolean(getActiveSchoolFilter());
+    deps.resultsExportBtn.disabled = !(hasExam && hasSchool);
+    deps.resultsExportBtn.title = hasSchool
+      ? "Unduh Excel hasil ujian sesuai sekolah yang dipilih"
+      : "Pilih sekolah terlebih dahulu untuk mengunduh Excel";
   }
 
   function showDialog(dialog) {
@@ -985,14 +996,24 @@
     return String(deps.resultsClassFilter.value || "").trim();
   }
 
+  function getActiveSchoolFilter() {
+    if (!deps || !deps.resultsSchoolFilter) return "";
+    return String(deps.resultsSchoolFilter.value || "").trim();
+  }
+
   function hasActiveResultsFilters() {
-    return Boolean(getActiveAttemptFilter() || getActiveClassFilter());
+    return Boolean(
+      getActiveAttemptFilter() ||
+        getActiveClassFilter() ||
+        getActiveSchoolFilter(),
+    );
   }
 
   function filterResultsRows(rows) {
     const attemptFilter = getActiveAttemptFilter();
     const classFilter = getActiveClassFilter();
-    if (!attemptFilter && !classFilter) return rows;
+    const schoolFilter = getActiveSchoolFilter();
+    if (!attemptFilter && !classFilter && !schoolFilter) return rows;
     return (Array.isArray(rows) ? rows : []).filter(function (row) {
       if (attemptFilter) {
         const attempt = Number((row && row.attempt_ke) || 0);
@@ -1001,6 +1022,10 @@
       if (classFilter) {
         const name = String((row && row.class_name) || "").trim();
         if (name !== classFilter) return false;
+      }
+      if (schoolFilter) {
+        const name = String((row && row.school_name) || "").trim();
+        if (name !== schoolFilter) return false;
       }
       return true;
     });
@@ -1077,8 +1102,10 @@
     const parts = [];
     const attemptFilter = getActiveAttemptFilter();
     const classFilter = getActiveClassFilter();
+    const schoolFilter = getActiveSchoolFilter();
     if (attemptFilter) parts.push("Attempt " + attemptFilter);
     if (classFilter) parts.push("Kelas " + classFilter);
+    if (schoolFilter) parts.push("Sekolah " + schoolFilter);
     if (!parts.length) return "";
     return "Filter: " + parts.join(", ");
   }
@@ -1144,8 +1171,39 @@
     }
   }
 
+  function updateSchoolFilterOptions(rows) {
+    if (!deps || !deps.resultsSchoolFilter) return;
+    const current = String(deps.resultsSchoolFilter.value || "");
+    const list = (Array.isArray(rows) ? rows : [])
+      .map(function (row) {
+        return String((row && row.school_name) || "").trim();
+      })
+      .filter(function (name) {
+        return name;
+      })
+      .filter(function (name, idx, arr) {
+        return arr.indexOf(name) === idx;
+      })
+      .sort(function (a, b) {
+        return a.localeCompare(b);
+      });
+    deps.resultsSchoolFilter.innerHTML =
+      '<option value="">Semua sekolah</option>';
+    list.forEach(function (name) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (current && current === opt.value) opt.selected = true;
+      deps.resultsSchoolFilter.appendChild(opt);
+    });
+    if (current && !deps.resultsSchoolFilter.value) {
+      deps.resultsSchoolFilter.value = "";
+    }
+  }
+
   async function refreshResultsFilters(examID, rows) {
     updateAttemptFilterOptions(rows);
+    updateSchoolFilterOptions(rows);
     if (!deps || !deps.resultsClassFilter) return;
     const classNames = await ensureExamClassNames(examID, rows);
     updateClassFilterOptions(classNames);
@@ -1153,6 +1211,7 @@
 
   function applyResultsFilters() {
     const matrix = latestResultsMatrix;
+    updateResultsExportState();
     if (!matrix) return;
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const questionNos = Array.isArray(matrix && matrix.question_nos)
@@ -1469,6 +1528,8 @@
       }
       updateAttemptFilterOptions([]);
       updateClassFilterOptions([]);
+      updateSchoolFilterOptions([]);
+      updateResultsExportState();
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="9" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
@@ -1516,6 +1577,7 @@
       deps.resultsMatrixHead.innerHTML = fixed.concat(dyn).join("");
     }
     await refreshResultsFilters(examID, rows);
+    updateResultsExportState();
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
@@ -2780,6 +2842,7 @@
 
     if (deps.resultsExamSelect) {
       deps.resultsExamSelect.addEventListener("change", async function () {
+        updateResultsExportState();
         const examID = Number(deps.resultsExamSelect.value || 0);
         if (examID <= 0) {
           await loadExamAssignments(0);
@@ -2811,12 +2874,19 @@
         applyResultsFilters();
       });
     }
+    if (deps.resultsSchoolFilter) {
+      deps.resultsSchoolFilter.addEventListener("change", function () {
+        updateResultsExportState();
+        applyResultsFilters();
+      });
+    }
 
     if (deps.resultsExportBtn) {
       deps.resultsExportBtn.addEventListener("click", async function () {
         const examID = Number(
           (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
         );
+        const schoolFilter = getActiveSchoolFilter();
         if (examID <= 0) {
           deps.setMsg("Pilih ujian terlebih dahulu.");
           return;
@@ -2827,8 +2897,13 @@
           "Menyiapkan file Excel...",
         );
         try {
+          const params = new URLSearchParams();
+          if (schoolFilter) params.set("school", schoolFilter);
           const res = await fetch(
-            "/api/v1/admin/exams/" + examID + "/results/export",
+            "/api/v1/admin/exams/" +
+              examID +
+              "/results/export" +
+              (params.toString() ? "?" + params.toString() : ""),
             { method: "GET", credentials: "include" },
           );
           if (!res.ok) {

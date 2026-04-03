@@ -47,7 +47,7 @@ type examService interface {
 	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	GetAttemptLearningGoalResult(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
 	GetAttemptStudentSchoolInfo(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
-	ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error)
+	ExportExamParticipantResultsExcel(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -1179,7 +1179,11 @@ func (h *Handler) ExportExamParticipantResultsExcel(w http.ResponseWriter, r *ht
 		}
 		return
 	}
-	content, filename, err := h.svc.ExportExamParticipantResultsExcel(r.Context(), examID)
+	var schoolFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("school")); raw != "" {
+		schoolFilter = &raw
+	}
+	content, filename, err := h.svc.ExportExamParticipantResultsExcel(r.Context(), examID, schoolFilter)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):

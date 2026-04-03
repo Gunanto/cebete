@@ -59,6 +59,35 @@ func TestBuildExamParticipantResultsExcelWritesAnswerKeyRow(t *testing.T) {
 	}
 }
 
+func TestFilterExamParticipantResultBySchool(t *testing.T) {
+	target := "SMA 1"
+	other := "SMA 2"
+	matrix := &ExamParticipantResult{
+		ExamID:      12,
+		QuestionNos: []int{1, 2},
+		AnswerKeys:  []string{"A", "B"},
+		Rows: []ExamParticipantResultRow{
+			{FullName: "Peserta A", SchoolName: &target, AttemptID: 1},
+			{FullName: "Peserta B", SchoolName: &other, AttemptID: 2},
+			{FullName: "Peserta C", AttemptID: 3},
+		},
+	}
+
+	out := filterExamParticipantResultBySchool(matrix, &target)
+	if out == nil {
+		t.Fatalf("filter output is nil")
+	}
+	if got := len(out.Rows); got != 1 {
+		t.Fatalf("len(rows) = %d, want 1", got)
+	}
+	if got := out.Rows[0].FullName; got != "Peserta A" {
+		t.Fatalf("row[0].FullName = %q, want Peserta A", got)
+	}
+	if got := len(matrix.Rows); got != 3 {
+		t.Fatalf("source matrix mutated, len(rows) = %d, want 3", got)
+	}
+}
+
 func ptrStringValue(v string) *string {
 	return &v
 }

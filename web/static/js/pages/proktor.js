@@ -203,6 +203,9 @@
     const resultsExamSelect = document.getElementById(
       "proktor-results-exam-select",
     );
+    const resultsSchoolFilter = document.getElementById(
+      "proktor-results-school-filter",
+    );
     const resultsAssignmentBody = document.getElementById(
       "proktor-results-assignment-body",
     );
@@ -729,6 +732,7 @@
         resultsRefreshBtn: resultsRefreshBtn,
         resultsAssignmentForm: resultsAssignmentForm,
         resultsExamSelect: resultsExamSelect,
+        resultsSchoolFilter: resultsSchoolFilter,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
         resultsAttemptForm: resultsAttemptForm,

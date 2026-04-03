@@ -11,11 +11,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func (s *Service) ExportExamParticipantResultsExcel(ctx context.Context, examID int64) ([]byte, string, error) {
+func (s *Service) ExportExamParticipantResultsExcel(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error) {
 	matrix, err := s.ListExamParticipantResults(ctx, examID)
 	if err != nil {
 		return nil, "", err
 	}
+	matrix = filterExamParticipantResultBySchool(matrix, schoolFilter)
 	title, err := s.loadExamTitle(ctx, s.db, examID)
 	if err != nil {
 		return nil, "", err
@@ -24,8 +25,33 @@ func (s *Service) ExportExamParticipantResultsExcel(ctx context.Context, examID 
 	if err != nil {
 		return nil, "", err
 	}
-	filename := "hasil_ujian_" + sanitizeExcelFilename(title) + "_" + time.Now().Format("20060102_150405") + ".xlsx"
+	filenameParts := []string{"hasil_ujian", sanitizeExcelFilename(title)}
+	if schoolFilter != nil {
+		if schoolName := sanitizeExcelFilename(strings.TrimSpace(*schoolFilter)); schoolName != "" {
+			filenameParts = append(filenameParts, schoolName)
+		}
+	}
+	filename := strings.Join(filenameParts, "_") + "_" + time.Now().Format("20060102_150405") + ".xlsx"
 	return buf, filename, nil
+}
+
+func filterExamParticipantResultBySchool(matrix *ExamParticipantResult, schoolFilter *string) *ExamParticipantResult {
+	if matrix == nil || schoolFilter == nil {
+		return matrix
+	}
+	target := strings.TrimSpace(*schoolFilter)
+	if target == "" {
+		return matrix
+	}
+	out := *matrix
+	out.Rows = make([]ExamParticipantResultRow, 0, len(matrix.Rows))
+	for _, row := range matrix.Rows {
+		if strings.TrimSpace(derefString(row.SchoolName)) != target {
+			continue
+		}
+		out.Rows = append(out.Rows, row)
+	}
+	return &out
 }
 
 func buildExamParticipantResultsExcel(matrix *ExamParticipantResult) ([]byte, error) {
