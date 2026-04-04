@@ -567,14 +567,13 @@
 
         const rows = statements.map(function (s, idx) {
           const id = String((s && s.id) || "S" + (idx + 1));
-          const label =
-            (s && (s.text || s.statement || s.label || s.statement_html)) || id;
+          const labelHTML = renderTFStatementLabel(s, id);
           const yesChecked = existing[id] === true ? "checked" : "";
           const noChecked = existing[id] === false ? "checked" : "";
           return (
             "<tr>" +
             '<td class="bs-statement">' +
-            escapeHtml(String(label)) +
+            labelHTML +
             "</td>" +
             '<td class="bs-choice">' +
             '<input type="radio" name="bs_' +
@@ -739,16 +738,54 @@
 
     function readTFStatements(q) {
       const key = parseJSONLoose(q && q.answer_key, {});
-      if (Array.isArray(key.statements) && key.statements.length) {
-        return key.statements;
-      }
       const options = Array.isArray(q && q.options) ? q.options : [];
+      const optionMap = {};
+      options.forEach(function (opt, idx) {
+        const id = String((opt && opt.option_key) || "S" + (idx + 1)).trim();
+        if (!id) return;
+        optionMap[id] = {
+          id: id,
+          statement_html: String((opt && opt.option_html) || ""),
+        };
+      });
+      if (Array.isArray(key.statements) && key.statements.length) {
+        return key.statements.map(function (statement, idx) {
+          const id = String(
+            (statement && statement.id) || "S" + (idx + 1),
+          ).trim();
+          const option = optionMap[id] || null;
+          return Object.assign({}, option || {}, statement || {}, {
+            id: id || "S" + (idx + 1),
+            statement_html: String(
+              (statement && statement.statement_html) ||
+                (statement && statement.html) ||
+                (option && option.statement_html) ||
+                "",
+            ),
+          });
+        });
+      }
       return options.map(function (opt, idx) {
         return {
           id: String((opt && opt.option_key) || "S" + (idx + 1)),
           statement_html: String((opt && opt.option_html) || ""),
         };
       });
+    }
+
+    function renderTFStatementLabel(statement, fallbackID) {
+      const statementHTML = String(
+        (statement && statement.statement_html) ||
+          (statement && statement.html) ||
+          "",
+      ).trim();
+      if (statementHTML) return statementHTML;
+      const textValue = String(
+        (statement && (statement.text || statement.statement || statement.label)) ||
+          fallbackID ||
+          "",
+      ).trim();
+      return escapeHtml(textValue);
     }
 
     function readChoiceComparisonContent(q) {
