@@ -81,10 +81,13 @@
   function renderTFStatementLabel(statement, fallbackID) {
     const statementHTML = String(
       (statement && statement.statement_html) ||
+        (statement && statement.statement) ||
+        (statement && statement.text) ||
+        (statement && statement.label) ||
         (statement && statement.html) ||
         "",
     ).trim();
-    if (statementHTML) return statementHTML;
+    if (statementHTML && /<[^>]+>/.test(statementHTML)) return statementHTML;
     const textValue = String(
       (statement && (statement.text || statement.statement || statement.label)) ||
         fallbackID ||
