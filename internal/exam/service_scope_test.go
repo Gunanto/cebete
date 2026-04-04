@@ -182,13 +182,25 @@ func TestListExamParticipantResultsProktorFiltersStudentsOutsideScope(t *testing
 	mock.ExpectQuery(`FROM exam_questions eq[\s\S]*WHERE eq\.exam_id = \$1`).
 		WithArgs(int64(91)).
 		WillReturnRows(sqlmock.NewRows([]string{"seq_no", "question_id", "question_type", "answer_key", "weight"}))
-	mock.ExpectQuery(`FROM attempts a[\s\S]*WHERE a\.exam_id = \$1[\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2`).
+	mock.ExpectQuery(`SELECT COALESCE\(MAX\(attempt_ke\), 0\) FROM attempt_base`).
 		WithArgs(int64(91), int64(17)).
+		WillReturnRows(sqlmock.NewRows([]string{"max_attempt"}).AddRow(0))
+	mock.ExpectQuery(`SELECT DISTINCT class_name[\s\S]*FROM attempt_base`).
+		WithArgs(int64(91), int64(17)).
+		WillReturnRows(sqlmock.NewRows([]string{"class_name"}))
+	mock.ExpectQuery(`SELECT DISTINCT school_name[\s\S]*FROM attempt_base`).
+		WithArgs(int64(91), int64(17)).
+		WillReturnRows(sqlmock.NewRows([]string{"school_name"}))
+	mock.ExpectQuery(`SELECT COUNT\(1\)[\s\S]*FROM attempt_base[\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2`).
+		WithArgs(int64(91), int64(17)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`WITH attempt_base AS \([\s\S]*FROM attempts a[\s\S]*WHERE a\.exam_id = \$1[\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2`).
+		WithArgs(int64(91), int64(17), 25, 0).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "user_id", "username", "full_name", "class_name", "score", "started_at", "ended_at", "submitted_at",
+			"id", "student_id", "username", "full_name", "school_name", "class_name", "score", "started_at", "ended_at", "submitted_at", "attempt_ke",
 		}))
 
-	out, err := svc.ListExamParticipantResults(ctx, 91)
+	out, err := svc.ListExamParticipantResults(ctx, 91, 25, 0, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ListExamParticipantResults: %v", err)
 	}

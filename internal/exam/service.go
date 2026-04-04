@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"cbtlms/internal/auth"
+
+	"github.com/lib/pq"
 )
 
 var (
@@ -439,11 +441,21 @@ type ExamAssignmentUser struct {
 }
 
 type ExamParticipantResult struct {
-	ExamID      int64                      `json:"exam_id"`
-	QuestionNos []int                      `json:"question_nos"`
-	AnswerKeys  []string                   `json:"answer_keys,omitempty"`
-	TotalWeight float64                    `json:"total_weight"`
-	Rows        []ExamParticipantResultRow `json:"rows"`
+	ExamID      int64                         `json:"exam_id"`
+	QuestionNos []int                         `json:"question_nos"`
+	AnswerKeys  []string                      `json:"answer_keys,omitempty"`
+	TotalWeight float64                       `json:"total_weight"`
+	Limit       int                           `json:"limit"`
+	Offset      int                           `json:"offset"`
+	TotalRows   int                           `json:"total_rows"`
+	Filters     *ExamParticipantResultFilters `json:"filters,omitempty"`
+	Rows        []ExamParticipantResultRow    `json:"rows"`
+}
+
+type ExamParticipantResultFilters struct {
+	Attempts []int    `json:"attempts,omitempty"`
+	Classes  []string `json:"classes,omitempty"`
+	Schools  []string `json:"schools,omitempty"`
 }
 
 type LearningGoalAchievementResult struct {
@@ -2373,7 +2385,7 @@ func (s *Service) ClearUserPhotoDataURL(ctx context.Context, userID int64) error
 	return nil
 }
 
-func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error) {
+func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
 	}
@@ -2394,6 +2406,29 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 
 	if err := s.ensureExamQuestionSeqNoContiguous(ctx, examID); err != nil {
 		return nil, fmt.Errorf("ensure exam question seq no: %w", err)
+	}
+	if limit < 0 {
+		return nil, ErrInvalidInput
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if attemptFilter != nil && *attemptFilter <= 0 {
+		attemptFilter = nil
+	}
+	var classFilterValue *string
+	if classFilter != nil {
+		v := strings.TrimSpace(*classFilter)
+		if v != "" {
+			classFilterValue = &v
+		}
+	}
+	var schoolFilterValue *string
+	if schoolFilter != nil {
+		v := strings.TrimSpace(*schoolFilter)
+		if v != "" {
+			schoolFilterValue = &v
+		}
 	}
 
 	type examQuestionColumn struct {
@@ -2494,45 +2529,106 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		StartedAt   time.Time
 		EndedAt     time.Time
 		SubmittedAt *time.Time
+		AttemptKe   int
 	}
 	attemptRows := make([]attemptRowLite, 0)
 	user, isProktor := currentScopedProktor(ctx)
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT
-			a.id,
-			u.id,
-			u.username,
-			u.full_name,
-			enr.school_name,
-			enr.class_name,
-			COALESCE(a.score, 0),
-			a.started_at,
-			COALESCE(a.submitted_at, a.expires_at) AS ended_at,
-			a.submitted_at
-		FROM attempts a
-		JOIN users u ON u.id = a.student_id
-		LEFT JOIN LATERAL (
+	scopeUserID := int64(0)
+	if isProktor {
+		scopeUserID = user.ID
+	}
+	filters, err := s.loadExamParticipantResultFilters(ctx, examID, scopeUserID)
+	if err != nil {
+		return nil, err
+	}
+	var totalRows int
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		WITH attempt_base AS (
 			SELECT
-				s.name AS school_name,
-				c.name AS class_name
-			FROM enrollments e
-			JOIN classes c ON c.id = e.class_id
-			JOIN schools s ON s.id = e.school_id
-			WHERE e.user_id = u.id
-			  AND e.status = 'active'
-			ORDER BY e.enrolled_at DESC, e.id DESC
-			LIMIT 1
-		) enr ON TRUE
-		WHERE a.exam_id = $1
-		  AND u.role = 'siswa'
-		  AND ($2 = 0 OR %s)
-		ORDER BY a.started_at ASC, a.id ASC
-	`, proktorStudentScopeClause("u.id", "$2")), examID, func() int64 {
-		if isProktor {
-			return user.ID
-		}
-		return 0
-	}())
+				a.id,
+				u.id AS student_id,
+				enr.school_name,
+				enr.class_name,
+				ROW_NUMBER() OVER (PARTITION BY a.student_id ORDER BY a.started_at ASC, a.id ASC) AS attempt_ke
+			FROM attempts a
+			JOIN users u ON u.id = a.student_id
+			LEFT JOIN LATERAL (
+				SELECT
+					s.name AS school_name,
+					c.name AS class_name
+				FROM enrollments e
+				JOIN classes c ON c.id = e.class_id
+				JOIN schools s ON s.id = e.school_id
+				WHERE e.user_id = u.id
+				  AND e.status = 'active'
+				ORDER BY e.enrolled_at DESC, e.id DESC
+				LIMIT 1
+			) enr ON TRUE
+			WHERE a.exam_id = $1
+			  AND u.role = 'siswa'
+			  AND ($2 = 0 OR %s)
+		)
+		SELECT COUNT(1)
+		FROM attempt_base
+		%s
+	`, proktorStudentScopeClause("u.id", "$2"), buildResultFilterClause(attemptFilter, classFilterValue, schoolFilterValue, 3)), buildResultFilterArgs(examID, scopeUserID, attemptFilter, classFilterValue, schoolFilterValue)...).Scan(&totalRows); err != nil {
+		return nil, fmt.Errorf("count exam participant results: %w", err)
+	}
+	queryLimit := ""
+	args := buildResultFilterArgs(examID, scopeUserID, attemptFilter, classFilterValue, schoolFilterValue)
+	if limit > 0 {
+		queryLimit = fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+		args = append(args, limit, offset)
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		WITH attempt_base AS (
+			SELECT
+				a.id,
+				u.id AS student_id,
+				u.username,
+				u.full_name,
+				enr.school_name,
+				enr.class_name,
+				COALESCE(a.score, 0) AS score,
+				a.started_at,
+				COALESCE(a.submitted_at, a.expires_at) AS ended_at,
+				a.submitted_at,
+				ROW_NUMBER() OVER (PARTITION BY a.student_id ORDER BY a.started_at ASC, a.id ASC) AS attempt_ke
+			FROM attempts a
+			JOIN users u ON u.id = a.student_id
+			LEFT JOIN LATERAL (
+				SELECT
+					s.name AS school_name,
+					c.name AS class_name
+				FROM enrollments e
+				JOIN classes c ON c.id = e.class_id
+				JOIN schools s ON s.id = e.school_id
+				WHERE e.user_id = u.id
+				  AND e.status = 'active'
+				ORDER BY e.enrolled_at DESC, e.id DESC
+				LIMIT 1
+			) enr ON TRUE
+			WHERE a.exam_id = $1
+			  AND u.role = 'siswa'
+			  AND ($2 = 0 OR %s)
+		)
+		SELECT
+			id,
+			student_id,
+			username,
+			full_name,
+			school_name,
+			class_name,
+			score,
+			started_at,
+			ended_at,
+			submitted_at,
+			attempt_ke
+		FROM attempt_base
+		%s
+		ORDER BY started_at ASC, id ASC
+		%s
+	`, proktorStudentScopeClause("u.id", "$2"), buildResultFilterClause(attemptFilter, classFilterValue, schoolFilterValue, 3), queryLimit), args...)
 	if err != nil {
 		return nil, fmt.Errorf("list exam participant results: %w", err)
 	}
@@ -2554,6 +2650,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 			&it.StartedAt,
 			&it.EndedAt,
 			&submittedAt,
+			&it.AttemptKe,
 		); err != nil {
 			return nil, fmt.Errorf("scan exam participant result: %w", err)
 		}
@@ -2580,9 +2677,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		answerRows, err := s.db.QueryContext(ctx, `
 			SELECT aa.attempt_id, aa.question_id, aa.answer_payload
 			FROM attempt_answers aa
-			JOIN attempts a ON a.id = aa.attempt_id
-			WHERE a.exam_id = $1
-		`, examID)
+			WHERE aa.attempt_id = ANY($1)
+		`, pq.Array(attemptIDs))
 		if err != nil {
 			return nil, fmt.Errorf("list attempt answers for results matrix: %w", err)
 		}
@@ -2609,9 +2705,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		scoreRows, err := s.db.QueryContext(ctx, `
 			SELECT s.attempt_id, s.question_id, s.is_correct, COALESCE(s.feedback->>'reason', '')
 			FROM attempt_scores s
-			JOIN attempts a ON a.id = s.attempt_id
-			WHERE a.exam_id = $1
-		`, examID)
+			WHERE s.attempt_id = ANY($1)
+		`, pq.Array(attemptIDs))
 		if err != nil {
 			return nil, fmt.Errorf("list attempt score states for results matrix: %w", err)
 		}
@@ -2646,10 +2741,8 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		_ = scoreRows.Close()
 	}
 
-	attemptCountByStudent := map[int64]int{}
 	resultRows := make([]ExamParticipantResultRow, 0, len(attemptRows))
 	for _, a := range attemptRows {
-		attemptCountByStudent[a.StudentID]++
 		r := ExamParticipantResultRow{
 			UserID:       a.StudentID,
 			Username:     a.Username,
@@ -2657,7 +2750,7 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 			SchoolName:   a.SchoolName,
 			ClassName:    a.ClassName,
 			AttemptID:    a.AttemptID,
-			AttemptKe:    attemptCountByStudent[a.StudentID],
+			AttemptKe:    a.AttemptKe,
 			SkorTotal:    a.Score,
 			StartedAt:    a.StartedAt,
 			EndedAt:      a.EndedAt,
@@ -2692,6 +2785,10 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64) 
 		QuestionNos: questionNos,
 		AnswerKeys:  answerKeys,
 		TotalWeight: totalWeight,
+		Limit:       limit,
+		Offset:      offset,
+		TotalRows:   totalRows,
+		Filters:     filters,
 		Rows:        resultRows,
 	}, nil
 }
@@ -2912,9 +3009,8 @@ func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64,
 		rows, err = s.db.QueryContext(ctx, `
 			SELECT s.attempt_id, s.question_id, s.earned_score
 			FROM attempt_scores s
-			JOIN attempts a ON a.id = s.attempt_id
-			WHERE a.exam_id = $1
-		`, examID)
+			WHERE s.attempt_id = ANY($1)
+		`, pq.Array(selectedAttemptIDs))
 		if err != nil {
 			return nil, fmt.Errorf("list attempt scores for learning goal results: %w", err)
 		}
@@ -3232,6 +3328,140 @@ func (s *Service) ensureExamQuestionSeqNoContiguous(ctx context.Context, examID 
 		return fmt.Errorf("commit renumber exam questions: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) loadExamParticipantResultFilters(ctx context.Context, examID int64, scopeUserID int64) (*ExamParticipantResultFilters, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	attemptBaseSQL := fmt.Sprintf(`
+		WITH attempt_base AS (
+			SELECT
+				a.id,
+				u.id AS student_id,
+				enr.school_name,
+				enr.class_name,
+				ROW_NUMBER() OVER (PARTITION BY a.student_id ORDER BY a.started_at ASC, a.id ASC) AS attempt_ke
+			FROM attempts a
+			JOIN users u ON u.id = a.student_id
+			LEFT JOIN LATERAL (
+				SELECT
+					s.name AS school_name,
+					c.name AS class_name
+				FROM enrollments e
+				JOIN classes c ON c.id = e.class_id
+				JOIN schools s ON s.id = e.school_id
+				WHERE e.user_id = u.id
+				  AND e.status = 'active'
+				ORDER BY e.enrolled_at DESC, e.id DESC
+				LIMIT 1
+			) enr ON TRUE
+			WHERE a.exam_id = $1
+			  AND u.role = 'siswa'
+			  AND ($2 = 0 OR %s)
+		)
+	`, proktorStudentScopeClause("u.id", "$2"))
+
+	var maxAttempt int
+	if err := s.db.QueryRowContext(ctx, attemptBaseSQL+`SELECT COALESCE(MAX(attempt_ke), 0) FROM attempt_base`, examID, scopeUserID).Scan(&maxAttempt); err != nil {
+		return nil, fmt.Errorf("load result filter attempts: %w", err)
+	}
+
+	classRows, err := s.db.QueryContext(ctx, attemptBaseSQL+`
+		SELECT DISTINCT class_name
+		FROM attempt_base
+		WHERE class_name IS NOT NULL
+		  AND btrim(class_name) <> ''
+		ORDER BY class_name ASC
+	`, examID, scopeUserID)
+	if err != nil {
+		return nil, fmt.Errorf("load result filter classes: %w", err)
+	}
+	classes := make([]string, 0)
+	for classRows.Next() {
+		var name string
+		if err := classRows.Scan(&name); err != nil {
+			_ = classRows.Close()
+			return nil, fmt.Errorf("scan result filter class: %w", err)
+		}
+		classes = append(classes, name)
+	}
+	if err := classRows.Err(); err != nil {
+		_ = classRows.Close()
+		return nil, fmt.Errorf("iterate result filter classes: %w", err)
+	}
+	_ = classRows.Close()
+
+	schoolRows, err := s.db.QueryContext(ctx, attemptBaseSQL+`
+		SELECT DISTINCT school_name
+		FROM attempt_base
+		WHERE school_name IS NOT NULL
+		  AND btrim(school_name) <> ''
+		ORDER BY school_name ASC
+	`, examID, scopeUserID)
+	if err != nil {
+		return nil, fmt.Errorf("load result filter schools: %w", err)
+	}
+	schools := make([]string, 0)
+	for schoolRows.Next() {
+		var name string
+		if err := schoolRows.Scan(&name); err != nil {
+			_ = schoolRows.Close()
+			return nil, fmt.Errorf("scan result filter school: %w", err)
+		}
+		schools = append(schools, name)
+	}
+	if err := schoolRows.Err(); err != nil {
+		_ = schoolRows.Close()
+		return nil, fmt.Errorf("iterate result filter schools: %w", err)
+	}
+	_ = schoolRows.Close()
+
+	attempts := make([]int, 0)
+	for i := 1; i <= maxAttempt; i++ {
+		attempts = append(attempts, i)
+	}
+	return &ExamParticipantResultFilters{
+		Attempts: attempts,
+		Classes:  classes,
+		Schools:  schools,
+	}, nil
+}
+
+func buildResultFilterClause(attemptFilter *int, classFilter, schoolFilter *string, startIndex int) string {
+	parts := make([]string, 0, 3)
+	idx := startIndex
+	if attemptFilter != nil {
+		parts = append(parts, fmt.Sprintf("attempt_ke = $%d", idx))
+		idx++
+	}
+	if classFilter != nil {
+		parts = append(parts, fmt.Sprintf("class_name = $%d", idx))
+		idx++
+	}
+	if schoolFilter != nil {
+		parts = append(parts, fmt.Sprintf("school_name = $%d", idx))
+		idx++
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "WHERE " + strings.Join(parts, " AND ")
+}
+
+func buildResultFilterArgs(examID int64, scopeUserID int64, attemptFilter *int, classFilter, schoolFilter *string) []any {
+	args := []any{examID, scopeUserID}
+	if attemptFilter != nil {
+		args = append(args, *attemptFilter)
+	}
+	if classFilter != nil {
+		args = append(args, *classFilter)
+	}
+	if schoolFilter != nil {
+		args = append(args, *schoolFilter)
+	}
+	return args
 }
 
 func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error) {

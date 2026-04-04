@@ -212,6 +212,14 @@
     const resultsMatrixHead = document.getElementById(
       "proktor-results-matrix-head",
     );
+    const resultsPageInfo = document.getElementById(
+      "proktor-results-page-info",
+    );
+    const resultsPrevBtn = document.getElementById("proktor-results-prev-btn");
+    const resultsNextBtn = document.getElementById("proktor-results-next-btn");
+    const resultsPageSizeSelect = document.getElementById(
+      "proktor-results-page-size",
+    );
     const resultsAttemptForm = document.getElementById(
       "proktor-results-attempt-form",
     );
@@ -776,6 +784,10 @@
         resultsExamSelect: resultsExamSelect,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
+        resultsPageInfo: resultsPageInfo,
+        resultsPrevBtn: resultsPrevBtn,
+        resultsNextBtn: resultsNextBtn,
+        resultsPageSizeSelect: resultsPageSizeSelect,
         resultsSummary: resultsSummary,
         resultsExtra: resultsExtra,
         resultsReportBtn: resultsReportBtn,

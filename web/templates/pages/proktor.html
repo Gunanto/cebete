@@ -877,6 +877,36 @@
                             </tbody>
                         </table>
                     </div>
+                    <div class="mt form-grid">
+                        <label>
+                            Jumlah baris
+                            <select id="proktor-results-page-size">
+                                <option value="10">10</option>
+                                <option value="25" selected>25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                        <div class="muted" id="proktor-results-page-info">
+                            Baris 0 - 0
+                        </div>
+                        <div class="action-icons">
+                            <button
+                                id="proktor-results-prev-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Sebelumnya
+                            </button>
+                            <button
+                                id="proktor-results-next-btn"
+                                class="btn btn-secondary btn-inline"
+                                type="button"
+                            >
+                                Berikutnya
+                            </button>
+                        </div>
+                    </div>
                     <div class="mt">
                         <button
                             id="proktor-results-export-btn"

@@ -2656,7 +2656,9 @@
       if (typeof deps.loadBlueprints === "function") {
         await deps.loadBlueprints(selectedSubjectID);
       }
-      if (typeof deps.reloadManuscriptsByCurrentTableScope === "function") {
+      if (typeof deps.reloadManuscriptsByQuestionID === "function") {
+        await deps.reloadManuscriptsByQuestionID(questionID);
+      } else if (typeof deps.reloadManuscriptsByCurrentTableScope === "function") {
         await deps.reloadManuscriptsByCurrentTableScope(questionID);
       } else {
         const versions = await deps.api(

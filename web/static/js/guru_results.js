@@ -2,6 +2,10 @@
   var deps = null;
   var resultsAssignmentsCount = 0;
   var latestResultsMatrix = null;
+  var latestResultsMatrixFull = null;
+  var resultsLimit = 25;
+  var resultsOffset = 0;
+  var resultsTotalRows = 0;
   var examsCache = [];
   var examQuestionsCache = {};
   var latestItemAnalysis = null;
@@ -32,6 +36,98 @@
     deps.resultsExportBtn.title = hasSchool
       ? "Unduh Excel hasil ujian sesuai sekolah yang dipilih"
       : "Pilih sekolah terlebih dahulu untuk mengunduh Excel";
+  }
+
+  function normalizeResultsLimit(value) {
+    var limit = Number(value || 0);
+    if (!isFinite(limit) || limit <= 0) return 25;
+    return Math.max(1, Math.min(200, Math.floor(limit)));
+  }
+
+  function syncResultsLimitFromUI() {
+    if (deps && deps.resultsPageSizeSelect) {
+      resultsLimit = normalizeResultsLimit(deps.resultsPageSizeSelect.value);
+      deps.resultsPageSizeSelect.value = String(resultsLimit);
+      return;
+    }
+    resultsLimit = normalizeResultsLimit(resultsLimit || 25);
+  }
+
+  function resetResultsPagination() {
+    resultsOffset = 0;
+    resultsTotalRows = 0;
+  }
+
+  function updateResultsPaginationUI() {
+    if (!deps) return;
+    var total = Math.max(0, Number(resultsTotalRows || 0));
+    var limit = normalizeResultsLimit(resultsLimit);
+    var offset = Math.max(0, Number(resultsOffset || 0));
+    var from = 0;
+    var to = 0;
+    if (total > 0) {
+      from = offset + 1;
+      to = Math.min(total, offset + limit);
+    }
+    if (deps.resultsPageInfo) {
+      deps.resultsPageInfo.textContent =
+        "Baris " + String(from) + " - " + String(to);
+      if (total > 0) {
+        deps.resultsPageInfo.textContent += " dari " + String(total);
+      }
+    }
+    if (deps.resultsPrevBtn) {
+      deps.resultsPrevBtn.disabled = offset <= 0;
+    }
+    if (deps.resultsNextBtn) {
+      deps.resultsNextBtn.disabled = total <= 0 || offset + limit >= total;
+    }
+  }
+
+  function buildResultsQueryParams(limit, offset) {
+    var params = new URLSearchParams();
+    if (typeof limit === "number") {
+      params.set("limit", String(limit));
+      if (typeof offset === "number" && offset > 0) {
+        params.set("offset", String(offset));
+      }
+    }
+    var attemptFilter = getActiveAttemptFilter();
+    if (attemptFilter) params.set("attempt", attemptFilter);
+    var classFilter = getActiveClassFilter();
+    if (classFilter) params.set("class", classFilter);
+    var schoolFilter = getActiveSchoolFilter();
+    if (schoolFilter) params.set("school", schoolFilter);
+    return params;
+  }
+
+  function isFullResultsMatrix(matrix) {
+    if (!matrix) return false;
+    var total = Number(matrix.total_rows || 0);
+    var rows = Array.isArray(matrix.rows) ? matrix.rows : [];
+    if (total <= 0) return true;
+    return rows.length >= total;
+  }
+
+  async function ensureFullResultsMatrix() {
+    if (isFullResultsMatrix(latestResultsMatrix)) return latestResultsMatrix;
+    if (isFullResultsMatrix(latestResultsMatrixFull)) {
+      return latestResultsMatrixFull;
+    }
+    var examID = Number(
+      (latestResultsMatrix && latestResultsMatrix.exam_id) || 0,
+    );
+    if (examID <= 0) return latestResultsMatrix;
+    var params = buildResultsQueryParams(0, 0);
+    var matrix = await deps.api(
+      "/api/v1/admin/exams/" +
+        Number(examID) +
+        "/results" +
+        (params.toString() ? "?" + params.toString() : ""),
+      "GET",
+    );
+    latestResultsMatrixFull = matrix || null;
+    return latestResultsMatrixFull || latestResultsMatrix;
   }
 
   function showDialog(dialog) {
@@ -1122,27 +1218,22 @@
     return "Filter: " + parts.join(", ");
   }
 
-  function updateAttemptFilterOptions(rows) {
+  function updateAttemptFilterOptionsFromList(list) {
     if (!deps || !deps.resultsAttemptFilter) return;
     const current = String(deps.resultsAttemptFilter.value || "");
-    const attempts = {};
-    (Array.isArray(rows) ? rows : []).forEach(function (it) {
-      const val = Number((it && it.attempt_ke) || 0);
-      if (val > 0) attempts[val] = true;
-    });
-    const list = Object.keys(attempts)
+    const attemptList = (Array.isArray(list) ? list : [])
       .map(function (raw) {
         return Number(raw);
       })
       .filter(function (n) {
-        return !Number.isNaN(n);
+        return !Number.isNaN(n) && n > 0;
       })
       .sort(function (a, b) {
         return a - b;
       });
     deps.resultsAttemptFilter.innerHTML =
       '<option value="">Semua attempt</option>';
-    list.forEach(function (val) {
+    attemptList.forEach(function (val) {
       const opt = document.createElement("option");
       opt.value = String(val);
       opt.textContent = "Attempt " + String(val);
@@ -1154,7 +1245,7 @@
     }
   }
 
-  function updateClassFilterOptions(classNames) {
+  function updateClassFilterOptionsFromList(classNames) {
     if (!deps || !deps.resultsClassFilter) return;
     const current = String(deps.resultsClassFilter.value || "");
     const list = (Array.isArray(classNames) ? classNames : [])
@@ -1183,12 +1274,12 @@
     }
   }
 
-  function updateSchoolFilterOptions(rows) {
+  function updateSchoolFilterOptionsFromList(rows) {
     if (!deps || !deps.resultsSchoolFilter) return;
     const current = String(deps.resultsSchoolFilter.value || "");
     const list = (Array.isArray(rows) ? rows : [])
       .map(function (row) {
-        return String((row && row.school_name) || "").trim();
+        return String(row || "").trim();
       })
       .filter(function (name) {
         return name;
@@ -1213,10 +1304,49 @@
     }
   }
 
+  function updateAttemptFilterOptions(rows) {
+    const attempts = {};
+    (Array.isArray(rows) ? rows : []).forEach(function (it) {
+      const val = Number((it && it.attempt_ke) || 0);
+      if (val > 0) attempts[val] = true;
+    });
+    const list = Object.keys(attempts);
+    updateAttemptFilterOptionsFromList(list);
+  }
+
+  function updateSchoolFilterOptions(rows) {
+    const list = (Array.isArray(rows) ? rows : [])
+      .map(function (row) {
+        return String((row && row.school_name) || "").trim();
+      })
+      .filter(function (name) {
+        return name;
+      });
+    updateSchoolFilterOptionsFromList(list);
+  }
+
+  function updateClassFilterOptions(classNames) {
+    updateClassFilterOptionsFromList(classNames);
+  }
+
   async function refreshResultsFilters(examID, rows) {
-    updateAttemptFilterOptions(rows);
-    updateSchoolFilterOptions(rows);
+    const matrix = latestResultsMatrix || {};
+    const filters = matrix.filters || {};
+    if (Array.isArray(filters.attempts)) {
+      updateAttemptFilterOptionsFromList(filters.attempts);
+    } else {
+      updateAttemptFilterOptions(rows);
+    }
+    if (Array.isArray(filters.schools)) {
+      updateSchoolFilterOptionsFromList(filters.schools);
+    } else {
+      updateSchoolFilterOptions(rows);
+    }
     if (!deps || !deps.resultsClassFilter) return;
+    if (Array.isArray(filters.classes)) {
+      updateClassFilterOptionsFromList(filters.classes);
+      return;
+    }
     const classNames = await ensureExamClassNames(examID, rows);
     updateClassFilterOptions(classNames);
   }
@@ -1235,7 +1365,10 @@
     }
     const filtered = filterResultsRows(rows);
     renderResultsRows(filtered, questionNos, totalWeight);
-    const total = rows.length;
+    const total = Math.max(
+      Number(resultsTotalRows || 0),
+      Number(rows.length || 0),
+    );
     const label = resultsFilterLabel();
     setResultsSummary(
       "Exam #" +
@@ -1407,8 +1540,8 @@
     ].join("");
   }
 
-  function summarizeAttemptResult(mode) {
-    const data = latestResultsMatrix;
+  async function summarizeAttemptResult(mode) {
+    const data = await ensureFullResultsMatrix();
     const rows = Array.isArray(data && data.rows) ? data.rows : [];
     const filteredRows = filterResultsRows(rows);
     const totalQuestions = Array.isArray(data && data.question_nos)
@@ -1488,8 +1621,8 @@
     setResultsExtraHTML(buildResultsScoreChartHTML(filteredRows, totalWeight));
   }
 
-  function renderResultsChart() {
-    const data = latestResultsMatrix;
+  async function renderResultsChart() {
+    const data = await ensureFullResultsMatrix();
     const rows = Array.isArray(data && data.rows) ? data.rows : [];
     const filteredRows = filterResultsRows(rows);
     const totalQuestions = Array.isArray(data && data.question_nos)
@@ -1517,7 +1650,9 @@
 
   async function loadExamAssignments(examID) {
     if (!deps || !deps.resultsAssignmentBody) return;
+    syncResultsLimitFromUI();
     if (!examID || examID <= 0) {
+      resetResultsPagination();
       resultsAssignmentsCount = 0;
       latestItemAnalysis = null;
       latestItemAnalysisByID = {};
@@ -1533,6 +1668,7 @@
         deps.refreshStats();
       }
       latestResultsMatrix = null;
+      latestResultsMatrixFull = null;
       if (deps.resultsPanel && !deps.resultsPanel.hidden) activateResultsMenu();
       if (deps.resultsMatrixHead) {
         deps.resultsMatrixHead.innerHTML =
@@ -1542,16 +1678,22 @@
       updateClassFilterOptions([]);
       updateSchoolFilterOptions([]);
       updateResultsExportState();
+      updateResultsPaginationUI();
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="10" class="muted">Pilih ujian lalu muat hasil ujian peserta.</td></tr>';
       setResultsSummary("Belum ada data hasil ujian.");
       return;
     }
+    const params = buildResultsQueryParams(resultsLimit, resultsOffset);
     const matrix = await deps.api(
-      "/api/v1/admin/exams/" + Number(examID) + "/results",
+      "/api/v1/admin/exams/" +
+        Number(examID) +
+        "/results" +
+        (params.toString() ? "?" + params.toString() : ""),
       "GET",
     );
     latestResultsMatrix = matrix || null;
+    latestResultsMatrixFull = null;
     latestItemAnalysis = null;
     latestItemAnalysisByID = {};
     latestItemAnalysisExamID = Number(examID || 0);
@@ -1566,7 +1708,18 @@
     const questionNos = Array.isArray(matrix && matrix.question_nos)
       ? matrix.question_nos
       : [];
-    resultsAssignmentsCount = rows.length;
+    resultsTotalRows = Math.max(
+      0,
+      Number((matrix && matrix.total_rows) || rows.length || 0),
+    );
+    resultsAssignmentsCount = resultsTotalRows;
+    resultsOffset = Math.max(0, Number((matrix && matrix.offset) || 0));
+    if (matrix && matrix.limit !== undefined && matrix.limit !== null) {
+      resultsLimit = normalizeResultsLimit(matrix.limit || resultsLimit);
+      if (deps.resultsPageSizeSelect) {
+        deps.resultsPageSizeSelect.value = String(resultsLimit);
+      }
+    }
     if (deps && typeof deps.refreshStats === "function") {
       deps.refreshStats();
     }
@@ -1591,6 +1744,11 @@
     }
     await refreshResultsFilters(examID, rows);
     updateResultsExportState();
+    updateResultsPaginationUI();
+    if (rows.length === 0 && resultsTotalRows > 0 && resultsOffset > 0) {
+      resultsOffset = Math.max(0, resultsTotalRows - resultsLimit);
+      return loadExamAssignments(examID);
+    }
     if (!rows.length) {
       deps.resultsAssignmentBody.innerHTML =
         '<tr><td colspan="' +
@@ -1605,7 +1763,7 @@
 
   async function openItemAnalysisDialog() {
     if (!deps || !deps.itemAnalysisDialog) return;
-    const matrix = latestResultsMatrix;
+    const matrix = await ensureFullResultsMatrix();
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const filteredRows = filterResultsRows(rows);
     const questionNos = Array.isArray(matrix && matrix.question_nos)
@@ -2444,7 +2602,7 @@
 
   async function openLearningGoalDialog() {
     if (!deps || !deps.learningGoalDialog) return;
-    const matrix = latestResultsMatrix;
+    const matrix = await ensureFullResultsMatrix();
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const filteredRows = filterResultsRows(rows);
     const examID = Number(
@@ -2750,6 +2908,7 @@
       deps.resultsExamSelect.value = examID > 0 ? String(examID) : "";
     }
     if (autoLoad) {
+      resultsOffset = 0;
       return loadExamAssignments(examID);
     }
   }
@@ -2792,6 +2951,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
+          resultsOffset = 0;
           await loadExamAssignments(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
@@ -2868,6 +3028,79 @@
           "Memuat hasil ujian peserta...",
         );
         try {
+          resultsOffset = 0;
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsPageSizeSelect) {
+      deps.resultsPageSizeSelect.addEventListener("change", async function () {
+        syncResultsLimitFromUI();
+        resultsOffset = 0;
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          updateResultsPaginationUI();
+          return;
+        }
+        const done = deps.beginBusy(
+          deps.resultsPageSizeSelect,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsPrevBtn) {
+      deps.resultsPrevBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) return;
+        syncResultsLimitFromUI();
+        resultsOffset = Math.max(0, resultsOffset - resultsLimit);
+        const done = deps.beginBusy(
+          deps.resultsPrevBtn,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsNextBtn) {
+      deps.resultsNextBtn.addEventListener("click", async function () {
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) return;
+        syncResultsLimitFromUI();
+        resultsOffset = resultsOffset + resultsLimit;
+        const done = deps.beginBusy(
+          deps.resultsNextBtn,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
           await loadExamAssignments(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
@@ -2878,19 +3111,79 @@
       });
     }
     if (deps.resultsAttemptFilter) {
-      deps.resultsAttemptFilter.addEventListener("change", function () {
-        applyResultsFilters();
+      deps.resultsAttemptFilter.addEventListener("change", async function () {
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          applyResultsFilters();
+          return;
+        }
+        resultsOffset = 0;
+        const done = deps.beginBusy(
+          deps.resultsAttemptFilter,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
       });
     }
     if (deps.resultsClassFilter) {
-      deps.resultsClassFilter.addEventListener("change", function () {
-        applyResultsFilters();
+      deps.resultsClassFilter.addEventListener("change", async function () {
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          applyResultsFilters();
+          return;
+        }
+        resultsOffset = 0;
+        const done = deps.beginBusy(
+          deps.resultsClassFilter,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
       });
     }
     if (deps.resultsSchoolFilter) {
-      deps.resultsSchoolFilter.addEventListener("change", function () {
+      deps.resultsSchoolFilter.addEventListener("change", async function () {
         updateResultsExportState();
-        applyResultsFilters();
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) {
+          applyResultsFilters();
+          return;
+        }
+        resultsOffset = 0;
+        const done = deps.beginBusy(
+          deps.resultsSchoolFilter,
+          deps.msg,
+          "Memuat hasil ujian peserta...",
+        );
+        try {
+          await loadExamAssignments(examID);
+          deps.setMsg("Hasil ujian peserta berhasil dimuat.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
       });
     }
 
@@ -2948,18 +3241,30 @@
     }
 
     if (deps.resultsReportBtn) {
-      deps.resultsReportBtn.addEventListener("click", function () {
-        summarizeAttemptResult("report");
+      deps.resultsReportBtn.addEventListener("click", async function () {
+        try {
+          await summarizeAttemptResult("report");
+        } catch (err) {
+          deps.setMsg("Gagal memuat laporan: " + err.message);
+        }
       });
     }
     if (deps.resultsStatsBtn) {
-      deps.resultsStatsBtn.addEventListener("click", function () {
-        summarizeAttemptResult("stats");
+      deps.resultsStatsBtn.addEventListener("click", async function () {
+        try {
+          await summarizeAttemptResult("stats");
+        } catch (err) {
+          deps.setMsg("Gagal memuat statistik: " + err.message);
+        }
       });
     }
     if (deps.resultsChartBtn) {
-      deps.resultsChartBtn.addEventListener("click", function () {
-        renderResultsChart();
+      deps.resultsChartBtn.addEventListener("click", async function () {
+        try {
+          await renderResultsChart();
+        } catch (err) {
+          deps.setMsg("Gagal memuat grafik: " + err.message);
+        }
       });
     }
 
@@ -3029,6 +3334,8 @@
 
   function init(opts) {
     setDeps(opts);
+    syncResultsLimitFromUI();
+    updateResultsPaginationUI();
     bindHandlers();
   }
 

@@ -43,7 +43,7 @@ type examService interface {
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
-	ListExamParticipantResults(ctx context.Context, examID int64) (*ExamParticipantResult, error)
+	ListExamParticipantResults(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error)
 	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	GetAttemptLearningGoalResult(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
 	GetAttemptStudentSchoolInfo(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
@@ -924,6 +924,44 @@ func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
 		return
 	}
+	limit := 25
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid limit"})
+			return
+		}
+		limit = v
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid offset"})
+			return
+		}
+		offset = v
+	}
+	if limit > 0 && limit > 200 {
+		limit = 200
+	}
+	var attemptFilter *int
+	if raw := strings.TrimSpace(r.URL.Query().Get("attempt")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid attempt filter"})
+			return
+		}
+		attemptFilter = &v
+	}
+	var classFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("class")); raw != "" {
+		classFilter = &raw
+	}
+	var schoolFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("school")); raw != "" {
+		schoolFilter = &raw
+	}
 	user, ok := auth.CurrentUser(r.Context())
 	if !ok {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
@@ -940,7 +978,7 @@ func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
-	items, err := h.svc.ListExamParticipantResults(r.Context(), examID)
+	items, err := h.svc.ListExamParticipantResults(r.Context(), examID, limit, offset, attemptFilter, classFilter, schoolFilter)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidInput):

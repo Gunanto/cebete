@@ -2588,6 +2588,12 @@
     const resultsMatrixHead = document.getElementById(
       "guru-results-matrix-head",
     );
+    const resultsPageInfo = document.getElementById("guru-results-page-info");
+    const resultsPrevBtn = document.getElementById("guru-results-prev-btn");
+    const resultsNextBtn = document.getElementById("guru-results-next-btn");
+    const resultsPageSizeSelect = document.getElementById(
+      "guru-results-page-size",
+    );
     const resultsSummary = document.getElementById("guru-results-summary");
     const resultsExtra = document.getElementById("guru-results-extra");
     const resultsReportBtn = document.getElementById("guru-results-report-btn");
@@ -4216,6 +4222,7 @@
           loadAllManuscriptVersionsFromBlueprints,
         reloadManuscriptsByCurrentTableScope:
           reloadManuscriptsByCurrentTableScope,
+        reloadManuscriptsByQuestionID: reloadManuscriptsByQuestionID,
         renderManuscripts: renderManuscripts,
         manuscriptForm: manuscriptForm,
         manuscriptQuestionSelect: manuscriptQuestionSelect,
@@ -4297,6 +4304,10 @@
         resultsClassFilter: resultsClassFilter,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
+        resultsPageInfo: resultsPageInfo,
+        resultsPrevBtn: resultsPrevBtn,
+        resultsNextBtn: resultsNextBtn,
+        resultsPageSizeSelect: resultsPageSizeSelect,
         resultsSummary: resultsSummary,
         resultsExtra: resultsExtra,
         resultsReportBtn: resultsReportBtn,
@@ -4477,6 +4488,15 @@
         typeof ManuscriptTable.reloadByCurrentScope === "function"
       ) {
         return ManuscriptTable.reloadByCurrentScope(fallbackQuestionID);
+      }
+    }
+
+    async function reloadManuscriptsByQuestionID(questionID) {
+      if (
+        ManuscriptTable &&
+        typeof ManuscriptTable.reloadByQuestionID === "function"
+      ) {
+        return ManuscriptTable.reloadByQuestionID(questionID);
       }
     }
 

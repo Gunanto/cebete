@@ -129,6 +129,21 @@
     updateBulkState(items);
   }
 
+  function sortVersions(rows) {
+    var list = Array.isArray(rows) ? rows.slice() : [];
+    return list.sort(function (a, b) {
+      var ta = new Date(a && a.created_at ? a.created_at : 0).getTime();
+      var tb = new Date(b && b.created_at ? b.created_at : 0).getTime();
+      if (tb !== ta) return tb - ta;
+      var qa = Number((a && a.question_id) || 0);
+      var qb = Number((b && b.question_id) || 0);
+      if (qb !== qa) return qb - qa;
+      return (
+        Number((b && b.version_no) || 0) - Number((a && a.version_no) || 0)
+      );
+    });
+  }
+
   function updatePaginationInfo(totalRows, pageRows) {
     if (!deps || !deps.pageInfo) return;
     if (totalRows <= 0 || pageRows <= 0) {
@@ -265,19 +280,20 @@
       .reduce(function (acc, rows) {
         if (Array.isArray(rows)) return acc.concat(rows);
         return acc;
-      }, [])
-      .sort(function (a, b) {
-        var ta = new Date(a && a.created_at ? a.created_at : 0).getTime();
-        var tb = new Date(b && b.created_at ? b.created_at : 0).getTime();
-        if (tb !== ta) return tb - ta;
-        var qa = Number((a && a.question_id) || 0);
-        var qb = Number((b && b.question_id) || 0);
-        if (qb !== qa) return qb - qa;
-        return (
-          Number((b && b.version_no) || 0) - Number((a && a.version_no) || 0)
-        );
-      });
-    render(merged);
+      }, []);
+    render(sortVersions(merged));
+  }
+
+  async function reloadByQuestionID(questionID) {
+    var qid = Number(questionID || 0);
+    if (qid <= 0) return;
+    var rows = await deps.api("/api/v1/questions/" + qid + "/versions", "GET");
+    var list = Array.isArray(rows) ? rows : [];
+    var cache = Array.isArray(versionsCache) ? versionsCache : [];
+    var filtered = cache.filter(function (it) {
+      return Number((it && it.question_id) || 0) !== qid;
+    });
+    render(sortVersions(filtered.concat(list)));
   }
 
   async function findItemByKey(questionID, versionNo) {
@@ -560,6 +576,7 @@
     init: init,
     render: render,
     reloadByCurrentScope: reloadByCurrentScope,
+    reloadByQuestionID: reloadByQuestionID,
     findItemByKey: findItemByKey,
     getCount: getCount,
     getQuestionCount: getQuestionCount,

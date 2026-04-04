@@ -625,7 +625,7 @@ func TestListExamParticipantResultsAutoFinalizesExpiredAttempt_DBIntegration(t *
 	defer cleanupIntegrationFixture(t, dbConn, examID, q1, subjectID, studentID)
 	defer cleanupIntegrationFixtureExtraQuestions(t, dbConn, q2)
 
-	matrix, err := svc.ListExamParticipantResults(ctx, examID)
+	matrix, err := svc.ListExamParticipantResults(ctx, examID, 0, 0, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("list participant results: %v", err)
 	}

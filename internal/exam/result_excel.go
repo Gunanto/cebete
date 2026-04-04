@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) ExportExamParticipantResultsExcel(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error) {
-	matrix, err := s.ListExamParticipantResults(ctx, examID)
+	matrix, err := s.ListExamParticipantResults(ctx, examID, 0, 0, nil, nil, nil)
 	if err != nil {
 		return nil, "", err
 	}
