@@ -2958,6 +2958,21 @@ body[data-page="attempt_content"] .bs-table tbody tr:focus-within {
 .bs-choice {
     width: 84px;
     text-align: center;
+    vertical-align: middle !important;
+}
+
+body[data-page="attempt_content"] .bs-table td.bs-statement {
+    vertical-align: middle;
+}
+
+body[data-page="attempt_content"] .bs-table td.bs-choice {
+    vertical-align: middle;
+}
+
+body[data-page="attempt_content"] .bs-choice input[type="radio"],
+body[data-page="attempt_content"] .bs-choice input[type="checkbox"] {
+    display: block;
+    margin: 0 auto;
 }
 
 #guru-results-matrix-table th,
