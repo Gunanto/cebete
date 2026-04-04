@@ -159,26 +159,14 @@
                 <p class="muted">
                     Token ujian akan muncul setelah dikirim oleh proktor.
                 </p>
-                <div class="table-wrap mt">
-                    <table class="bs-table">
-                        <thead>
-                            <tr>
-                                <th>Kode</th>
-                                <th>Nama Ujian</th>
-                                <th>Mapel</th>
-                                <th>Token Ujian</th>
-                                <th>Expired Token At</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="peserta-exams-body">
-                            <tr>
-                                <td colspan="6" class="muted">
-                                    Belum ada ujian aktif yang bisa diikuti.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div
+                    id="peserta-exams-body"
+                    class="peserta-exam-list mt"
+                    aria-live="polite"
+                >
+                    <div class="peserta-exam-empty muted">
+                        Belum ada ujian aktif yang bisa diikuti.
+                    </div>
                 </div>
             </section>
 

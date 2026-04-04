@@ -658,25 +658,38 @@
         const items = Array.isArray(list) ? list : [];
         if (!items.length) {
           examsBody.innerHTML =
-            '<tr><td colspan="6" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
+            '<div class="peserta-exam-empty muted">Belum ada ujian aktif yang bisa diikuti.</div>';
         } else {
           examsBody.innerHTML = "";
           items.forEach(function (it) {
-            const tr = document.createElement("tr");
-            tr.innerHTML = [
-              "<td>" + escapeHtml(String(it.code || "-")) + "</td>",
-              "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
-              "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
-              "<td>" + escapeHtml(String(it.token || "-")) + "</td>",
-              "<td>" + escapeHtml(fmtShortDate(it.token_expires_at)) + "</td>",
-              '<td><a class="btn btn-secondary btn-inline" href="/ujian">Buka Ujian</a></td>',
+            const card = document.createElement("article");
+            card.className = "peserta-exam-card";
+            card.innerHTML = [
+              '<div class="peserta-exam-grid">',
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Kode</div><div class="peserta-exam-value">' +
+                escapeHtml(String(it.code || "-")) +
+                "</div></div>",
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Nama Ujian</div><div class="peserta-exam-value">' +
+                escapeHtml(String(it.title || "-")) +
+                "</div></div>",
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Mapel</div><div class="peserta-exam-value">' +
+                escapeHtml(String(it.subject_name || "-")) +
+                "</div></div>",
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Token Ujian</div><div class="peserta-exam-value">' +
+                escapeHtml(String(it.token || "-")) +
+                "</div></div>",
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Expired Token At</div><div class="peserta-exam-value">' +
+                escapeHtml(fmtShortDate(it.token_expires_at)) +
+                "</div></div>",
+              "</div>",
+              '<div class="peserta-exam-actions"><a class="btn btn-secondary btn-inline" href="/ujian">Buka Ujian</a></div>',
             ].join("");
-            examsBody.appendChild(tr);
+            examsBody.appendChild(card);
           });
         }
       } catch (err) {
         examsBody.innerHTML =
-          '<tr><td colspan="6" class="muted">Gagal memuat daftar ujian aktif.</td></tr>';
+          '<div class="peserta-exam-empty muted">Gagal memuat daftar ujian aktif.</div>';
       }
     }
 
