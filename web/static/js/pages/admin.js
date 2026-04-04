@@ -129,6 +129,9 @@
     );
     const levelAddBtn = document.getElementById("admin-level-add-btn");
     const schoolAddBtn = document.getElementById("admin-school-add-btn");
+    const schoolSearchInput = document.getElementById(
+      "admin-school-search-input",
+    );
     const classAddBtn = document.getElementById("admin-class-add-btn");
     const classImportBtn = document.getElementById("admin-class-import-btn");
     const classImportTemplateBtn = document.getElementById(
@@ -271,6 +274,7 @@
         masterRefreshBtn: masterRefreshBtn,
         levelAddBtn: levelAddBtn,
         schoolAddBtn: schoolAddBtn,
+        schoolSearchInput: schoolSearchInput,
         classAddBtn: classAddBtn,
         classImportBtn: classImportBtn,
         classImportTemplateBtn: classImportTemplateBtn,

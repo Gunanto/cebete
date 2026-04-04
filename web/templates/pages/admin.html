@@ -503,18 +503,29 @@
                 <section class="mt">
                     <div class="admin-section-head">
                         <h4>Sekolah</h4>
-                        <button
-                            id="admin-school-add-btn"
-                            class="btn btn-secondary icon-btn"
-                            type="button"
-                        >
-                            <span class="icon-wrap" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" focusable="false">
-                                    <path d="M12 5v14M5 12h14" />
-                                </svg>
-                            </span>
-                            Tambah Sekolah
-                        </button>
+                        <div class="admin-inline-actions">
+                            <label class="admin-master-search">
+                                <span>Cari Sekolah</span>
+                                <input
+                                    id="admin-school-search-input"
+                                    type="search"
+                                    placeholder="Ketik nama sekolah"
+                                    autocomplete="off"
+                                />
+                            </label>
+                            <button
+                                id="admin-school-add-btn"
+                                class="btn btn-secondary icon-btn"
+                                type="button"
+                            >
+                                <span class="icon-wrap" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M12 5v14M5 12h14" />
+                                    </svg>
+                                </span>
+                                Tambah Sekolah
+                            </button>
+                        </div>
                     </div>
                     <div class="table-wrap mt">
                         <table class="bs-table">

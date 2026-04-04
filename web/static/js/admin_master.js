@@ -3,8 +3,10 @@
   var masterSummaryState = {
     levelsByID: {},
     schoolsByID: {},
+    allSchools: [],
     classesByID: {},
     selectedSchoolID: 0,
+    schoolSearchTerm: "",
   };
 
   function setDeps(opts) {
@@ -40,13 +42,29 @@
     return Array.isArray(out) ? out : [];
   }
 
+  function normalizeSearchTerm(input) {
+    return String(input || "").trim().toLowerCase();
+  }
+
+  function getFilteredSchools(schools) {
+    const items = Array.isArray(schools) ? schools : [];
+    const term = normalizeSearchTerm(masterSummaryState.schoolSearchTerm);
+    if (!term) return items;
+    return items.filter(function (it) {
+      const name = normalizeSearchTerm(it && it.name);
+      return name.indexOf(term) !== -1;
+    });
+  }
+
   function renderMasterSummaryTable(levels, schools, classes) {
     const canEditMaster = deps.isAdmin();
     const levelItems = Array.isArray(levels) ? levels : [];
-    const schoolItems = Array.isArray(schools) ? schools : [];
+    const allSchoolItems = Array.isArray(schools) ? schools : [];
+    const schoolItems = getFilteredSchools(allSchoolItems);
     const classItems = Array.isArray(classes) ? classes : [];
     masterSummaryState.levelsByID = {};
     masterSummaryState.schoolsByID = {};
+    masterSummaryState.allSchools = allSchoolItems.slice();
     masterSummaryState.classesByID = {};
     levelItems.forEach(function (it) {
       masterSummaryState.levelsByID[String(it.id || "")] = it;
@@ -89,9 +107,19 @@
     if (deps.schoolTableBody) {
       if (!schoolItems.length) {
         deps.schoolTableBody.innerHTML =
-          '<tr><td colspan="11" class="muted">Belum ada data sekolah.</td></tr>';
+          '<tr><td colspan="11" class="muted">' +
+          deps.escapeHtml(
+            masterSummaryState.schoolSearchTerm
+              ? "Tidak ada sekolah yang cocok dengan pencarian."
+              : "Belum ada data sekolah.",
+          ) +
+          "</td></tr>";
         renderSchoolStatsPlaceholder(
-          "Klik baris sekolah untuk melihat jumlah pengguna.",
+          masterSummaryState.schoolSearchTerm
+            ? 'Tidak ada hasil untuk pencarian "' +
+                String(masterSummaryState.schoolSearchTerm || "") +
+                '".'
+            : "Klik baris sekolah untuk melihat jumlah pengguna.",
         );
       } else {
         deps.schoolTableBody.innerHTML = "";
@@ -195,6 +223,30 @@
       }
     }
     return { levels: levels, schools: schools, classes: classes };
+  }
+
+  function applySchoolSearch(term) {
+    masterSummaryState.schoolSearchTerm = String(term || "").trim();
+    const currentSchoolExists = masterSummaryState.allSchools.some(function (it) {
+      return Number((it && it.id) || 0) === masterSummaryState.selectedSchoolID;
+    });
+    const selectedStillVisible = getFilteredSchools(masterSummaryState.allSchools).some(
+      function (it) {
+        return Number((it && it.id) || 0) === masterSummaryState.selectedSchoolID;
+      },
+    );
+    if (!currentSchoolExists || !selectedStillVisible) {
+      masterSummaryState.selectedSchoolID = 0;
+    }
+    renderMasterSummaryTable(
+      Object.keys(masterSummaryState.levelsByID).map(function (key) {
+        return masterSummaryState.levelsByID[key];
+      }),
+      masterSummaryState.allSchools,
+      Object.keys(masterSummaryState.classesByID).map(function (key) {
+        return masterSummaryState.classesByID[key];
+      }),
+    );
   }
 
   function renderSchoolStatsPlaceholder(message) {
@@ -612,6 +664,12 @@
         } finally {
           done();
         }
+      });
+    }
+
+    if (deps.schoolSearchInput) {
+      deps.schoolSearchInput.addEventListener("input", function () {
+        applySchoolSearch(deps.schoolSearchInput.value);
       });
     }
 

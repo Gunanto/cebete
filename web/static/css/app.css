@@ -2013,6 +2013,33 @@ textarea:focus-visible {
     justify-content: flex-start;
 }
 
+.admin-master-search {
+    display: grid;
+    gap: 4px;
+    min-width: min(100%, 280px);
+    color: #34507d;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.admin-master-search input {
+    width: min(100%, 320px);
+    min-height: 40px;
+    border: 1px solid #cdd9ee;
+    border-radius: 10px;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: #0f172a;
+    background: #fff;
+}
+
+.admin-master-search input:focus {
+    outline: 0;
+    border-color: #5b7ce5;
+    box-shadow: 0 0 0 3px rgba(91, 124, 229, 0.16);
+}
+
 #admin-master-message {
     min-height: 0;
     padding: 12px;
