@@ -1878,7 +1878,8 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, role_requested, email, password_hash, full_name, form_payload, status, oauth_provider, oauth_subject
+		SELECT id, role_requested, email, password_hash, full_name, form_payload, status, oauth_provider, oauth_subject,
+		       school_name, npsn, kabupaten, provinsi, kecamatan, alamat, school_email, jenjang, status_sekolah, class_name
 		FROM registration_requests
 		WHERE id = $1
 		FOR UPDATE
@@ -1888,7 +1889,37 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	var role, email, passwordHash, fullName, formPayloadRaw, status string
 	var oauthProvider sql.NullString
 	var oauthSubject sql.NullString
-	if err := row.Scan(&id, &role, &email, &passwordHash, &fullName, &formPayloadRaw, &status, &oauthProvider, &oauthSubject); err != nil {
+	var schoolName sql.NullString
+	var npsn sql.NullString
+	var kabupaten sql.NullString
+	var provinsi sql.NullString
+	var kecamatan sql.NullString
+	var alamat sql.NullString
+	var schoolEmail sql.NullString
+	var jenjang sql.NullString
+	var statusSekolah sql.NullString
+	var className sql.NullString
+	if err := row.Scan(
+		&id,
+		&role,
+		&email,
+		&passwordHash,
+		&fullName,
+		&formPayloadRaw,
+		&status,
+		&oauthProvider,
+		&oauthSubject,
+		&schoolName,
+		&npsn,
+		&kabupaten,
+		&provinsi,
+		&kecamatan,
+		&alamat,
+		&schoolEmail,
+		&jenjang,
+		&statusSekolah,
+		&className,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false, ErrRegistrationNotFound
 		}
@@ -1904,6 +1935,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	if err := json.Unmarshal([]byte(formPayloadRaw), &payload); err != nil {
 		return 0, false, fmt.Errorf("parse form payload: %w", err)
 	}
+	mergeRegistrationPayloadColumns(&payload, schoolName, npsn, kabupaten, provinsi, kecamatan, alamat, schoolEmail, jenjang, statusSekolah, className)
 	isNonRegular := payload.NonRegular
 	shouldSendFirstLoginLink := false
 
@@ -2264,6 +2296,42 @@ func normalizeGradeLevel(className string) string {
 		return "Kelas " + strings.ToUpper(strings.TrimSpace(m[1]))
 	}
 	return truncateString(className, 20)
+}
+
+func mergeRegistrationPayloadColumns(payload *RegistrationFormPayload, schoolName, npsn, kabupaten, provinsi, kecamatan, alamat, schoolEmail, jenjang, statusSekolah, className sql.NullString) {
+	if payload == nil {
+		return
+	}
+	if payload.SchoolName == "" && schoolName.Valid {
+		payload.SchoolName = strings.TrimSpace(schoolName.String)
+	}
+	if payload.NPSN == "" && npsn.Valid {
+		payload.NPSN = strings.TrimSpace(npsn.String)
+	}
+	if payload.Kabupaten == "" && kabupaten.Valid {
+		payload.Kabupaten = strings.TrimSpace(kabupaten.String)
+	}
+	if payload.Provinsi == "" && provinsi.Valid {
+		payload.Provinsi = strings.TrimSpace(provinsi.String)
+	}
+	if payload.Kecamatan == "" && kecamatan.Valid {
+		payload.Kecamatan = strings.TrimSpace(kecamatan.String)
+	}
+	if payload.Alamat == "" && alamat.Valid {
+		payload.Alamat = strings.TrimSpace(alamat.String)
+	}
+	if payload.SchoolEmail == "" && schoolEmail.Valid {
+		payload.SchoolEmail = strings.TrimSpace(schoolEmail.String)
+	}
+	if payload.Jenjang == "" && jenjang.Valid {
+		payload.Jenjang = strings.TrimSpace(jenjang.String)
+	}
+	if payload.StatusSekolah == "" && statusSekolah.Valid {
+		payload.StatusSekolah = strings.TrimSpace(statusSekolah.String)
+	}
+	if payload.ClassName == "" && className.Valid {
+		payload.ClassName = strings.TrimSpace(className.String)
+	}
 }
 
 func truncateString(s string, max int) string {

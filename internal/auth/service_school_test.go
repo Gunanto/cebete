@@ -203,3 +203,61 @@ func TestNormalizeGradeLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeRegistrationPayloadColumnsFillsMissingValues(t *testing.T) {
+	t.Parallel()
+
+	payload := RegistrationFormPayload{
+		NonRegular: true,
+		SchoolName: "",
+		NPSN:       "",
+		Kabupaten:  "",
+		Provinsi:   "Jawa Barat",
+		ClassName:  "",
+	}
+
+	mergeRegistrationPayloadColumns(
+		&payload,
+		sql.NullString{String: " SMP Contoh ", Valid: true},
+		sql.NullString{String: "12345678", Valid: true},
+		sql.NullString{String: " Bandung ", Valid: true},
+		sql.NullString{String: "DKI Jakarta", Valid: true},
+		sql.NullString{String: "Coblong", Valid: true},
+		sql.NullString{String: "Jl. Melati", Valid: true},
+		sql.NullString{String: "admin@smpcontoh.sch.id", Valid: true},
+		sql.NullString{String: "SMP", Valid: true},
+		sql.NullString{String: "swasta", Valid: true},
+		sql.NullString{String: "Kelas 9A", Valid: true},
+	)
+
+	if payload.SchoolName != "SMP Contoh" {
+		t.Fatalf("expected school_name to be filled from registration columns, got %q", payload.SchoolName)
+	}
+	if payload.NPSN != "12345678" {
+		t.Fatalf("expected NPSN to be filled from registration columns, got %q", payload.NPSN)
+	}
+	if payload.Kabupaten != "Bandung" {
+		t.Fatalf("expected kabupaten to be filled from registration columns, got %q", payload.Kabupaten)
+	}
+	if payload.Provinsi != "Jawa Barat" {
+		t.Fatalf("expected existing provinsi to be preserved, got %q", payload.Provinsi)
+	}
+	if payload.Kecamatan != "Coblong" {
+		t.Fatalf("expected kecamatan to be filled from registration columns, got %q", payload.Kecamatan)
+	}
+	if payload.Alamat != "Jl. Melati" {
+		t.Fatalf("expected alamat to be filled from registration columns, got %q", payload.Alamat)
+	}
+	if payload.SchoolEmail != "admin@smpcontoh.sch.id" {
+		t.Fatalf("expected school_email to be filled from registration columns, got %q", payload.SchoolEmail)
+	}
+	if payload.Jenjang != "SMP" {
+		t.Fatalf("expected jenjang to be filled from registration columns, got %q", payload.Jenjang)
+	}
+	if payload.StatusSekolah != "swasta" {
+		t.Fatalf("expected status_sekolah to be filled from registration columns, got %q", payload.StatusSekolah)
+	}
+	if payload.ClassName != "Kelas 9A" {
+		t.Fatalf("expected class_name to be filled from registration columns, got %q", payload.ClassName)
+	}
+}
