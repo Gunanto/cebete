@@ -47,6 +47,10 @@ type Service struct {
 	db *sql.DB
 }
 
+type columnQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func (s *Service) ensureSubjectAccess(ctx context.Context, subjectID, actorID int64, enforceOwner bool) error {
 	if subjectID <= 0 {
 		return ErrInvalidInput
@@ -402,6 +406,47 @@ func NewService(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
+func hasColumn(ctx context.Context, q columnQuerier, tableName, columnName string) (bool, error) {
+	var exists bool
+	if err := q.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, tableName, columnName).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s.%s column: %w", tableName, columnName, err)
+	}
+	return exists, nil
+}
+
+func loadUserTenantID(ctx context.Context, q columnQuerier, userID int64) (*int64, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	hasTenant, err := hasColumn(ctx, q, "users", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT tenant_id FROM users WHERE id = $1`, userID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("load user tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
+}
+
 func normalizeQuestionType(v string) string {
 	v = strings.TrimSpace(strings.ToLower(v))
 	switch v {
@@ -722,15 +767,42 @@ func (s *Service) CreateQuestion(ctx context.Context, in CreateQuestionInput) (*
 	}
 
 	stem := "<p>" + in.Title + "</p>"
-	row := s.db.QueryRowContext(ctx, `
+	questionHasTenant, err := hasColumn(ctx, s.db, "questions", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var questionTenantID *int64
+	if questionHasTenant {
+		questionTenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if questionTenantID == nil || *questionTenantID <= 0 {
+			return nil, fmt.Errorf("resolve question tenant: tenant_id is required")
+		}
+	}
+
+	insertColumns := []string{
+		"subject_id", "learning_goal_id", "question_code_id", "question_type", "stem_html", "stimulus_html", "difficulty",
+		"metadata", "is_active", "version", "created_at", "updated_at",
+	}
+	insertValues := []string{
+		"$1", "$2", "$3", "$4", "$5", "NULL", "$6", "$7::jsonb", "TRUE", "1", "now()", "now()",
+	}
+	insertArgs := []any{in.SubjectID, in.LearningGoalID, nullInt64Ptr(in.QuestionCodeID), in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw)}
+	if questionHasTenant {
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *questionTenantID)
+	}
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		INSERT INTO questions (
-			subject_id, learning_goal_id, question_code_id, question_type, stem_html, stimulus_html, difficulty,
-			metadata, is_active, version, created_at, updated_at
+			%s
 		) VALUES (
-			$1, $2, $3, $4, $5, NULL, $6, $7::jsonb, TRUE, 1, now(), now()
+			%s
 		)
 		RETURNING id, subject_id, learning_goal_id, question_code_id, question_type, difficulty, metadata, created_at, updated_at
-	`, in.SubjectID, in.LearningGoalID, nullInt64Ptr(in.QuestionCodeID), in.QuestionType, stem, nullableDifficulty(in.Difficulty), []byte(metaRaw))
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 
 	var out QuestionBlueprint
 	var questionCodeID sql.NullInt64
@@ -1249,11 +1321,26 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 	var currentStem string
 	var questionType string
 	var subjectID int64
-	err = tx.QueryRowContext(ctx, `
+	questionHasTenant, err := hasColumn(ctx, tx, "questions", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var questionTenantID sql.NullInt64
+	loadQuestionSQL := `
 		SELECT stem_html, question_type, subject_id
 		FROM questions
 		WHERE id = $1
-	`, in.QuestionID).Scan(&currentStem, &questionType, &subjectID)
+	`
+	if questionHasTenant {
+		loadQuestionSQL = `
+			SELECT stem_html, question_type, subject_id, tenant_id
+			FROM questions
+			WHERE id = $1
+		`
+		err = tx.QueryRowContext(ctx, loadQuestionSQL, in.QuestionID).Scan(&currentStem, &questionType, &subjectID, &questionTenantID)
+	} else {
+		err = tx.QueryRowContext(ctx, loadQuestionSQL, in.QuestionID).Scan(&currentStem, &questionType, &subjectID)
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrQuestionNotFound
@@ -1414,19 +1501,38 @@ func (s *Service) CreateQuestionVersion(ctx context.Context, in CreateQuestionVe
 		}
 	}
 
-	row := tx.QueryRowContext(ctx, `
+	versionHasTenant, err := hasColumn(ctx, tx, "question_versions", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	versionColumns := []string{
+		"question_id", "version_no", "stimulus_group_id", "stimulus_type", "stimulus_content", "stimulus_html", "stem_html", "explanation_html", "hint_html",
+		"question_content", "answer_key", "status", "is_public", "is_active", "duration_seconds", "weight", "change_note",
+		"content_hash", "created_by", "created_at",
+	}
+	versionValues := []string{
+		"$1", "$2", "$3", "$4", "$5::jsonb", "$6", "$7", "$8", "$9",
+		"$10::jsonb", "$11::jsonb", "'draft'", "FALSE", "TRUE", "$12", "$13", "$14",
+		"$15", "NULLIF($16, 0)", "now()",
+	}
+	versionArgs := []any{in.QuestionID, nextVersion, nullInt64Ptr(base.StimulusGroupID), nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.QuestionContent), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy}
+	if versionHasTenant {
+		if !questionTenantID.Valid || questionTenantID.Int64 <= 0 {
+			return nil, fmt.Errorf("resolve question version tenant: tenant_id is required")
+		}
+		versionColumns = append(versionColumns, "tenant_id")
+		versionValues = append(versionValues, fmt.Sprintf("$%d", len(versionArgs)+1))
+		versionArgs = append(versionArgs, questionTenantID.Int64)
+	}
+	row := tx.QueryRowContext(ctx, fmt.Sprintf(`
 			INSERT INTO question_versions (
-				question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
-				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note,
-				content_hash, created_by, created_at
+				%s
 			) VALUES (
-				$1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9,
-				$10::jsonb, $11::jsonb, 'draft', FALSE, TRUE, $12, $13, $14,
-				$15, NULLIF($16, 0), now()
+				%s
 			)
 			RETURNING id, question_id, version_no, stimulus_group_id, stimulus_type, stimulus_content, stimulus_html, stem_html, explanation_html, hint_html,
 				question_content, answer_key, status, is_public, is_active, duration_seconds, weight, change_note, created_by, created_at
-		`, in.QuestionID, nextVersion, nullInt64Ptr(base.StimulusGroupID), nullStringPtr(base.StimulusType), nullJSONBytes(base.StimulusContent), nullStringPtr(base.StimulusHTML), base.StemHTML, nullStringPtr(base.ExplanationHTML), nullStringPtr(base.HintHTML), []byte(base.QuestionContent), []byte(base.AnswerKey), nullIntPtr(base.DurationSeconds), base.Weight, nullStringPtr(base.ChangeNote), contentHash, in.CreatedBy)
+		`, strings.Join(versionColumns, ", "), strings.Join(versionValues, ", ")), versionArgs...)
 
 	out, err := scanQuestionVersion(row)
 	if err != nil {
