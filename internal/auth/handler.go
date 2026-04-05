@@ -143,6 +143,16 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+func secureCookieForRequest(r *http.Request) bool {
+	if r != nil && r.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+	return false
+}
+
 func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 	if !h.svc.GoogleOAuthEnabled() {
 		http.Redirect(w, r, loginPathForGoogleFlow("login")+"?oauth=disabled", http.StatusFound)
@@ -527,13 +537,14 @@ func (h *Handler) BootstrapInit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	token := readSessionToken(r)
 	_ = h.svc.RevokeSession(r.Context(), token)
+	secureCookie := secureCookieForRequest(r)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
@@ -542,7 +553,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: false,
-		Secure:   false,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
@@ -1142,6 +1153,7 @@ func (h *Handler) establishSession(w http.ResponseWriter, r *http.Request, user 
 	if err != nil {
 		return err
 	}
+	secureCookie := secureCookieForRequest(r)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -1149,7 +1161,7 @@ func (h *Handler) establishSession(w http.ResponseWriter, r *http.Request, user 
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -1158,7 +1170,7 @@ func (h *Handler) establishSession(w http.ResponseWriter, r *http.Request, user 
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: false,
-		Secure:   false,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 	w.Header().Set(csrfHeaderName, csrfToken)
