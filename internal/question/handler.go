@@ -500,7 +500,9 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
-		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound):
+		case errors.Is(err, ErrForbidden):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound), errors.Is(err, ErrQuestionCodeNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})

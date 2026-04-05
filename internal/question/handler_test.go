@@ -612,6 +612,71 @@ func TestListQuestionsOwnerOnlyQueryFalseForGuru(t *testing.T) {
 	}
 }
 
+func TestCreateQuestionOK(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		createQuestionFn: func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error) {
+			if in.SubjectID != 3 || in.LearningGoalID != 7 || in.QuestionType != "mc" || in.Title != "Soal uji" {
+				t.Fatalf("unexpected create question input: %+v", in)
+			}
+			return &QuestionBlueprint{
+				ID:             11,
+				SubjectID:      3,
+				LearningGoalID: 7,
+				QuestionType:   "mc",
+			}, nil
+		},
+	}}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions", bytes.NewBufferString(`{"subject_id":3,"learning_goal_id":7,"question_type":"mc","title":"Soal uji"}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.CreateQuestion(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"id":11`) {
+		t.Fatalf("expected response to contain created question id, got %s", w.Body.String())
+	}
+}
+
+func TestCreateQuestionForbidden(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		createQuestionFn: func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error) {
+			return nil, ErrForbidden
+		},
+	}}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions", bytes.NewBufferString(`{"subject_id":3,"learning_goal_id":7,"question_type":"mc","title":"Soal uji"}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.CreateQuestion(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateQuestionQuestionCodeNotFound(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		createQuestionFn: func(ctx context.Context, in CreateQuestionInput) (*QuestionBlueprint, error) {
+			return nil, ErrQuestionCodeNotFound
+		},
+	}}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/questions", bytes.NewBufferString(`{"subject_id":3,"learning_goal_id":7,"question_code_id":19,"question_type":"mc","title":"Soal uji"}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.CreateQuestion(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestCreateQuestionVersionOK(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
 		createVersionFn: func(ctx context.Context, in CreateQuestionVersionInput) (*QuestionVersion, error) {
