@@ -438,6 +438,7 @@ type ExamAssignmentUser struct {
 	LatestAttemptScore  *float64   `json:"latest_attempt_score,omitempty"`
 	LatestStartedAt     *time.Time `json:"latest_started_at,omitempty"`
 	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
+	LatestActivityAt    *time.Time `json:"latest_activity_at,omitempty"`
 }
 
 type ExamParticipantResult struct {
@@ -2273,7 +2274,8 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			la.status AS latest_attempt_status,
 			la.score AS latest_attempt_score,
 			la.started_at AS latest_started_at,
-			la.submitted_at AS latest_submitted_at
+			la.submitted_at AS latest_submitted_at,
+			le.latest_activity_at
 		FROM exam_assignments ea
 		JOIN users u ON u.id = ea.user_id
 		LEFT JOIN enrollments en ON en.user_id = u.id AND en.status = 'active'
@@ -2288,6 +2290,13 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			ORDER BY COALESCE(a.submitted_at, a.started_at) DESC, a.id DESC
 			LIMIT 1
 		) la ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT ae.server_ts AS latest_activity_at
+			FROM attempt_events ae
+			WHERE ae.attempt_id = la.id
+			ORDER BY ae.server_ts DESC, ae.id DESC
+			LIMIT 1
+		) le ON TRUE
 		WHERE ea.exam_id = $1
 		  AND ea.status = 'active'
 		  AND ($2 = 0 OR %s)
@@ -2325,6 +2334,7 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		var latestAttemptScore sql.NullFloat64
 		var latestStartedAt sql.NullTime
 		var latestSubmittedAt sql.NullTime
+		var latestActivityAt sql.NullTime
 		if err := rows.Scan(
 			&it.UserID,
 			&it.Username,
@@ -2350,6 +2360,7 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 			&latestAttemptScore,
 			&latestStartedAt,
 			&latestSubmittedAt,
+			&latestActivityAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan exam assignment: %w", err)
 		}
@@ -2428,6 +2439,10 @@ func (s *Service) ListExamAssignments(ctx context.Context, examID int64) ([]Exam
 		if latestSubmittedAt.Valid {
 			v := latestSubmittedAt.Time
 			it.LatestSubmittedAt = &v
+		}
+		if latestActivityAt.Valid {
+			v := latestActivityAt.Time
+			it.LatestActivityAt = &v
 		}
 		items = append(items, it)
 	}

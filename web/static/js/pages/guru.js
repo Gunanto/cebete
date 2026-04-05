@@ -900,48 +900,15 @@
       return Boolean(startedAt) && !submittedAt;
     }
 
-    async function loadDashboardMonitorActivity(rows) {
+    function loadDashboardMonitorActivity(rows) {
       const items = Array.isArray(rows) ? rows : [];
-      const examIDs = items
-        .map(function (it) {
-          return Number((it && it.exam_id) || 0);
-        })
-        .filter(function (id, idx, arr) {
-          return id > 0 && arr.indexOf(id) === idx;
-        });
-      const latestByAttemptID = {};
-      await Promise.all(
-        examIDs.map(async function (examID) {
-          try {
-            const events = await api(
-              "/api/v1/exams/" + examID + "/events?limit=500",
-              "GET",
-            );
-            (Array.isArray(events) ? events : []).forEach(function (eventItem) {
-              const attemptID = Number(
-                (eventItem && eventItem.attempt_id) || 0,
-              );
-              const rawTS = String(
-                (eventItem && eventItem.server_ts) || "",
-              ).trim();
-              if (attemptID <= 0 || !rawTS) return;
-              const prev = latestByAttemptID[attemptID];
-              if (!prev || new Date(rawTS) > new Date(prev)) {
-                latestByAttemptID[attemptID] = rawTS;
-              }
-            });
-          } catch (_) {
-            // Keep monitor usable even if event aggregation fails for one exam.
-          }
-        }),
-      );
       const now = Date.now();
       const idleThresholdMs = getDashboardIdleThresholdMs();
       return items.map(function (it) {
         const copy = Object.assign({}, it || {});
-        const attemptID = Number((copy && copy.latest_attempt_id) || 0);
-        const lastActivityAt =
-          attemptID > 0 ? latestByAttemptID[attemptID] || "" : "";
+        const lastActivityAt = String(
+          (copy && copy.latest_activity_at) || "",
+        ).trim();
         copy.latest_activity_at = lastActivityAt || null;
         if (!lastActivityAt) {
           copy.activity_state = "no-event";
@@ -1104,7 +1071,7 @@
         const activeRows = assignmentLists.flat().filter(function (it) {
           return isDashboardActiveAssignment(it);
         });
-        dashboardMonitorRows = await loadDashboardMonitorActivity(activeRows);
+        dashboardMonitorRows = loadDashboardMonitorActivity(activeRows);
         guruInProgressCount = activeRows.length;
         refreshGuruSummaryStats();
         applyDashboardMonitorView();

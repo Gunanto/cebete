@@ -35,7 +35,7 @@ type mockExamService struct {
 	generateExamTokenFn             func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	publishExamTokenFn              func(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
 	listExamAssignmentsFn           func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
-	listExamParticipantResultsFn    func(ctx context.Context, examID int64, limit, offset int) (*ExamParticipantResult, error)
+	listExamParticipantResultsFn    func(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error)
 	listExamLearningGoalResultsFn   func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	getAttemptLearningGoalResultFn  func(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
 	getAttemptStudentSchoolInfoFn   func(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
@@ -222,11 +222,11 @@ func (m *mockExamService) ListExamAssignments(ctx context.Context, examID int64)
 	return m.listExamAssignmentsFn(ctx, examID)
 }
 
-func (m *mockExamService) ListExamParticipantResults(ctx context.Context, examID int64, limit, offset int) (*ExamParticipantResult, error) {
+func (m *mockExamService) ListExamParticipantResults(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error) {
 	if m.listExamParticipantResultsFn == nil {
 		return nil, errors.New("not implemented")
 	}
-	return m.listExamParticipantResultsFn(ctx, examID, limit, offset)
+	return m.listExamParticipantResultsFn(ctx, examID, limit, offset, attemptFilter, classFilter, schoolFilter)
 }
 
 func (m *mockExamService) ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {
