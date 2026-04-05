@@ -584,6 +584,18 @@
     const resultsExamSelect = document.getElementById(
       "guru-results-exam-select",
     );
+    const resultsViewMode = document.getElementById(
+      "guru-results-view-mode",
+    );
+    const resultsViewModeField = resultsViewMode
+      ? resultsViewMode.closest("label")
+      : null;
+    const resultsFinalScheme = document.getElementById(
+      "guru-results-final-scheme",
+    );
+    const resultsFinalSchemeField = resultsFinalScheme
+      ? resultsFinalScheme.closest("label")
+      : null;
     const resultsAttemptFilter = document.getElementById(
       "guru-results-attempt-filter",
     );
@@ -598,6 +610,27 @@
     );
     const resultsMatrixHead = document.getElementById(
       "guru-results-matrix-head",
+    );
+    const resultsAttemptWrap = document.getElementById(
+      "guru-results-attempt-wrap",
+    );
+    const resultsRecapWrap = document.getElementById(
+      "guru-results-recap-wrap",
+    );
+    const resultsRecapBody = document.getElementById(
+      "guru-results-recap-body",
+    );
+    const scoreRecapDetailDialog = document.getElementById(
+      "guru-score-recap-detail-dialog",
+    );
+    const scoreRecapDetailSubtitle = document.getElementById(
+      "guru-score-recap-detail-subtitle",
+    );
+    const scoreRecapDetailSummary = document.getElementById(
+      "guru-score-recap-detail-summary",
+    );
+    const scoreRecapDetailBody = document.getElementById(
+      "guru-score-recap-detail-body",
     );
     const resultsPageInfo = document.getElementById("guru-results-page-info");
     const resultsPrevBtn = document.getElementById("guru-results-prev-btn");
@@ -1960,6 +1993,7 @@
           exams: examsPanel,
           enroll: enrollPanel,
           results: resultsPanel,
+          "score-recap": resultsPanel,
           subjects: subjectsPanel,
           guide: guidePanel,
         },
@@ -1995,9 +2029,29 @@
             }
             return;
           }
-          if (menuKey === "results") {
+          if (menuKey === "results" || menuKey === "score-recap") {
+            if (resultsViewModeField) {
+              resultsViewModeField.hidden = menuKey === "score-recap";
+            }
+            if (resultsFinalSchemeField) {
+              resultsFinalSchemeField.hidden = menuKey !== "score-recap";
+            }
+            if (
+              GuruResults &&
+              typeof GuruResults.setViewMode === "function"
+            ) {
+              GuruResults.setViewMode(
+                menuKey === "score-recap" ? "recap" : "attempt",
+              );
+            }
             try {
               await loadGuruResultExamOptions();
+              if (
+                GuruResults &&
+                typeof GuruResults.reloadActiveView === "function"
+              ) {
+                await GuruResults.reloadActiveView();
+              }
             } catch (_) {
               // error already surfaced by the module
             }
@@ -2131,11 +2185,20 @@
         resultsRefreshBtn: resultsRefreshBtn,
         resultsAssignmentForm: resultsAssignmentForm,
         resultsExamSelect: resultsExamSelect,
+        resultsViewMode: resultsViewMode,
+        resultsFinalScheme: resultsFinalScheme,
         resultsAttemptFilter: resultsAttemptFilter,
         resultsClassFilter: resultsClassFilter,
         resultsSchoolFilter: resultsSchoolFilter,
         resultsAssignmentBody: resultsAssignmentBody,
         resultsMatrixHead: resultsMatrixHead,
+        resultsAttemptWrap: resultsAttemptWrap,
+        resultsRecapWrap: resultsRecapWrap,
+        resultsRecapBody: resultsRecapBody,
+        scoreRecapDetailDialog: scoreRecapDetailDialog,
+        scoreRecapDetailSubtitle: scoreRecapDetailSubtitle,
+        scoreRecapDetailSummary: scoreRecapDetailSummary,
+        scoreRecapDetailBody: scoreRecapDetailBody,
         resultsPageInfo: resultsPageInfo,
         resultsPrevBtn: resultsPrevBtn,
         resultsNextBtn: resultsNextBtn,
@@ -2417,6 +2480,11 @@
         results: {
           title: "Hasil Ujian",
           desc: buildResultsDesc(),
+        },
+        "score-recap": {
+          title: "Rekap Nilai",
+          desc:
+            "Lihat nilai akhir per peserta berdasarkan skema nilai yang dipilih.",
         },
         subjects: {
           title: "Mata Pelajaran",

@@ -44,10 +44,13 @@ type examService interface {
 	PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
 	ListExamAssignments(ctx context.Context, examID int64) ([]ExamAssignmentUser, error)
 	ListExamParticipantResults(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error)
+	GetExamScoreRecap(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) (*ExamScoreRecap, error)
+	GetExamScoreRecapStudentDetail(ctx context.Context, examID, userID int64, finalScheme string) (*ExamScoreRecapStudentDetail, error)
 	ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error)
 	GetAttemptLearningGoalResult(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error)
 	GetAttemptStudentSchoolInfo(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error)
 	ExportExamParticipantResultsExcel(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error)
+	ExportExamScoreRecapExcel(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) ([]byte, string, error)
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
@@ -993,6 +996,99 @@ func (h *Handler) ListExamParticipantResults(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
 }
 
+func (h *Handler) GetExamScoreRecap(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	finalScheme := strings.TrimSpace(r.URL.Query().Get("final_scheme"))
+	var classFilter *string
+	if v := strings.TrimSpace(r.URL.Query().Get("class")); v != "" {
+		classFilter = &v
+	}
+	var schoolFilter *string
+	if v := strings.TrimSpace(r.URL.Query().Get("school")); v != "" {
+		schoolFilter = &v
+	}
+
+	out, err := h.svc.GetExamScoreRecap(r.Context(), examID, finalScheme, classFilter, schoolFilter)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
+}
+
+func (h *Handler) GetExamScoreRecapStudentDetail(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	userID, err := strconv.ParseInt(chi.URLParam(r, "user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid user id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	finalScheme := strings.TrimSpace(r.URL.Query().Get("final_scheme"))
+	out, err := h.svc.GetExamScoreRecapStudentDetail(r.Context(), examID, userID, finalScheme)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "user not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: out})
+}
+
 func (h *Handler) ListExamLearningGoalResults(w http.ResponseWriter, r *http.Request) {
 	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || examID <= 0 {
@@ -1235,6 +1331,58 @@ func (h *Handler) ExportExamParticipantResultsExcel(w http.ResponseWriter, r *ht
 	}
 	if strings.TrimSpace(filename) == "" {
 		filename = "hasil_ujian.xlsx"
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func (h *Handler) ExportExamScoreRecapExcel(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	finalScheme := strings.TrimSpace(r.URL.Query().Get("final_scheme"))
+	var classFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("class")); raw != "" {
+		classFilter = &raw
+	}
+	var schoolFilter *string
+	if raw := strings.TrimSpace(r.URL.Query().Get("school")); raw != "" {
+		schoolFilter = &raw
+	}
+	content, filename, err := h.svc.ExportExamScoreRecapExcel(r.Context(), examID, finalScheme, classFilter, schoolFilter)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	if strings.TrimSpace(filename) == "" {
+		filename = "rekap_nilai.xlsx"
 	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)

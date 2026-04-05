@@ -49,25 +49,14 @@
             Pilih salah satu ujian aktif yang ingin Anda ikuti. Dialog token
             baru akan dibuka setelah Anda mengklik ujian yang dipilih.
         </p>
-        <div class="table-wrap">
-            <table class="bs-table">
-                <thead>
-                    <tr>
-                        <th>Kode</th>
-                        <th>Nama Ujian</th>
-                        <th>Mapel</th>
-                        <th>Berakhir</th>
-                        <th>Aksi</th>
-                    </tr>
-                </thead>
-                <tbody id="self-enroll-body">
-                    <tr>
-                        <td colspan="5" class="muted">
-                            Belum ada ujian aktif yang bisa diikuti.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div
+            id="self-enroll-body"
+            class="peserta-exam-list mt"
+            aria-live="polite"
+        >
+            <div class="peserta-exam-empty muted">
+                Belum ada ujian aktif yang bisa diikuti.
+            </div>
         </div>
     </section>
 

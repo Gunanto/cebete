@@ -453,6 +453,70 @@ type ExamParticipantResult struct {
 	Rows        []ExamParticipantResultRow    `json:"rows"`
 }
 
+type ExamScoreRecap struct {
+	ExamID       int64                 `json:"exam_id"`
+	FinalScheme  string                `json:"final_scheme"`
+	KKTP         float64               `json:"kktp"`
+	ClassFilter  *string               `json:"class_filter,omitempty"`
+	SchoolFilter *string               `json:"school_filter,omitempty"`
+	Summary      ExamScoreRecapSummary `json:"summary"`
+	Rows         []ExamScoreRecapRow   `json:"rows"`
+}
+
+type ExamScoreRecapSummary struct {
+	ParticipantCount  int     `json:"participant_count"`
+	StartedCount      int     `json:"started_count"`
+	NotStartedCount   int     `json:"not_started_count"`
+	PassedCount       int     `json:"passed_count"`
+	NotPassedCount    int     `json:"not_passed_count"`
+	UnfinishedCount   int     `json:"unfinished_count"`
+	AverageFinalScore float64 `json:"average_final_score"`
+	HighestFinalScore float64 `json:"highest_final_score"`
+	LowestFinalScore  float64 `json:"lowest_final_score"`
+}
+
+type ExamScoreRecapRow struct {
+	UserID              int64      `json:"user_id"`
+	Username            string     `json:"username"`
+	FullName            string     `json:"full_name"`
+	SchoolName          *string    `json:"school_name,omitempty"`
+	ClassName           *string    `json:"class_name,omitempty"`
+	AttemptCount        int        `json:"attempt_count"`
+	AttemptScores       []float64  `json:"attempt_scores"`
+	CountedAttemptIDs   []int64    `json:"counted_attempt_ids,omitempty"`
+	FinalScore          *float64   `json:"final_score,omitempty"`
+	FinalStatus         string     `json:"final_status"`
+	LatestAttemptStatus *string    `json:"latest_attempt_status,omitempty"`
+	LatestStartedAt     *time.Time `json:"latest_started_at,omitempty"`
+	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
+}
+
+type ExamScoreRecapStudentDetail struct {
+	ExamID       int64                          `json:"exam_id"`
+	UserID       int64                          `json:"user_id"`
+	Username     string                         `json:"username"`
+	FullName     string                         `json:"full_name"`
+	SchoolName   *string                        `json:"school_name,omitempty"`
+	ClassName    *string                        `json:"class_name,omitempty"`
+	FinalScheme  string                         `json:"final_scheme"`
+	KKTP         float64                        `json:"kktp"`
+	FinalScore   *float64                       `json:"final_score,omitempty"`
+	FinalStatus  string                         `json:"final_status"`
+	CountedIDs   []int64                        `json:"counted_attempt_ids,omitempty"`
+	AttemptCount int                            `json:"attempt_count"`
+	Attempts     []ExamScoreRecapStudentAttempt `json:"attempts"`
+}
+
+type ExamScoreRecapStudentAttempt struct {
+	AttemptID   int64      `json:"attempt_id"`
+	AttemptNo   int        `json:"attempt_no"`
+	Status      string     `json:"status"`
+	Score       float64    `json:"score"`
+	StartedAt   time.Time  `json:"started_at"`
+	SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+	Counted     bool       `json:"counted"`
+}
+
 type ExamParticipantResultFilters struct {
 	Attempts []int    `json:"attempts,omitempty"`
 	Classes  []string `json:"classes,omitempty"`
@@ -2914,6 +2978,294 @@ func (s *Service) ListExamParticipantResults(ctx context.Context, examID int64, 
 		Filters:     filters,
 		Rows:        resultRows,
 	}, nil
+}
+
+func normalizeFinalScheme(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "highest":
+		return "highest"
+	case "latest":
+		return "latest"
+	case "average":
+		return "average"
+	default:
+		return "highest"
+	}
+}
+
+func buildExamScoreRecapRow(finalScheme string, assignment ExamAssignmentUser, attempts *StudentExamAttempts) ExamScoreRecapRow {
+	row := ExamScoreRecapRow{
+		UserID:     assignment.UserID,
+		Username:   assignment.Username,
+		FullName:   assignment.FullName,
+		SchoolName: assignment.SchoolName,
+		ClassName:  assignment.ClassName,
+	}
+	if attempts == nil {
+		return row
+	}
+	row.AttemptCount = len(attempts.Attempts)
+	for _, att := range attempts.Attempts {
+		score := float64(att.Score)
+		row.AttemptScores = append(row.AttemptScores, score)
+		if att.AttemptID > 0 {
+			switch finalScheme {
+			case "highest":
+				if att.Status == "submitted" {
+					if row.FinalScore == nil || score > *row.FinalScore {
+						v := score
+						row.FinalScore = &v
+						row.CountedAttemptIDs = []int64{att.AttemptID}
+					}
+				}
+			case "latest":
+				if att.Status == "submitted" {
+					v := score
+					row.FinalScore = &v
+					row.CountedAttemptIDs = []int64{att.AttemptID}
+				}
+			case "average":
+				if att.Status == "submitted" {
+					row.CountedAttemptIDs = append(row.CountedAttemptIDs, att.AttemptID)
+				}
+			}
+		}
+		if att.Status != "" {
+			status := strings.TrimSpace(att.Status)
+			row.LatestAttemptStatus = &status
+		}
+		if !att.StartedAt.IsZero() {
+			v := att.StartedAt
+			row.LatestStartedAt = &v
+		}
+		if att.SubmittedAt != nil {
+			v := *att.SubmittedAt
+			row.LatestSubmittedAt = &v
+		}
+	}
+	if finalScheme == "average" && len(row.CountedAttemptIDs) > 0 {
+		sum := 0.0
+		counted := 0
+		for idx, att := range attempts.Attempts {
+			if att.Status != "submitted" {
+				continue
+			}
+			sum += row.AttemptScores[idx]
+			counted++
+		}
+		if counted > 0 {
+			v := sum / float64(counted)
+			row.FinalScore = &v
+		}
+	}
+	return row
+}
+
+func applyExamScoreRecapRowSummary(summary *ExamScoreRecapSummary, row *ExamScoreRecapRow, kktp float64) {
+	if summary == nil || row == nil {
+		return
+	}
+	summary.ParticipantCount++
+	if row.AttemptCount > 0 {
+		summary.StartedCount++
+	} else {
+		summary.NotStartedCount++
+	}
+	if row.FinalScore == nil {
+		if row.AttemptCount > 0 {
+			row.FinalStatus = "unfinished"
+			summary.UnfinishedCount++
+		} else {
+			row.FinalStatus = "not_started"
+		}
+		return
+	}
+	if *row.FinalScore >= kktp {
+		row.FinalStatus = "passed"
+		summary.PassedCount++
+		return
+	}
+	row.FinalStatus = "not_passed"
+	summary.NotPassedCount++
+}
+
+func (s *Service) GetExamScoreRecap(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) (*ExamScoreRecap, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
+		return nil, err
+	}
+	if err := s.finalizeExpiredAttemptsForExam(ctx, examID); err != nil {
+		return nil, err
+	}
+
+	out := &ExamScoreRecap{
+		ExamID:      examID,
+		FinalScheme: normalizeFinalScheme(finalScheme),
+	}
+	if classFilter != nil {
+		v := strings.TrimSpace(*classFilter)
+		if v != "" {
+			out.ClassFilter = &v
+		}
+	}
+	if schoolFilter != nil {
+		v := strings.TrimSpace(*schoolFilter)
+		if v != "" {
+			out.SchoolFilter = &v
+		}
+	}
+
+	var examExists bool
+	var kktp float64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM exams WHERE id = $1),
+		       COALESCE((SELECT kktp FROM exams WHERE id = $1), 70)
+	`, examID).Scan(&examExists, &kktp); err != nil {
+		return nil, fmt.Errorf("check exam exists for score recap: %w", err)
+	}
+	if !examExists {
+		return nil, ErrExamNotFound
+	}
+	out.KKTP = normalizeKKTP(kktp)
+
+	assignments, err := s.ListExamAssignments(ctx, examID)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]ExamScoreRecapRow, 0, len(assignments))
+	finalSum := 0.0
+	finalCount := 0
+	var highest *float64
+	var lowest *float64
+	for _, it := range assignments {
+		if strings.ToLower(strings.TrimSpace(it.Role)) != "siswa" {
+			continue
+		}
+		if out.ClassFilter != nil {
+			currentClass := strings.TrimSpace(func() string {
+				if it.ClassName == nil {
+					return ""
+				}
+				return *it.ClassName
+			}())
+			if currentClass != *out.ClassFilter {
+				continue
+			}
+		}
+		if out.SchoolFilter != nil {
+			currentSchool := strings.TrimSpace(func() string {
+				if it.SchoolName == nil {
+					return ""
+				}
+				return *it.SchoolName
+			}())
+			if currentSchool != *out.SchoolFilter {
+				continue
+			}
+		}
+
+		attempts, err := s.ListStudentExamAttempts(ctx, examID, it.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("load student exam attempts for recap: %w", err)
+		}
+		row := buildExamScoreRecapRow(out.FinalScheme, it, attempts)
+		applyExamScoreRecapRowSummary(&out.Summary, &row, out.KKTP)
+		if row.FinalScore != nil {
+			finalSum += *row.FinalScore
+			finalCount++
+			if highest == nil || *row.FinalScore > *highest {
+				v := *row.FinalScore
+				highest = &v
+			}
+			if lowest == nil || *row.FinalScore < *lowest {
+				v := *row.FinalScore
+				lowest = &v
+			}
+		}
+		rows = append(rows, row)
+	}
+	if finalCount > 0 {
+		out.Summary.AverageFinalScore = finalSum / float64(finalCount)
+	}
+	if highest != nil {
+		out.Summary.HighestFinalScore = *highest
+	}
+	if lowest != nil {
+		out.Summary.LowestFinalScore = *lowest
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].FullName == rows[j].FullName {
+			return rows[i].UserID < rows[j].UserID
+		}
+		return strings.ToLower(rows[i].FullName) < strings.ToLower(rows[j].FullName)
+	})
+	out.Rows = rows
+	return out, nil
+}
+
+func (s *Service) GetExamScoreRecapStudentDetail(ctx context.Context, examID, userID int64, finalScheme string) (*ExamScoreRecapStudentDetail, error) {
+	if examID <= 0 || userID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	recap, err := s.GetExamScoreRecap(ctx, examID, finalScheme, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := s.ListExamAssignments(ctx, examID)
+	if err != nil {
+		return nil, err
+	}
+	var assignment *ExamAssignmentUser
+	for idx := range assignments {
+		if assignments[idx].UserID == userID {
+			assignment = &assignments[idx]
+			break
+		}
+	}
+	if assignment == nil {
+		return nil, ErrUserNotFound
+	}
+	attempts, err := s.ListStudentExamAttempts(ctx, examID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("load student exam attempts for recap detail: %w", err)
+	}
+	row := buildExamScoreRecapRow(normalizeFinalScheme(finalScheme), *assignment, attempts)
+	applyExamScoreRecapRowSummary(&ExamScoreRecapSummary{}, &row, recap.KKTP)
+	out := &ExamScoreRecapStudentDetail{
+		ExamID:       examID,
+		UserID:       userID,
+		Username:     assignment.Username,
+		FullName:     assignment.FullName,
+		SchoolName:   assignment.SchoolName,
+		ClassName:    assignment.ClassName,
+		FinalScheme:  normalizeFinalScheme(finalScheme),
+		KKTP:         recap.KKTP,
+		FinalScore:   row.FinalScore,
+		FinalStatus:  row.FinalStatus,
+		CountedIDs:   append([]int64(nil), row.CountedAttemptIDs...),
+		AttemptCount: row.AttemptCount,
+		Attempts:     make([]ExamScoreRecapStudentAttempt, 0, row.AttemptCount),
+	}
+	if attempts != nil {
+		counted := make(map[int64]bool, len(row.CountedAttemptIDs))
+		for _, id := range row.CountedAttemptIDs {
+			counted[id] = true
+		}
+		for _, att := range attempts.Attempts {
+			out.Attempts = append(out.Attempts, ExamScoreRecapStudentAttempt{
+				AttemptID:   att.AttemptID,
+				AttemptNo:   att.AttemptNo,
+				Status:      att.Status,
+				Score:       att.Score,
+				StartedAt:   att.StartedAt,
+				SubmittedAt: att.SubmittedAt,
+				Counted:     counted[att.AttemptID],
+			})
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) ListExamLearningGoalResults(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {

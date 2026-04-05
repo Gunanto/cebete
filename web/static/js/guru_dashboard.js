@@ -17,6 +17,7 @@
       "exams",
       "enroll",
       "results",
+      "score-recap",
       "subjects",
       "guide",
     ];

@@ -22,6 +22,7 @@
   var latestLearningGoalStudentResult = {};
   var examSchoolInfoCache = {};
   var examAssignmentsCache = {};
+  var latestScoreRecap = null;
 
   function setDeps(opts) {
     deps = opts || {};
@@ -31,8 +32,17 @@
   function updateResultsExportState() {
     if (!deps || !deps.resultsExportBtn) return;
     const hasExam = Number((deps.resultsExamSelect && deps.resultsExamSelect.value) || 0) > 0;
+    if (getResultsViewMode() === "recap") {
+      deps.resultsExportBtn.disabled = !hasExam;
+      deps.resultsExportBtn.title = hasExam
+        ? "Unduh Excel rekap nilai sesuai filter yang dipilih"
+        : "Pilih ujian terlebih dahulu untuk mengunduh rekap nilai";
+      deps.resultsExportBtn.textContent = "Download Excel Rekap Nilai";
+      return;
+    }
     const hasSchool = Boolean(getActiveSchoolFilter());
     deps.resultsExportBtn.disabled = !(hasExam && hasSchool);
+    deps.resultsExportBtn.textContent = "Download Excel Hasil Ujian";
     deps.resultsExportBtn.title = hasSchool
       ? "Unduh Excel hasil ujian sesuai sekolah yang dipilih"
       : "Pilih sekolah terlebih dahulu untuk mengunduh Excel";
@@ -1097,6 +1107,19 @@
     return String(deps.resultsAttemptFilter.value || "").trim();
   }
 
+  function getResultsViewMode() {
+    if (!deps || !deps.resultsViewMode) return "attempt";
+    var value = String(deps.resultsViewMode.value || "").trim().toLowerCase();
+    return value === "recap" ? "recap" : "attempt";
+  }
+
+  function getActiveFinalScheme() {
+    if (!deps || !deps.resultsFinalScheme) return "highest";
+    var value = String(deps.resultsFinalScheme.value || "").trim().toLowerCase();
+    if (value === "latest" || value === "average") return value;
+    return "highest";
+  }
+
   function getActiveClassFilter() {
     if (!deps || !deps.resultsClassFilter) return "";
     return String(deps.resultsClassFilter.value || "").trim();
@@ -1105,6 +1128,65 @@
   function getActiveSchoolFilter() {
     if (!deps || !deps.resultsSchoolFilter) return "";
     return String(deps.resultsSchoolFilter.value || "").trim();
+  }
+
+  function finalStatusLabel(status) {
+    switch (String(status || "").trim().toLowerCase()) {
+      case "passed":
+        return "Tuntas";
+      case "not_passed":
+        return "Belum Tuntas";
+      case "unfinished":
+        return "Belum Selesai";
+      default:
+        return "Belum Ikut";
+    }
+  }
+
+  function finalStatusBadgeHTML(status) {
+    var normalized = String(status || "").trim().toLowerCase();
+    var cls = "chip-muted";
+    if (normalized === "passed") cls = "chip-success";
+    if (normalized === "not_passed") cls = "chip-warning";
+    if (normalized === "unfinished") cls = "chip-danger";
+    return (
+      '<span class="chip ' +
+      cls +
+      '">' +
+      deps.escapeHtml(finalStatusLabel(status)) +
+      "</span>"
+    );
+  }
+
+  function updateResultsModeUI() {
+    if (!deps) return;
+    var recap = getResultsViewMode() === "recap";
+    if (deps.resultsAttemptWrap) deps.resultsAttemptWrap.hidden = recap;
+    if (deps.resultsRecapWrap) deps.resultsRecapWrap.hidden = !recap;
+    if (deps.resultsAttemptFilter) deps.resultsAttemptFilter.disabled = recap;
+    [
+      deps.resultsReportBtn,
+      deps.resultsStatsBtn,
+      deps.resultsChartBtn,
+      deps.itemAnalysisBtn,
+      deps.learningGoalBtn,
+      deps.resultsPageSizeSelect,
+      deps.resultsPrevBtn,
+      deps.resultsNextBtn,
+    ].forEach(function (el) {
+      if (!el) return;
+      el.disabled = recap;
+    });
+  }
+
+  function setViewMode(mode) {
+    if (!deps || !deps.resultsViewMode) return;
+    var next = String(mode || "").trim().toLowerCase() === "recap"
+      ? "recap"
+      : "attempt";
+    deps.resultsViewMode.value = next;
+    updateResultsExportState();
+    updateResultsModeUI();
   }
 
   function hasActiveResultsFilters() {
@@ -1204,6 +1286,196 @@
         .join("");
       deps.resultsAssignmentBody.appendChild(tr);
     });
+  }
+
+  function renderScoreRecapRows(rows) {
+    if (!deps || !deps.resultsRecapBody) return;
+    var list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      deps.resultsRecapBody.innerHTML =
+        '<tr><td colspan="10" class="muted">Tidak ada data rekap nilai sesuai filter yang dipilih.</td></tr>';
+      return;
+    }
+    deps.resultsRecapBody.innerHTML = "";
+    list.forEach(function (it) {
+      var attemptScores = Array.isArray(it.attempt_scores) ? it.attempt_scores : [];
+      var finalScore =
+        typeof it.final_score === "number"
+          ? Number(it.final_score).toFixed(2)
+          : "-";
+      var tr = document.createElement("tr");
+      tr.innerHTML = [
+        "<td>" +
+          deps.escapeHtml(String(it.full_name || "-")) +
+          "<br><small>" +
+          deps.escapeHtml(String(it.username || "-")) +
+          "</small></td>",
+        "<td>" + deps.escapeHtml(String(it.school_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.attempt_count || 0)) + "</td>",
+        "<td>" +
+          deps.escapeHtml(
+            attemptScores.length > 0 ? Number(attemptScores[0]).toFixed(2) : "-",
+          ) +
+          "</td>",
+        "<td>" +
+          deps.escapeHtml(
+            attemptScores.length > 1 ? Number(attemptScores[1]).toFixed(2) : "-",
+          ) +
+          "</td>",
+        "<td>" +
+          deps.escapeHtml(
+            attemptScores.length > 2 ? Number(attemptScores[2]).toFixed(2) : "-",
+          ) +
+          "</td>",
+        "<td><strong>" + deps.escapeHtml(finalScore) + "</strong></td>",
+        "<td>" + finalStatusBadgeHTML(it.final_status) + "</td>",
+        '<td><button class="btn btn-secondary btn-inline" type="button" data-recap-detail="' +
+          deps.escapeHtml(String(it.user_id || 0)) +
+          '">Detail</button></td>',
+      ].join("");
+      deps.resultsRecapBody.appendChild(tr);
+    });
+  }
+
+  function renderScoreRecapDetail(detail) {
+    if (!deps || !deps.scoreRecapDetailBody || !deps.scoreRecapDetailSummary) {
+      return;
+    }
+    if (!detail) {
+      deps.scoreRecapDetailSummary.innerHTML = "Belum ada detail peserta yang dimuat.";
+      deps.scoreRecapDetailBody.innerHTML =
+        '<tr><td colspan="6" class="muted">Belum ada detail peserta yang dimuat.</td></tr>';
+      return;
+    }
+    var finalScore =
+      typeof detail.final_score === "number"
+        ? Number(detail.final_score).toFixed(2)
+        : "-";
+    deps.scoreRecapDetailSummary.innerHTML = [
+      "<strong>" + deps.escapeHtml(String(detail.full_name || "-")) + "</strong>",
+      " | Username: " + deps.escapeHtml(String(detail.username || "-")),
+      " | Kelas: " + deps.escapeHtml(String(detail.class_name || "-")),
+      " | Skema: " + deps.escapeHtml(String(detail.final_scheme || "-")),
+      " | Nilai Akhir: " + deps.escapeHtml(finalScore),
+      " | Status: " + finalStatusBadgeHTML(detail.final_status),
+    ].join("");
+    if (deps.scoreRecapDetailSubtitle) {
+      deps.scoreRecapDetailSubtitle.textContent =
+        "KKTP " +
+        Number(detail.kktp || 0).toFixed(2) +
+        " | Attempt " +
+        String(detail.attempt_count || 0);
+    }
+    var attempts = Array.isArray(detail.attempts) ? detail.attempts : [];
+    if (!attempts.length) {
+      deps.scoreRecapDetailBody.innerHTML =
+        '<tr><td colspan="6" class="muted">Peserta ini belum memiliki attempt.</td></tr>';
+      return;
+    }
+    deps.scoreRecapDetailBody.innerHTML = "";
+    attempts.forEach(function (it) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = [
+        "<td>" + deps.escapeHtml(String(it.attempt_no || 0)) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.status || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(Number(it.score || 0).toFixed(2)) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.started_at)) + "</td>",
+        "<td>" + deps.escapeHtml(deps.fmtDate(it.submitted_at)) + "</td>",
+        "<td>" +
+          (it.counted
+            ? '<span class="chip chip-success">Dipakai</span>'
+            : '<span class="chip chip-muted">Tidak</span>') +
+          "</td>",
+      ].join("");
+      deps.scoreRecapDetailBody.appendChild(tr);
+    });
+  }
+
+  async function openScoreRecapDetail(userID) {
+    if (!deps || !deps.scoreRecapDetailDialog) return;
+    var examID = Number((deps.resultsExamSelect && deps.resultsExamSelect.value) || 0);
+    if (examID <= 0 || userID <= 0) {
+      deps.setMsg("Pilih ujian dan peserta terlebih dahulu.");
+      return;
+    }
+    var detail = await deps.api(
+      "/api/v1/admin/exams/" +
+        examID +
+        "/score-recap/students/" +
+        Number(userID) +
+        "?final_scheme=" +
+        encodeURIComponent(getActiveFinalScheme()),
+      "GET",
+    );
+    renderScoreRecapDetail(detail || null);
+    showDialog(deps.scoreRecapDetailDialog);
+  }
+
+  async function loadScoreRecap(examID) {
+    if (examID <= 0) {
+      latestScoreRecap = null;
+      updateResultsModeUI();
+      if (deps.resultsRecapBody) {
+        deps.resultsRecapBody.innerHTML =
+          '<tr><td colspan="9" class="muted">Pilih ujian lalu muat rekap nilai.</td></tr>';
+      }
+      setResultsSummary("Belum ada data rekap nilai.");
+      setResultsExtra("Pilih ujian dan skema nilai akhir untuk melihat rekap.");
+      return;
+    }
+    var params = new URLSearchParams();
+    params.set("final_scheme", getActiveFinalScheme());
+    var classFilter = getActiveClassFilter();
+    if (classFilter) params.set("class", classFilter);
+    var schoolFilter = getActiveSchoolFilter();
+    if (schoolFilter) params.set("school", schoolFilter);
+    var recap = await deps.api(
+      "/api/v1/admin/exams/" +
+        Number(examID) +
+        "/score-recap" +
+        (params.toString() ? "?" + params.toString() : ""),
+      "GET",
+    );
+    latestScoreRecap = recap || null;
+    updateResultsModeUI();
+    renderScoreRecapRows((recap && recap.rows) || []);
+    var summary = (recap && recap.summary) || {};
+    setResultsSummary(
+      "Skema: " +
+        deps.escapeHtml(getActiveFinalScheme()) +
+        " | Peserta: " +
+        String(summary.participant_count || 0) +
+        " | Sudah ikut: " +
+        String(summary.started_count || 0) +
+        " | Belum ikut: " +
+        String(summary.not_started_count || 0),
+    );
+    setResultsExtra(
+      "Tuntas: " +
+        String(summary.passed_count || 0) +
+        " | Belum tuntas: " +
+        String(summary.not_passed_count || 0) +
+        " | Belum selesai: " +
+        String(summary.unfinished_count || 0) +
+        " | Rata-rata: " +
+        Number(summary.average_final_score || 0).toFixed(2),
+    );
+    resultsTotalRows = 0;
+    updateResultsPaginationUI();
+  }
+
+  async function loadActiveResultsView(examID) {
+    if (getResultsViewMode() === "recap") {
+      return loadScoreRecap(examID);
+    }
+    return loadExamAssignments(examID);
+  }
+
+  async function reloadActiveView() {
+    var examID = Number((deps && deps.resultsExamSelect && deps.resultsExamSelect.value) || 0);
+    if (examID <= 0) return;
+    return loadActiveResultsView(examID);
   }
 
   function resultsFilterLabel() {
@@ -1352,8 +1624,10 @@
   }
 
   function applyResultsFilters() {
+    updateResultsModeUI();
     const matrix = latestResultsMatrix;
     updateResultsExportState();
+    if (getResultsViewMode() === "recap") return;
     if (!matrix) return;
     const rows = Array.isArray(matrix && matrix.rows) ? matrix.rows : [];
     const questionNos = Array.isArray(matrix && matrix.question_nos)
@@ -1649,6 +1923,7 @@
   }
 
   async function loadExamAssignments(examID) {
+    updateResultsModeUI();
     if (!deps || !deps.resultsAssignmentBody) return;
     syncResultsLimitFromUI();
     if (!examID || examID <= 0) {
@@ -2909,7 +3184,7 @@
     }
     if (autoLoad) {
       resultsOffset = 0;
-      return loadExamAssignments(examID);
+      return loadActiveResultsView(examID);
     }
   }
 
@@ -2952,7 +3227,7 @@
         );
         try {
           resultsOffset = 0;
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3016,9 +3291,10 @@
     if (deps.resultsExamSelect) {
       deps.resultsExamSelect.addEventListener("change", async function () {
         updateResultsExportState();
+        updateResultsModeUI();
         const examID = Number(deps.resultsExamSelect.value || 0);
         if (examID <= 0) {
-          await loadExamAssignments(0);
+          await loadActiveResultsView(0);
           deps.setMsg("Pilih ujian terlebih dahulu.");
           return;
         }
@@ -3029,7 +3305,7 @@
         );
         try {
           resultsOffset = 0;
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3040,6 +3316,10 @@
     }
     if (deps.resultsPageSizeSelect) {
       deps.resultsPageSizeSelect.addEventListener("change", async function () {
+        if (getResultsViewMode() === "recap") {
+          updateResultsModeUI();
+          return;
+        }
         syncResultsLimitFromUI();
         resultsOffset = 0;
         const examID = Number(
@@ -3055,7 +3335,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3066,6 +3346,7 @@
     }
     if (deps.resultsPrevBtn) {
       deps.resultsPrevBtn.addEventListener("click", async function () {
+        if (getResultsViewMode() === "recap") return;
         const examID = Number(
           (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
         );
@@ -3078,7 +3359,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3089,6 +3370,7 @@
     }
     if (deps.resultsNextBtn) {
       deps.resultsNextBtn.addEventListener("click", async function () {
+        if (getResultsViewMode() === "recap") return;
         const examID = Number(
           (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
         );
@@ -3101,7 +3383,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3112,6 +3394,10 @@
     }
     if (deps.resultsAttemptFilter) {
       deps.resultsAttemptFilter.addEventListener("change", async function () {
+        if (getResultsViewMode() === "recap") {
+          updateResultsModeUI();
+          return;
+        }
         const examID = Number(
           (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
         );
@@ -3126,7 +3412,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3151,7 +3437,7 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
@@ -3177,10 +3463,56 @@
           "Memuat hasil ujian peserta...",
         );
         try {
-          await loadExamAssignments(examID);
+          await loadActiveResultsView(examID);
           deps.setMsg("Hasil ujian peserta berhasil dimuat.");
         } catch (err) {
           deps.setMsg("Gagal memuat hasil ujian peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsViewMode) {
+      deps.resultsViewMode.addEventListener("change", async function () {
+        updateResultsExportState();
+        updateResultsModeUI();
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) return;
+        const done = deps.beginBusy(
+          deps.resultsViewMode,
+          deps.msg,
+          "Memuat tampilan hasil ujian...",
+        );
+        try {
+          resultsOffset = 0;
+          await loadActiveResultsView(examID);
+          deps.setMsg("Tampilan hasil ujian berhasil diperbarui.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat tampilan hasil ujian: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsFinalScheme) {
+      deps.resultsFinalScheme.addEventListener("change", async function () {
+        if (getResultsViewMode() !== "recap") return;
+        const examID = Number(
+          (deps.resultsExamSelect && deps.resultsExamSelect.value) || 0,
+        );
+        if (examID <= 0) return;
+        const done = deps.beginBusy(
+          deps.resultsFinalScheme,
+          deps.msg,
+          "Menghitung ulang rekap nilai...",
+        );
+        try {
+          await loadScoreRecap(examID);
+          deps.setMsg("Rekap nilai berhasil diperbarui.");
+        } catch (err) {
+          deps.setMsg("Gagal memuat rekap nilai: " + err.message);
         } finally {
           done();
         }
@@ -3204,11 +3536,18 @@
         );
         try {
           const params = new URLSearchParams();
+          var endpoint = "/results/export";
+          if (getResultsViewMode() === "recap") {
+            endpoint = "/score-recap/export";
+            params.set("final_scheme", getActiveFinalScheme());
+            const classFilter = getActiveClassFilter();
+            if (classFilter) params.set("class", classFilter);
+          }
           if (schoolFilter) params.set("school", schoolFilter);
           const res = await fetch(
             "/api/v1/admin/exams/" +
               examID +
-              "/results/export" +
+              endpoint +
               (params.toString() ? "?" + params.toString() : ""),
             { method: "GET", credentials: "include" },
           );
@@ -3221,7 +3560,9 @@
           const blob = await res.blob();
           const filename = parseDownloadFilenameLite(
             res.headers.get("content-disposition"),
-            "hasil_ujian.xlsx",
+            getResultsViewMode() === "recap"
+              ? "rekap_nilai.xlsx"
+              : "hasil_ujian.xlsx",
           );
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -3231,9 +3572,35 @@
           a.click();
           a.remove();
           URL.revokeObjectURL(url);
-          deps.setMsg("Excel hasil ujian berhasil diunduh.");
+          deps.setMsg(
+            getResultsViewMode() === "recap"
+              ? "Excel rekap nilai berhasil diunduh."
+              : "Excel hasil ujian berhasil diunduh.",
+          );
         } catch (err) {
           deps.setMsg("Gagal mengunduh Excel: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+    if (deps.resultsRecapBody) {
+      deps.resultsRecapBody.addEventListener("click", async function (e) {
+        var target = e.target;
+        if (!target) return;
+        var btn = target.closest("[data-recap-detail]");
+        if (!btn) return;
+        var userID = Number(btn.getAttribute("data-recap-detail") || 0);
+        if (userID <= 0) return;
+        var done = deps.beginBusy(
+          btn,
+          deps.msg,
+          "Memuat detail attempt peserta...",
+        );
+        try {
+          await openScoreRecapDetail(userID);
+        } catch (err) {
+          deps.setMsg("Gagal memuat detail peserta: " + err.message);
         } finally {
           done();
         }
@@ -3336,6 +3703,7 @@
     setDeps(opts);
     syncResultsLimitFromUI();
     updateResultsPaginationUI();
+    updateResultsModeUI();
     bindHandlers();
   }
 
@@ -3343,6 +3711,8 @@
     init: init,
     setExams: setExams,
     selectExam: selectExam,
+    setViewMode: setViewMode,
+    reloadActiveView: reloadActiveView,
     getResultsCount: getResultsCount,
     loadExamAssignments: loadExamAssignments,
   };

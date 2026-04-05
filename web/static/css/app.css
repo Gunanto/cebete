@@ -4862,30 +4862,36 @@ body[data-page="peserta_content"] #peserta-exams-panel .muted {
     color: #7587a8;
 }
 
-body[data-page="peserta_content"] .peserta-exam-list {
+body[data-page="peserta_content"] .peserta-exam-list,
+body[data-page="ujian_content"] .peserta-exam-list {
     display: grid;
     gap: 0;
     width: min(100%, 760px);
 }
 
 body[data-page="peserta_content"] .peserta-exam-card,
-body[data-page="peserta_content"] .peserta-exam-empty {
+body[data-page="peserta_content"] .peserta-exam-empty,
+body[data-page="ujian_content"] .peserta-exam-card,
+body[data-page="ujian_content"] .peserta-exam-empty {
     padding: 14px 18px;
     background: #fff;
     border: 1.5pt solid #9fd8d6;
     border-radius: 10px;
 }
 
-body[data-page="peserta_content"] .peserta-exam-card + .peserta-exam-card {
+body[data-page="peserta_content"] .peserta-exam-card + .peserta-exam-card,
+body[data-page="ujian_content"] .peserta-exam-card + .peserta-exam-card {
     margin-top: 10px;
 }
 
-body[data-page="peserta_content"] .peserta-exam-grid {
+body[data-page="peserta_content"] .peserta-exam-grid,
+body[data-page="ujian_content"] .peserta-exam-grid {
     display: grid;
     gap: 4px;
 }
 
-body[data-page="peserta_content"] .peserta-exam-row {
+body[data-page="peserta_content"] .peserta-exam-row,
+body[data-page="ujian_content"] .peserta-exam-row {
     display: grid;
     grid-template-columns: 150px minmax(0, 1fr);
     align-items: start;
@@ -4903,14 +4909,16 @@ body[data-page="peserta_content"] .peserta-exam-value {
     overflow-wrap: anywhere;
 }
 
-body[data-page="peserta_content"] .peserta-exam-actions {
+body[data-page="peserta_content"] .peserta-exam-actions,
+body[data-page="ujian_content"] .peserta-exam-actions {
     margin-top: 12px;
     padding-left: 166px;
     display: flex;
     justify-content: flex-start;
 }
 
-body[data-page="peserta_content"] .peserta-exam-actions .btn-inline {
+body[data-page="peserta_content"] .peserta-exam-actions .btn-inline,
+body[data-page="ujian_content"] .peserta-exam-actions .btn-inline {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5038,16 +5046,20 @@ body[data-page="peserta_content"] .peserta-exam-actions .btn-inline {
     }
 
     body[data-page="peserta_content"] .peserta-exam-card,
-    body[data-page="peserta_content"] .peserta-exam-empty {
+    body[data-page="peserta_content"] .peserta-exam-empty,
+    body[data-page="ujian_content"] .peserta-exam-card,
+    body[data-page="ujian_content"] .peserta-exam-empty {
         padding: 14px 12px;
     }
 
-    body[data-page="peserta_content"] .peserta-exam-row {
+    body[data-page="peserta_content"] .peserta-exam-row,
+    body[data-page="ujian_content"] .peserta-exam-row {
         grid-template-columns: 110px minmax(0, 1fr);
         column-gap: 12px;
     }
 
-    body[data-page="peserta_content"] .peserta-exam-actions {
+    body[data-page="peserta_content"] .peserta-exam-actions,
+    body[data-page="ujian_content"] .peserta-exam-actions {
         padding-left: 122px;
     }
 }

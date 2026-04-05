@@ -151,22 +151,33 @@
       const items = Array.isArray(list) ? list : [];
       if (!items.length) {
         selfEnrollBody.innerHTML =
-          '<tr><td colspan="5" class="muted">Belum ada ujian aktif yang bisa diikuti.</td></tr>';
+          '<div class="peserta-exam-empty muted">Belum ada ujian aktif yang bisa diikuti.</div>';
         return items;
       }
       selfEnrollBody.innerHTML = "";
       items.forEach(function (it) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = [
-          "<td>" + escapeHtml(String(it.code || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.title || "-")) + "</td>",
-          "<td>" + escapeHtml(String(it.subject_name || "-")) + "</td>",
-          "<td>" + escapeHtml(fmtShortDate(it.end_at)) + "</td>",
-          '<td><button class="btn btn-secondary btn-inline" type="button" data-self-enroll="' +
+        const card = document.createElement("article");
+        card.className = "peserta-exam-card";
+        card.innerHTML = [
+          '<div class="peserta-exam-grid">',
+          '<div class="peserta-exam-row"><div class="peserta-exam-label">Kode</div><div class="peserta-exam-value">' +
+            escapeHtml(String(it.code || "-")) +
+            "</div></div>",
+          '<div class="peserta-exam-row"><div class="peserta-exam-label">Nama Ujian</div><div class="peserta-exam-value">' +
+            escapeHtml(String(it.title || "-")) +
+            "</div></div>",
+          '<div class="peserta-exam-row"><div class="peserta-exam-label">Mapel</div><div class="peserta-exam-value">' +
+            escapeHtml(String(it.subject_name || "-")) +
+            "</div></div>",
+          '<div class="peserta-exam-row"><div class="peserta-exam-label">Berakhir</div><div class="peserta-exam-value">' +
+            escapeHtml(fmtShortDate(it.end_at)) +
+            "</div></div>",
+          "</div>",
+          '<div class="peserta-exam-actions"><button class="btn btn-secondary btn-inline" type="button" data-self-enroll="' +
             escapeHtml(String(it.id || 0)) +
-            '">Pilih Ujian</button></td>',
+            '">Pilih Ujian</button></div>',
         ].join("");
-        selfEnrollBody.appendChild(tr);
+        selfEnrollBody.appendChild(card);
       });
       return items;
     }
