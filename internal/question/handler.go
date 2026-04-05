@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -505,6 +506,7 @@ func (h *Handler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrLearningGoalNotFound), errors.Is(err, ErrQuestionCodeNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		default:
+			log.Printf("create question failed user_id=%d subject_id=%d learning_goal_id=%d question_code_id=%v question_type=%q title=%q err=%v", user.ID, req.SubjectID, req.LearningGoalID, req.QuestionCodeID, req.QuestionType, req.Title, err)
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		}
 		return
