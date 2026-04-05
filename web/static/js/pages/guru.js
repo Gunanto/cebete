@@ -642,6 +642,9 @@
       "guru-results-page-size",
     );
     const resultsSummary = document.getElementById("guru-results-summary");
+    const resultsAnalysisActions = document.getElementById(
+      "guru-results-analysis-actions",
+    );
     const resultsExtra = document.getElementById("guru-results-extra");
     const resultsReportBtn = document.getElementById("guru-results-report-btn");
     const resultsStatsBtn = document.getElementById("guru-results-stats-btn");
@@ -2041,6 +2044,12 @@
             }
             if (resultsAttemptFilterField) {
               resultsAttemptFilterField.hidden = menuKey === "score-recap";
+            }
+            if (resultsAnalysisActions) {
+              resultsAnalysisActions.hidden = menuKey === "score-recap";
+            }
+            if (resultsExtra) {
+              resultsExtra.hidden = menuKey === "score-recap";
             }
             if (
               GuruResults &&
