@@ -2635,10 +2635,30 @@ func (s *Service) writeAuditTx(ctx context.Context, tx *sql.Tx, userID int64, ac
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO audit_logs (user_id, action, entity_type, entity_id, payload, created_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, now())
-	`, userID, action, entityType, entityID, string(b))
+
+	auditHasTenant, err := hasColumn(ctx, tx, "audit_logs", "tenant_id")
+	if err != nil {
+		return err
+	}
+	insertColumns := []string{"user_id", "action", "entity_type", "entity_id", "payload", "created_at"}
+	insertValues := []string{"$1", "$2", "$3", "$4", "$5::jsonb", "now()"}
+	insertArgs := []any{userID, action, entityType, entityID, string(b)}
+	if auditHasTenant {
+		tenantID, err := loadUserTenantID(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if tenantID == nil || *tenantID <= 0 {
+			return fmt.Errorf("resolve audit log tenant: tenant_id is required")
+		}
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *tenantID)
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO audit_logs (%s)
+		VALUES (%s)
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 	return err
 }
 

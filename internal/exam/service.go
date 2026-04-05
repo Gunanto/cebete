@@ -890,6 +890,31 @@ func loadAttemptTenantID(ctx context.Context, q columnQuerier, attemptID int64) 
 	return &out, nil
 }
 
+func loadUserTenantID(ctx context.Context, q columnQuerier, userID int64) (*int64, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	hasTenant, err := hasColumn(ctx, q, "users", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT tenant_id FROM users WHERE id = $1`, userID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("load user tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
+}
+
 func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
 	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
 		return nil, err
@@ -4942,10 +4967,30 @@ func (s *Service) writeAuditTx(ctx context.Context, tx *sql.Tx, userID int64, ac
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO audit_logs (user_id, action, entity_type, entity_id, payload, created_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, now())
-	`, userID, action, entityType, entityID, string(b))
+
+	auditHasTenant, err := hasColumn(ctx, tx, "audit_logs", "tenant_id")
+	if err != nil {
+		return err
+	}
+	insertColumns := []string{"user_id", "action", "entity_type", "entity_id", "payload", "created_at"}
+	insertValues := []string{"$1", "$2", "$3", "$4", "$5::jsonb", "now()"}
+	insertArgs := []any{userID, action, entityType, entityID, string(b)}
+	if auditHasTenant {
+		tenantID, err := loadUserTenantID(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if tenantID == nil || *tenantID <= 0 {
+			return fmt.Errorf("resolve audit log tenant: tenant_id is required")
+		}
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *tenantID)
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO audit_logs (%s)
+		VALUES (%s)
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 	return err
 }
 
