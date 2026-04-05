@@ -990,6 +990,21 @@ textarea {
         0 20px 44px rgba(232, 190, 110, 0.24);
 }
 
+.landing-regular-gap {
+    height: 72px;
+}
+
+.landing-btn-regular-small {
+    width: auto;
+    min-width: 148px;
+    min-height: 32px;
+    padding: 9px 20px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+}
+
 .landing-choice-note {
     margin: 0 0 12px;
     max-width: 460px;
@@ -1199,6 +1214,19 @@ textarea {
         width: 100%;
         min-height: 78px;
         border-radius: 20px;
+    }
+
+    .landing-regular-gap {
+        height: 56px;
+    }
+
+    .landing-btn-regular-small {
+        width: auto;
+        min-width: 148px;
+        min-height: 32px;
+        padding: 9px 20px;
+        border-radius: 999px;
+        font-size: 12px;
     }
 
     .landing-choice-note {
@@ -4844,11 +4872,12 @@ body[data-page="peserta_content"] .peserta-exam-card,
 body[data-page="peserta_content"] .peserta-exam-empty {
     padding: 14px 18px;
     background: #fff;
-    border: 1px solid #1f2937;
+    border: 1.5pt solid #9fd8d6;
+    border-radius: 10px;
 }
 
 body[data-page="peserta_content"] .peserta-exam-card + .peserta-exam-card {
-    border-top: 0;
+    margin-top: 10px;
 }
 
 body[data-page="peserta_content"] .peserta-exam-grid {
