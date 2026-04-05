@@ -337,6 +337,23 @@
       return d.toLocaleString("id-ID");
     }
 
+    function resolveExamFlowErrorMessage(err, genericMessage) {
+      const raw = String((err && err.message) || "").trim();
+      const normalized = raw.toLowerCase();
+      if (!raw || normalized === "internal error") {
+        return genericMessage;
+      }
+      if (
+        normalized.includes("token") ||
+        normalized.includes("unauthorized") ||
+        normalized.includes("forbidden") ||
+        normalized.includes("invalid")
+      ) {
+        return "Token ujian salah atau tidak berlaku.";
+      }
+      return raw;
+    }
+
     async function previewExamByToken(token, examID) {
       const cleanToken = String(token || "").trim();
       if (!cleanToken) {
@@ -430,7 +447,7 @@
 
     if (examTokenDialogCancelBtn) {
       examTokenDialogCancelBtn.addEventListener("click", function () {
-        if (isStudentRole) {
+        if (isStudentRole && !isNonRegular) {
           window.location.href = "/peserta";
           return;
         }
@@ -448,7 +465,9 @@
         }
         if (isNonRegular) {
           text(msg, "Kembali ke daftar ujian aktif.");
+          return;
         }
+        window.location.href = "/peserta";
       });
     }
 
@@ -557,15 +576,10 @@
             examReadyDialog.showModal();
           }
         } catch (err) {
-          const errMsg = String((err && err.message) || "").toLowerCase();
-          const tokenInvalid =
-            errMsg.includes("token") ||
-            errMsg.includes("unauthorized") ||
-            errMsg.includes("forbidden") ||
-            errMsg.includes("invalid");
-          const warnText = tokenInvalid
-            ? "Token ujian salah atau tidak berlaku."
-            : "Gagal memverifikasi token ujian. Coba lagi.";
+          const warnText = resolveExamFlowErrorMessage(
+            err,
+            "Gagal memverifikasi token ujian. Coba lagi.",
+          );
           if (examTokenDialogHelp) {
             examTokenDialogHelp.textContent = warnText;
           }
@@ -660,10 +674,10 @@
         try {
           await startAttemptByExamID(examID, token, examInstructionDialogForm);
         } catch (err) {
-          const errMsg = String((err && err.message) || "").toLowerCase();
-          const warn = errMsg.includes("token")
-            ? "Token ujian salah atau tidak berlaku."
-            : "Gagal memulai ujian: " + err.message;
+          const warn = resolveExamFlowErrorMessage(
+            err,
+            "Gagal memulai ujian. Coba lagi.",
+          );
           if (examInstructionDialogHelp) {
             examInstructionDialogHelp.textContent = warn;
           }
