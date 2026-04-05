@@ -38,10 +38,19 @@
 
   function togglePanels(key) {
     if (!deps || !deps.panels) return;
-    Object.keys(deps.panels).forEach(function (name) {
-      const panel = deps.panels[name];
+    const panels = deps.panels || {};
+    const visiblePanels = new Set();
+    Object.keys(panels).forEach(function (name) {
+      const panel = panels[name];
       if (!panel) return;
-      panel.hidden = String(name) !== key;
+      if (String(name) === key) {
+        visiblePanels.add(panel);
+      }
+    });
+    Object.keys(panels).forEach(function (name) {
+      const panel = panels[name];
+      if (!panel) return;
+      panel.hidden = !visiblePanels.has(panel);
     });
   }
 
