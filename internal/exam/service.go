@@ -748,11 +748,81 @@ type questionEvalRow struct {
 	IncidentPolicy string
 }
 
+type columnQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func NewService(db *sql.DB, defaultExamMinutes int) *Service {
 	if defaultExamMinutes <= 0 {
 		defaultExamMinutes = 90
 	}
 	return &Service{db: db, defaultExamMinutes: defaultExamMinutes}
+}
+
+func hasColumn(ctx context.Context, q columnQuerier, tableName, columnName string) (bool, error) {
+	var exists bool
+	if err := q.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, tableName, columnName).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s.%s column: %w", tableName, columnName, err)
+	}
+	return exists, nil
+}
+
+func loadExamTenantID(ctx context.Context, q columnQuerier, examID int64) (*int64, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	hasTenant, err := hasColumn(ctx, q, "exams", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT tenant_id FROM exams WHERE id = $1`, examID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
+}
+
+func loadAttemptTenantID(ctx context.Context, q columnQuerier, attemptID int64) (*int64, error) {
+	if attemptID <= 0 {
+		return nil, ErrAttemptNotFound
+	}
+	hasTenant, err := hasColumn(ctx, q, "attempts", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT tenant_id FROM attempts WHERE id = $1`, attemptID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("load attempt tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
 }
 
 func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
@@ -895,23 +965,37 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	if examEndAt.Valid && examEndAt.Time.Before(expiresAt) {
 		expiresAt = examEndAt.Time
 	}
+	attemptHasTenant, err := hasColumn(ctx, s.db, "attempts", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var examTenantID *int64
+	if attemptHasTenant {
+		examTenantID, err = loadExamTenantID(ctx, s.db, examID)
+		if err != nil {
+			return nil, err
+		}
+		if examTenantID == nil || *examTenantID <= 0 {
+			return nil, fmt.Errorf("resolve attempt tenant: tenant_id is required")
+		}
+	}
+	attemptColumns := []string{"exam_id", "student_id", "status", "started_at", "expires_at"}
+	attemptValues := []string{"$1", "$2", "'in_progress'", "$3", "$4"}
+	attemptArgs := []any{examID, studentID, startedAt, expiresAt}
+	if attemptHasTenant {
+		attemptColumns = append(attemptColumns, "tenant_id")
+		attemptValues = append(attemptValues, fmt.Sprintf("$%d", len(attemptArgs)+1))
+		attemptArgs = append(attemptArgs, *examTenantID)
+	}
 
-	row = s.db.QueryRowContext(ctx, `
+	row = s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		INSERT INTO attempts (
-			exam_id,
-			student_id,
-			status,
-			started_at,
-			expires_at
+			%s
 		) VALUES (
-			$1,
-			$2,
-			'in_progress',
-			$3,
-			$4
+			%s
 		)
 		RETURNING id, exam_id, student_id, status, started_at, expires_at
-	`, examID, studentID, startedAt, expiresAt)
+	`, strings.Join(attemptColumns, ", "), strings.Join(attemptValues, ", ")), attemptArgs...)
 
 	var created Attempt
 	if err := row.Scan(&created.ID, &created.ExamID, &created.StudentID, &created.Status, &created.StartedAt, &created.ExpiresAt); err != nil {
@@ -1412,6 +1496,20 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 	if examID <= 0 || studentID <= 0 {
 		return ErrInvalidInput
 	}
+	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
+	if err != nil {
+		return err
+	}
+	var examTenantID *int64
+	if assignmentHasTenant {
+		examTenantID, err = loadExamTenantID(ctx, s.db, examID)
+		if err != nil {
+			return err
+		}
+		if examTenantID == nil || *examTenantID <= 0 {
+			return fmt.Errorf("resolve exam assignment tenant: tenant_id is required")
+		}
+	}
 
 	var role string
 	var isNonRegular bool
@@ -1461,17 +1559,27 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 		return ErrAttemptForbidden
 	}
 
-	if _, err := s.db.ExecContext(ctx, `
+	assignmentColumns := []string{"exam_id", "user_id", "status", "assigned_by", "assigned_at", "created_at", "updated_at"}
+	assignmentValues := []string{"$1", "$2", "'active'", "NULL", "now()", "now()", "now()"}
+	assignmentArgs := []any{examID, studentID}
+	if assignmentHasTenant {
+		assignmentColumns = append(assignmentColumns, "tenant_id")
+		assignmentValues = append(assignmentValues, fmt.Sprintf("$%d", len(assignmentArgs)+1))
+		assignmentArgs = append(assignmentArgs, *examTenantID)
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO exam_assignments (
-			exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at
-		) VALUES ($1, $2, 'active', NULL, now(), now(), now())
+			%s
+		) VALUES (
+			%s
+		)
 		ON CONFLICT (exam_id, user_id)
 		DO UPDATE SET
 			status = 'active',
 			assigned_by = NULL,
 			assigned_at = now(),
 			updated_at = now()
-	`, examID, studentID); err != nil {
+	`, strings.Join(assignmentColumns, ", "), strings.Join(assignmentValues, ", ")), assignmentArgs...); err != nil {
 		if isUndefinedTableErr(err, "exam_assignments") {
 			return ErrAssignmentFeature
 		}
@@ -4532,21 +4640,38 @@ func (s *Service) SaveAnswer(ctx context.Context, input SaveAnswerInput) error {
 		return err
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	answerHasTenant, err := hasColumn(ctx, s.db, "attempt_answers", "tenant_id")
+	if err != nil {
+		return err
+	}
+	var attemptTenantID *int64
+	if answerHasTenant {
+		attemptTenantID, err = loadAttemptTenantID(ctx, s.db, input.AttemptID)
+		if err != nil {
+			return err
+		}
+		if attemptTenantID == nil || *attemptTenantID <= 0 {
+			return fmt.Errorf("resolve attempt answer tenant: tenant_id is required")
+		}
+	}
+	answerColumns := []string{"attempt_id", "question_id", "answer_payload", "is_doubt", "is_final", "updated_at"}
+	answerValues := []string{"$1", "$2", "$3::jsonb", "$4", "FALSE", "now()"}
+	answerArgs := []any{input.AttemptID, input.QuestionID, []byte(input.AnswerPayload), input.IsDoubt}
+	if answerHasTenant {
+		answerColumns = append(answerColumns, "tenant_id")
+		answerValues = append(answerValues, fmt.Sprintf("$%d", len(answerArgs)+1))
+		answerArgs = append(answerArgs, *attemptTenantID)
+	}
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO attempt_answers (
-			attempt_id,
-			question_id,
-			answer_payload,
-			is_doubt,
-			is_final,
-			updated_at
-		) VALUES ($1, $2, $3::jsonb, $4, FALSE, now())
+			%s
+		) VALUES (%s)
 		ON CONFLICT (attempt_id, question_id)
 		DO UPDATE SET
 			answer_payload = EXCLUDED.answer_payload,
 			is_doubt = EXCLUDED.is_doubt,
 			updated_at = now()
-	`, input.AttemptID, input.QuestionID, []byte(input.AnswerPayload), input.IsDoubt)
+	`, strings.Join(answerColumns, ", "), strings.Join(answerValues, ", ")), answerArgs...)
 	if err != nil {
 		return fmt.Errorf("upsert answer: %w", err)
 	}
@@ -5777,11 +5902,33 @@ func (s *Service) LogAttemptEvent(ctx context.Context, input AttemptEventInput) 
 		input.Payload = json.RawMessage(`{}`)
 	}
 
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO attempt_events (attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, created_at)
-		VALUES ($1, $2, $3::jsonb, $4, now(), NULLIF($5, 0), now())
+	eventHasTenant, err := hasColumn(ctx, s.db, "attempt_events", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var attemptTenantID *int64
+	if eventHasTenant {
+		attemptTenantID, err = loadAttemptTenantID(ctx, s.db, input.AttemptID)
+		if err != nil {
+			return nil, err
+		}
+		if attemptTenantID == nil || *attemptTenantID <= 0 {
+			return nil, fmt.Errorf("resolve attempt event tenant: tenant_id is required")
+		}
+	}
+	eventColumns := []string{"attempt_id", "event_type", "payload", "client_ts", "server_ts", "actor_user_id", "created_at"}
+	eventValues := []string{"$1", "$2", "$3::jsonb", "$4", "now()", "NULLIF($5, 0)", "now()"}
+	eventArgs := []any{input.AttemptID, eventType, []byte(input.Payload), input.ClientTS, input.ActorUserID}
+	if eventHasTenant {
+		eventColumns = append(eventColumns, "tenant_id")
+		eventValues = append(eventValues, fmt.Sprintf("$%d", len(eventArgs)+1))
+		eventArgs = append(eventArgs, *attemptTenantID)
+	}
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO attempt_events (%s)
+		VALUES (%s)
 		RETURNING id, attempt_id, event_type, payload, client_ts, server_ts, actor_user_id, NULL::text, created_at
-	`, input.AttemptID, eventType, []byte(input.Payload), input.ClientTS, input.ActorUserID)
+	`, strings.Join(eventColumns, ", "), strings.Join(eventValues, ", ")), eventArgs...)
 
 	return scanAttemptEvent(row)
 }
@@ -6059,15 +6206,33 @@ func (s *Service) finalizeAttempt(ctx context.Context, attemptID int64, finalSta
 		}
 		feedbackJSON, _ := json.Marshal(feedback)
 
-		if _, err := tx.ExecContext(ctx, `
+		scoreHasTenant, err := hasColumn(ctx, tx, "attempt_scores", "tenant_id")
+		if err != nil {
+			return nil, err
+		}
+		var attemptTenantID *int64
+		if scoreHasTenant {
+			attemptTenantID, err = loadAttemptTenantID(ctx, tx, row.ID)
+			if err != nil {
+				return nil, err
+			}
+			if attemptTenantID == nil || *attemptTenantID <= 0 {
+				return nil, fmt.Errorf("resolve attempt score tenant: tenant_id is required")
+			}
+		}
+		scoreColumns := []string{"attempt_id", "question_id", "earned_score", "is_correct", "feedback"}
+		scoreValues := []string{"$1", "$2", "$3", "$4", "$5::jsonb"}
+		scoreArgs := []any{row.ID, ev.QuestionID, result.EarnedScore, isCorrectPtr, feedbackJSON}
+		if scoreHasTenant {
+			scoreColumns = append(scoreColumns, "tenant_id")
+			scoreValues = append(scoreValues, fmt.Sprintf("$%d", len(scoreArgs)+1))
+			scoreArgs = append(scoreArgs, *attemptTenantID)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			INSERT INTO attempt_scores (
-				attempt_id,
-				question_id,
-				earned_score,
-				is_correct,
-				feedback
-			) VALUES ($1,$2,$3,$4,$5::jsonb)
-		`, row.ID, ev.QuestionID, result.EarnedScore, isCorrectPtr, feedbackJSON); err != nil {
+				%s
+			) VALUES (%s)
+		`, strings.Join(scoreColumns, ", "), strings.Join(scoreValues, ", ")), scoreArgs...); err != nil {
 			return nil, fmt.Errorf("insert attempt_score: %w", err)
 		}
 	}
@@ -6240,11 +6405,33 @@ func (s *Service) recomputeFinalizedAttemptTx(ctx context.Context, tx *sql.Tx, a
 		}
 		feedbackJSON, _ := json.Marshal(feedback)
 
-		if _, err := tx.ExecContext(ctx, `
+		scoreHasTenant, err := hasColumn(ctx, tx, "attempt_scores", "tenant_id")
+		if err != nil {
+			return err
+		}
+		var attemptTenantID *int64
+		if scoreHasTenant {
+			attemptTenantID, err = loadAttemptTenantID(ctx, tx, row.ID)
+			if err != nil {
+				return err
+			}
+			if attemptTenantID == nil || *attemptTenantID <= 0 {
+				return fmt.Errorf("resolve attempt score tenant: tenant_id is required")
+			}
+		}
+		scoreColumns := []string{"attempt_id", "question_id", "earned_score", "is_correct", "feedback"}
+		scoreValues := []string{"$1", "$2", "$3", "$4", "$5::jsonb"}
+		scoreArgs := []any{row.ID, ev.QuestionID, result.EarnedScore, isCorrectPtr, feedbackJSON}
+		if scoreHasTenant {
+			scoreColumns = append(scoreColumns, "tenant_id")
+			scoreValues = append(scoreValues, fmt.Sprintf("$%d", len(scoreArgs)+1))
+			scoreArgs = append(scoreArgs, *attemptTenantID)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			INSERT INTO attempt_scores (
-				attempt_id, question_id, earned_score, is_correct, feedback
-			) VALUES ($1,$2,$3,$4,$5::jsonb)
-		`, row.ID, ev.QuestionID, result.EarnedScore, isCorrectPtr, feedbackJSON); err != nil {
+				%s
+			) VALUES (%s)
+		`, strings.Join(scoreColumns, ", "), strings.Join(scoreValues, ", ")), scoreArgs...); err != nil {
 			return fmt.Errorf("insert attempt_score recompute: %w", err)
 		}
 	}
