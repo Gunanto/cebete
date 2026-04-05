@@ -1879,7 +1879,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 
 	row := tx.QueryRowContext(ctx, `
 		SELECT id, role_requested, email, password_hash, full_name, form_payload, status, oauth_provider, oauth_subject,
-		       school_name, npsn, kabupaten, provinsi, kecamatan, alamat, school_email, jenjang, status_sekolah, class_name
+		       school_name, npsn, kabupaten, provinsi, kecamatan, alamat, school_email, jenjang, status_sekolah, class_name, tenant_id
 		FROM registration_requests
 		WHERE id = $1
 		FOR UPDATE
@@ -1899,6 +1899,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	var jenjang sql.NullString
 	var statusSekolah sql.NullString
 	var className sql.NullString
+	var tenantID sql.NullInt64
 	if err := row.Scan(
 		&id,
 		&role,
@@ -1919,6 +1920,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		&jenjang,
 		&statusSekolah,
 		&className,
+		&tenantID,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false, ErrRegistrationNotFound
@@ -1938,6 +1940,10 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	mergeRegistrationPayloadColumns(&payload, schoolName, npsn, kabupaten, provinsi, kecamatan, alamat, schoolEmail, jenjang, statusSekolah, className)
 	isNonRegular := payload.NonRegular
 	shouldSendFirstLoginLink := false
+	var registrationTenantID *int64
+	if tenantID.Valid && tenantID.Int64 > 0 {
+		registrationTenantID = &tenantID.Int64
+	}
 
 	var userID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 LIMIT 1`, email).Scan(&userID)
@@ -1998,9 +2004,10 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	}
 
 	if isNonRegular && role == "siswa" {
-		schoolID, err := upsertSchoolTx(
+		schoolID, schoolTenantID, err := upsertSchoolTx(
 			ctx,
 			tx,
+			registrationTenantID,
 			payload.SchoolName,
 			payload.NPSN,
 			payload.Kabupaten,
@@ -2014,13 +2021,17 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		if err != nil {
 			return 0, false, err
 		}
-		classID, err := upsertClassTx(ctx, tx, schoolID, payload.ClassName)
+		classID, err := upsertClassTx(ctx, tx, schoolID, schoolTenantID, payload.ClassName)
 		if err != nil {
 			return 0, false, err
 		}
-		if err := upsertEnrollmentTx(ctx, tx, userID, schoolID, classID); err != nil {
+		if err := upsertEnrollmentTx(ctx, tx, userID, schoolID, classID, schoolTenantID); err != nil {
 			return 0, false, err
 		}
+		if err := assignUserTenantTx(ctx, tx, userID, schoolTenantID); err != nil {
+			return 0, false, err
+		}
+		registrationTenantID = schoolTenantID
 	}
 
 	firstLoginURL := ""
@@ -2049,9 +2060,10 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 			reviewed_by = $1,
 			reviewed_at = now(),
 			created_user_id = $2,
+			tenant_id = COALESCE($4, tenant_id),
 			updated_at = now()
 		WHERE id = $3
-	`, reviewerID, userID, registrationID)
+	`, reviewerID, userID, registrationID, registrationTenantID)
 	if err != nil {
 		return 0, false, fmt.Errorf("update registration approved: %w", err)
 	}
@@ -2073,7 +2085,7 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 	return userID, firstLoginLinkSent, nil
 }
 
-func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, provinsi, kecamatan, alamat, jenjang, statusSekolah, schoolEmail string) (int64, error) {
+func upsertSchoolTx(ctx context.Context, tx *sql.Tx, preferredTenantID *int64, name, code, kabupaten, provinsi, kecamatan, alamat, jenjang, statusSekolah, schoolEmail string) (int64, *int64, error) {
 	name = strings.TrimSpace(name)
 	code = strings.TrimSpace(code)
 	kabupaten = strings.TrimSpace(kabupaten)
@@ -2084,7 +2096,7 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 	statusSekolah = strings.TrimSpace(statusSekolah)
 	schoolEmail = strings.TrimSpace(schoolEmail)
 	if name == "" {
-		return 0, errors.New("school_name is required")
+		return 0, nil, errors.New("school_name is required")
 	}
 
 	var id int64
@@ -2101,7 +2113,7 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			foundExisting = true
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return 0, fmt.Errorf("lookup school by code: %w", err)
+			return 0, nil, fmt.Errorf("lookup school by code: %w", err)
 		}
 	}
 	if !foundExisting {
@@ -2115,7 +2127,7 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			foundExisting = true
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return 0, fmt.Errorf("lookup school by name: %w", err)
+			return 0, nil, fmt.Errorf("lookup school by name: %w", err)
 		}
 	}
 
@@ -2132,10 +2144,15 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 
 	optionalCols, err := schoolOptionalColumnsTx(ctx, tx)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
+	schoolHasTenant := optionalCols["tenant_id"]
 
 	if id > 0 {
+		schoolTenantID, err := ensureSchoolTenantTx(ctx, tx, id, preferredTenantID, name, schoolHasTenant)
+		if err != nil {
+			return 0, nil, err
+		}
 		sets := []string{
 			"name = COALESCE(NULLIF($1,''), name)",
 			"code = COALESCE(NULLIF($2,''), code)",
@@ -2173,6 +2190,11 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			args = append(args, schoolEmail)
 			nextArg++
 		}
+		if schoolHasTenant && schoolTenantID != nil && *schoolTenantID > 0 {
+			sets = append(sets, fmt.Sprintf("tenant_id = COALESCE(tenant_id, $%d)", nextArg))
+			args = append(args, *schoolTenantID)
+			nextArg++
+		}
 		sets = append(sets, "updated_at = now()")
 		args = append(args, id)
 		query := fmt.Sprintf(`
@@ -2181,9 +2203,14 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 			WHERE id = $%d
 		`, strings.Join(sets, ",\n\t\t\t\t"), nextArg)
 		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-			return 0, fmt.Errorf("update school: %w", err)
+			return 0, nil, fmt.Errorf("update school: %w", err)
 		}
-		return id, nil
+		return id, schoolTenantID, nil
+	}
+
+	schoolTenantID, err := resolveTenantForSchoolTx(ctx, tx, preferredTenantID, name, schoolHasTenant)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	columns := []string{"name", "code", "address"}
@@ -2205,6 +2232,15 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 	appendOptional("jenjang", "NULLIF($%d,'')", jenjang)
 	appendOptional("status_sekolah", "NULLIF($%d,'')", statusSekolah)
 	appendOptional("school_email", "NULLIF($%d,'')", schoolEmail)
+	if schoolHasTenant {
+		if schoolTenantID == nil || *schoolTenantID <= 0 {
+			return 0, nil, fmt.Errorf("resolve school tenant: tenant_id is required")
+		}
+		columns = append(columns, "tenant_id")
+		values = append(values, fmt.Sprintf("$%d", nextArg))
+		args = append(args, *schoolTenantID)
+		nextArg++
+	}
 	columns = append(columns, "is_active", "created_at", "updated_at")
 	values = append(values, "TRUE", "now()", "now()")
 	query := fmt.Sprintf(`
@@ -2217,9 +2253,9 @@ func upsertSchoolTx(ctx context.Context, tx *sql.Tx, name, code, kabupaten, prov
 		RETURNING id
 	`, strings.Join(columns, ", "), strings.Join(values, ", "))
 	if err := tx.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
-		return 0, fmt.Errorf("insert school: %w", err)
+		return 0, nil, fmt.Errorf("insert school: %w", err)
 	}
-	return id, nil
+	return id, schoolTenantID, nil
 }
 
 func schoolOptionalColumnsTx(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
@@ -2228,7 +2264,7 @@ func schoolOptionalColumnsTx(ctx context.Context, tx *sql.Tx) (map[string]bool, 
 		FROM information_schema.columns
 		WHERE table_schema = current_schema()
 			AND table_name = 'schools'
-			AND column_name IN ('city', 'province', 'kecamatan', 'jenjang', 'status_sekolah', 'school_email')
+			AND column_name IN ('city', 'province', 'kecamatan', 'jenjang', 'status_sekolah', 'school_email', 'tenant_id')
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("load school columns: %w", err)
@@ -2249,7 +2285,7 @@ func schoolOptionalColumnsTx(ctx context.Context, tx *sql.Tx) (map[string]bool, 
 	return out, nil
 }
 
-func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className string) (int64, error) {
+func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, tenantID *int64, className string) (int64, error) {
 	className = strings.TrimSpace(className)
 	if schoolID <= 0 {
 		return 0, ErrInvalidInput
@@ -2273,11 +2309,27 @@ func upsertClassTx(ctx context.Context, tx *sql.Tx, schoolID int64, className st
 		return 0, fmt.Errorf("lookup class: %w", err)
 	}
 
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, TRUE, now(), now())
+	classHasTenant, err := hasColumnTx(ctx, tx, "classes", "tenant_id")
+	if err != nil {
+		return 0, err
+	}
+	columns := []string{"school_id", "name", "grade_level", "is_active", "created_at", "updated_at"}
+	values := []string{"$1", "$2", "$3", "TRUE", "now()", "now()"}
+	args := []interface{}{schoolID, className, gradeLevel}
+	if classHasTenant {
+		if tenantID == nil || *tenantID <= 0 {
+			return 0, fmt.Errorf("resolve class tenant: tenant_id is required")
+		}
+		columns = append(columns, "tenant_id")
+		values = append(values, "$4")
+		args = append(args, *tenantID)
+	}
+	query := fmt.Sprintf(`
+		INSERT INTO classes (%s)
+		VALUES (%s)
 		RETURNING id
-	`, schoolID, className, gradeLevel).Scan(&id); err != nil {
+	`, strings.Join(columns, ", "), strings.Join(values, ", "))
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert class: %w", err)
 	}
 	return id, nil
@@ -2345,20 +2397,215 @@ func truncateString(s string, max int) string {
 	return string(runes[:max])
 }
 
-func upsertEnrollmentTx(ctx context.Context, tx *sql.Tx, userID, schoolID, classID int64) error {
+func upsertEnrollmentTx(ctx context.Context, tx *sql.Tx, userID, schoolID, classID int64, tenantID *int64) error {
 	if userID <= 0 || schoolID <= 0 || classID <= 0 {
 		return ErrInvalidInput
 	}
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
-		VALUES ($1, $2, $3, 'active', now(), now())
+	enrollmentHasTenant, err := hasColumnTx(ctx, tx, "enrollments", "tenant_id")
+	if err != nil {
+		return err
+	}
+	columns := []string{"user_id", "school_id", "class_id", "status", "enrolled_at", "created_at"}
+	values := []string{"$1", "$2", "$3", "'active'", "now()", "now()"}
+	args := []interface{}{userID, schoolID, classID}
+	updateSet := []string{
+		"status = 'active'",
+		"enrolled_at = now()",
+	}
+	if enrollmentHasTenant && tenantID != nil && *tenantID > 0 {
+		columns = append(columns, "tenant_id")
+		values = append(values, "$4")
+		args = append(args, *tenantID)
+		updateSet = append(updateSet, "tenant_id = COALESCE(enrollments.tenant_id, EXCLUDED.tenant_id)")
+	}
+	query := fmt.Sprintf(`
+		INSERT INTO enrollments (%s)
+		VALUES (%s)
 		ON CONFLICT (user_id, class_id)
 		DO UPDATE SET
-			status = 'active',
-			enrolled_at = now()
-	`, userID, schoolID, classID)
+			%s
+	`, strings.Join(columns, ", "), strings.Join(values, ", "), strings.Join(updateSet, ",\n\t\t\t"))
+	_, err = tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("upsert enrollment: %w", err)
+	}
+	return nil
+}
+
+func hasColumnTx(ctx context.Context, tx *sql.Tx, tableName, columnName string) (bool, error) {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, tableName, columnName).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s.%s column: %w", tableName, columnName, err)
+	}
+	return exists, nil
+}
+
+func loadSchoolTenantIDTx(ctx context.Context, tx *sql.Tx, schoolID int64, schoolHasTenant bool) (*int64, error) {
+	if schoolID <= 0 {
+		return nil, nil
+	}
+	if !schoolHasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT tenant_id FROM schools WHERE id = $1`, schoolID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load school tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
+}
+
+func ensureSchoolTenantTx(ctx context.Context, tx *sql.Tx, schoolID int64, preferredTenantID *int64, schoolName string, schoolHasTenant bool) (*int64, error) {
+	tenantID, err := loadSchoolTenantIDTx(ctx, tx, schoolID, schoolHasTenant)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID != nil && *tenantID > 0 {
+		return tenantID, nil
+	}
+	tenantID, err = resolveTenantForSchoolTx(ctx, tx, preferredTenantID, schoolName, schoolHasTenant)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID == nil || *tenantID <= 0 {
+		return nil, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE schools
+		SET tenant_id = COALESCE(tenant_id, $1),
+			updated_at = now()
+		WHERE id = $2
+	`, *tenantID, schoolID); err != nil {
+		return nil, fmt.Errorf("assign school tenant: %w", err)
+	}
+	return tenantID, nil
+}
+
+func resolveTenantForSchoolTx(ctx context.Context, tx *sql.Tx, preferredTenantID *int64, schoolName string, schoolHasTenant bool) (*int64, error) {
+	if preferredTenantID != nil && *preferredTenantID > 0 {
+		return preferredTenantID, nil
+	}
+	if !schoolHasTenant {
+		return nil, nil
+	}
+	schoolName = strings.TrimSpace(schoolName)
+	if schoolName == "" {
+		return nil, nil
+	}
+	var tenantID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM tenants
+		WHERE LOWER(name) = LOWER($1)
+		LIMIT 1
+	`, schoolName).Scan(&tenantID)
+	if err == nil {
+		return &tenantID, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("lookup tenant by school name: %w", err)
+	}
+	slug, err := nextTenantSlugTx(ctx, tx, schoolName)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO tenants (slug, name, status, created_at, updated_at)
+		VALUES ($1, $2, 'active', now(), now())
+		RETURNING id
+	`, slug, schoolName).Scan(&tenantID); err != nil {
+		return nil, fmt.Errorf("insert tenant: %w", err)
+	}
+	return &tenantID, nil
+}
+
+func nextTenantSlugTx(ctx context.Context, tx *sql.Tx, schoolName string) (string, error) {
+	base := tenantSlugBase(schoolName)
+	slug := base
+	for i := 2; i <= 1000; i++ {
+		var existing string
+		err := tx.QueryRowContext(ctx, `
+			SELECT slug
+			FROM tenants
+			WHERE slug = $1
+			LIMIT 1
+		`, slug).Scan(&existing)
+		if errors.Is(err, sql.ErrNoRows) {
+			return slug, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("lookup tenant slug: %w", err)
+		}
+		slug = fmt.Sprintf("%s-%d", base, i)
+		if len(slug) > 80 {
+			slug = truncateString(slug, 80)
+		}
+	}
+	return "", fmt.Errorf("allocate tenant slug for %q: exhausted attempts", schoolName)
+}
+
+func tenantSlugBase(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		slug = "school"
+	}
+	if len(slug) > 72 {
+		slug = slug[:72]
+		slug = strings.Trim(slug, "-")
+	}
+	return "school-" + slug
+}
+
+func assignUserTenantTx(ctx context.Context, tx *sql.Tx, userID int64, tenantID *int64) error {
+	if userID <= 0 || tenantID == nil || *tenantID <= 0 {
+		return nil
+	}
+	hasTenant, err := hasColumnTx(ctx, tx, "users", "tenant_id")
+	if err != nil {
+		return err
+	}
+	if !hasTenant {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET tenant_id = COALESCE(tenant_id, $1),
+			updated_at = now()
+		WHERE id = $2
+	`, *tenantID, userID); err != nil {
+		return fmt.Errorf("assign user tenant: %w", err)
 	}
 	return nil
 }

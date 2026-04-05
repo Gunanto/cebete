@@ -36,9 +36,10 @@ func TestUpsertSchoolTxInsertWorksWithLegacySchema(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(77))
 	mock.ExpectRollback()
 
-	id, err := upsertSchoolTx(
+	id, _, err := upsertSchoolTx(
 		context.Background(),
 		tx,
+		nil,
 		"SMP Contoh",
 		"12345678",
 		"Bandung",
@@ -95,9 +96,10 @@ func TestUpsertSchoolTxUpdatesExistingSchool(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
-	id, err := upsertSchoolTx(
+	id, _, err := upsertSchoolTx(
 		context.Background(),
 		tx,
+		nil,
 		"SMP Contoh",
 		"12345678",
 		"Bandung",
@@ -151,9 +153,10 @@ func TestUpsertSchoolTxFallsBackToNameWhenCodeNotFound(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
-	id, err := upsertSchoolTx(
+	id, _, err := upsertSchoolTx(
 		context.Background(),
 		tx,
+		nil,
 		"SMP NEGERI 6 PALU",
 		"40203583",
 		"Kota Palu",
@@ -169,6 +172,121 @@ func TestUpsertSchoolTxFallsBackToNameWhenCodeNotFound(t *testing.T) {
 	}
 	if id != 81 {
 		t.Fatalf("expected school id 81, got %d", id)
+	}
+
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestUpsertSchoolTxInsertCreatesTenantWhenRequired(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+
+	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE code = \$1\s+LIMIT 1`).
+		WithArgs("10801878").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT id\s+FROM schools\s+WHERE LOWER\(name\) = LOWER\(\$1\)\s+LIMIT 1`).
+		WithArgs("SMP NEGERI 2 BUMI RATU NUBAN").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT column_name\s+FROM information_schema\.columns`).
+		WillReturnRows(sqlmock.NewRows([]string{"column_name"}).
+			AddRow("city").
+			AddRow("province").
+			AddRow("tenant_id"))
+	mock.ExpectQuery(`SELECT id\s+FROM tenants\s+WHERE LOWER\(name\) = LOWER\(\$1\)\s+LIMIT 1`).
+		WithArgs("SMP NEGERI 2 BUMI RATU NUBAN").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT slug\s+FROM tenants\s+WHERE slug = \$1\s+LIMIT 1`).
+		WithArgs("school-smp-negeri-2-bumi-ratu-nuban").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`INSERT INTO tenants \(slug, name, status, created_at, updated_at\)`).
+		WithArgs("school-smp-negeri-2-bumi-ratu-nuban", "SMP NEGERI 2 BUMI RATU NUBAN").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(99))
+	mock.ExpectQuery(`INSERT INTO schools \(\s*name, code, address, city, province, tenant_id, is_active, created_at, updated_at\s*\)`).
+		WithArgs("SMP NEGERI 2 BUMI RATU NUBAN", "10801878", "Lampung Tengah, Lampung", "Lampung Tengah", "Lampung", int64(99)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(77))
+	mock.ExpectRollback()
+
+	id, tenantID, err := upsertSchoolTx(
+		context.Background(),
+		tx,
+		nil,
+		"SMP NEGERI 2 BUMI RATU NUBAN",
+		"10801878",
+		"Lampung Tengah",
+		"Lampung",
+		"",
+		"",
+		"",
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("upsertSchoolTx: %v", err)
+	}
+	if id != 77 {
+		t.Fatalf("expected school id 77, got %d", id)
+	}
+	if tenantID == nil || *tenantID != 99 {
+		t.Fatalf("expected tenant id 99, got %v", tenantID)
+	}
+
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestUpsertClassTxInsertIncludesTenantWhenRequired(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+
+	mock.ExpectQuery(`SELECT id\s+FROM classes\s+WHERE school_id = \$1 AND grade_level = \$2 AND name = \$3\s+LIMIT 1`).
+		WithArgs(int64(77), "Kelas 9", "Kelas 9").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT EXISTS \(\s*SELECT 1\s+FROM information_schema\.columns`).
+		WithArgs("classes", "tenant_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`INSERT INTO classes \(school_id, name, grade_level, is_active, created_at, updated_at, tenant_id\)`).
+		WithArgs(int64(77), "Kelas 9", "Kelas 9", int64(99)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(11))
+	mock.ExpectRollback()
+
+	tenantID := int64(99)
+	id, err := upsertClassTx(context.Background(), tx, 77, &tenantID, "Kelas 9")
+	if err != nil {
+		t.Fatalf("upsertClassTx: %v", err)
+	}
+	if id != 11 {
+		t.Fatalf("expected class id 11, got %d", id)
 	}
 
 	if err := tx.Rollback(); err != nil {
