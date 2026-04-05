@@ -1077,6 +1077,7 @@
   function fillResultsExamSelect() {
     if (!deps || !deps.resultsExamSelect) return;
     const current = String(deps.resultsExamSelect.value || "");
+    var selectedValue = "";
     deps.resultsExamSelect.innerHTML =
       '<option value="">Pilih ujian...</option>';
     (Array.isArray(examsCache) ? examsCache : []).forEach(function (it) {
@@ -1092,9 +1093,19 @@
         " (" +
         String((it && it.code) || "") +
         ")";
-      if (current && current === o.value) o.selected = true;
+      if (current && current === o.value) {
+        o.selected = true;
+        selectedValue = o.value;
+      }
       deps.resultsExamSelect.appendChild(o);
     });
+    if (!selectedValue) {
+      const firstExam = Array.isArray(examsCache) ? examsCache[0] : null;
+      const firstExamID = Number((firstExam && firstExam.id) || 0);
+      if (firstExamID > 0) {
+        deps.resultsExamSelect.value = String(firstExamID);
+      }
+    }
   }
 
   function setExams(list) {
