@@ -599,6 +599,9 @@
     const resultsAttemptFilter = document.getElementById(
       "guru-results-attempt-filter",
     );
+    const resultsAttemptFilterField = resultsAttemptFilter
+      ? resultsAttemptFilter.closest("label")
+      : null;
     const resultsClassFilter = document.getElementById(
       "guru-results-class-filter",
     );
@@ -2035,6 +2038,9 @@
             }
             if (resultsFinalSchemeField) {
               resultsFinalSchemeField.hidden = menuKey !== "score-recap";
+            }
+            if (resultsAttemptFilterField) {
+              resultsAttemptFilterField.hidden = menuKey === "score-recap";
             }
             if (
               GuruResults &&

@@ -1416,9 +1416,11 @@
     if (examID <= 0) {
       latestScoreRecap = null;
       updateResultsModeUI();
+      updateClassFilterOptionsFromList([]);
+      updateSchoolFilterOptionsFromList([]);
       if (deps.resultsRecapBody) {
         deps.resultsRecapBody.innerHTML =
-          '<tr><td colspan="9" class="muted">Pilih ujian lalu muat rekap nilai.</td></tr>';
+          '<tr><td colspan="10" class="muted">Pilih ujian lalu muat rekap nilai.</td></tr>';
       }
       setResultsSummary("Belum ada data rekap nilai.");
       setResultsExtra("Pilih ujian dan skema nilai akhir untuk melihat rekap.");
@@ -1439,7 +1441,18 @@
     );
     latestScoreRecap = recap || null;
     updateResultsModeUI();
-    renderScoreRecapRows((recap && recap.rows) || []);
+    var recapRows = (recap && recap.rows) || [];
+    updateClassFilterOptionsFromList(
+      recapRows.map(function (row) {
+        return String((row && row.class_name) || "").trim();
+      }),
+    );
+    updateSchoolFilterOptionsFromList(
+      recapRows.map(function (row) {
+        return String((row && row.school_name) || "").trim();
+      }),
+    );
+    renderScoreRecapRows(recapRows);
     var summary = (recap && recap.summary) || {};
     setResultsSummary(
       "Skema: " +
