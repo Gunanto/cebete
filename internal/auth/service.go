@@ -2795,7 +2795,6 @@ func (s *Service) GetStudentExamProfile(ctx context.Context, userID int64) (*Stu
 			LIMIT 1
 		) enr ON TRUE
 		WHERE u.id = $1
-		  AND u.is_active = TRUE
 	`, userID).Scan(
 		&role,
 		&out.ParticipantNo,

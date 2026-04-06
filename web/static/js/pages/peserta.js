@@ -688,8 +688,13 @@
           });
         }
       } catch (err) {
+        const msgText = String(
+          (err && err.message) || "Gagal memuat daftar ujian aktif.",
+        ).trim();
         examsBody.innerHTML =
-          '<div class="peserta-exam-empty muted">Gagal memuat daftar ujian aktif.</div>';
+          '<div class="peserta-exam-empty muted">' +
+          escapeHtml(msgText || "Gagal memuat daftar ujian aktif.") +
+          "</div>";
       }
     }
 

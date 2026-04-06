@@ -479,6 +479,10 @@ func (h *Handler) ListPublishedExams(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.svc.ListPublishedExamsForStudent(r.Context(), user.ID)
 	if err != nil {
+		if errors.Is(err, ErrAttemptForbidden) {
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "akses peserta tidak valid"})
+			return
+		}
 		if errors.Is(err, ErrAssignmentFeature) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
 			return

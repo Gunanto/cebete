@@ -539,6 +539,32 @@ func TestListPublishedExamsUsesStudentID(t *testing.T) {
 	}
 }
 
+func TestListPublishedExamsReturnsForbiddenOnAttemptForbidden(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		listPublishedExamsForStudentFn: func(ctx context.Context, studentID int64) ([]ExamTokenExam, error) {
+			return nil, ErrAttemptForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/exams/published", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 22, Role: "siswa"}))
+	w := httptest.NewRecorder()
+
+	h.ListPublishedExams(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	errBody, ok := body["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected structured error body, got %#v", body["error"])
+	}
+	if errBody["message"] != "akses peserta tidak valid" {
+		t.Fatalf("expected forbidden message, got %#v", errBody["message"])
+	}
+}
+
 func TestGetAttemptForbiddenForNonOwner(t *testing.T) {
 	calledSummary := false
 	h := NewHandler(&mockExamService{

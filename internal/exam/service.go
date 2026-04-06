@@ -1490,7 +1490,6 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 		SELECT role, COALESCE(is_non_regular, FALSE)
 		FROM users
 		WHERE id = $1
-		  AND is_active = TRUE
 	`, studentID).Scan(&role, &isNonRegular); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrAttemptForbidden
