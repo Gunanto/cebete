@@ -29,6 +29,12 @@
     const avatar = document.getElementById("peserta-avatar");
     const userName = document.getElementById("peserta-user-name");
     const userClass = document.getElementById("peserta-user-class");
+    const dashboardHeroTitle = document.querySelector(
+      "#peserta-dashboard-panel .dashboard-hero-copy h2",
+    );
+    const dashboardHeroDesc = document.querySelector(
+      "#peserta-dashboard-panel .dashboard-hero-copy p",
+    );
     const profileName = document.getElementById("peserta-profile-name");
     const profileParticipantNo = document.getElementById(
       "peserta-profile-participant-no",
@@ -114,7 +120,10 @@
         if (pageTitle) pageTitle.textContent = activeBtn.dataset.title || "";
         if (pageDesc) pageDesc.textContent = activeBtn.dataset.desc || "";
       }
-      if (window.innerWidth <= 900) setSidebarOpen(false);
+      if (window.innerWidth <= 900) {
+        setSidebarOpen(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     }
 
     function setCell(el, value) {
@@ -648,6 +657,20 @@
             ".",
         );
       }
+      if (dashboardHeroTitle) {
+        text(
+          dashboardHeroTitle,
+          "Selamat datang, " +
+            String((fullName && String(fullName).trim()) || "Peserta") +
+            ".",
+        );
+      }
+      if (dashboardHeroDesc) {
+        text(
+          dashboardHeroDesc,
+          "Ringkasan akses ujian dan profil peserta tersedia melalui menu di bawah ini.",
+        );
+      }
     } catch (err) {
       if (msg) text(msg, "Gagal memuat profil peserta: " + err.message);
     }
@@ -665,24 +688,32 @@
             const card = document.createElement("article");
             card.className = "peserta-exam-card";
             card.innerHTML = [
-              '<div class="peserta-exam-grid">',
-              '<div class="peserta-exam-row"><div class="peserta-exam-label">Kode</div><div class="peserta-exam-value">' +
-                escapeHtml(String(it.code || "-")) +
-                "</div></div>",
-              '<div class="peserta-exam-row"><div class="peserta-exam-label">Nama Ujian</div><div class="peserta-exam-value">' +
+              '<div class="peserta-exam-grid peserta-exam-grid-compact">',
+              '<div class="peserta-exam-main">',
+              '<div class="peserta-exam-header">',
+              '<div class="peserta-exam-title-wrap">',
+              '<h4 class="peserta-exam-title">' +
                 escapeHtml(String(it.title || "-")) +
-                "</div></div>",
-              '<div class="peserta-exam-row"><div class="peserta-exam-label">Mapel</div><div class="peserta-exam-value">' +
+                "</h4>",
+              '<div class="peserta-exam-subject">' +
                 escapeHtml(String(it.subject_name || "-")) +
-                "</div></div>",
-              '<div class="peserta-exam-row"><div class="peserta-exam-label">Token Ujian</div><div class="peserta-exam-value">' +
+                "</div>",
+              "</div>",
+              '<div class="peserta-exam-badge">' +
+                escapeHtml(String(it.code || "-")) +
+                "</div>",
+              "</div>",
+              '<div class="peserta-exam-meta">',
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Token</div><div class="peserta-exam-value">' +
                 escapeHtml(String(it.token || "-")) +
                 "</div></div>",
-              '<div class="peserta-exam-row"><div class="peserta-exam-label">Expired Token At</div><div class="peserta-exam-value">' +
+              '<div class="peserta-exam-row"><div class="peserta-exam-label">Berlaku sampai</div><div class="peserta-exam-value">' +
                 escapeHtml(fmtShortDate(it.token_expires_at)) +
                 "</div></div>",
               "</div>",
-              '<div class="peserta-exam-actions"><a class="btn btn-secondary btn-inline" href="/ujian">Buka Ujian</a></div>',
+              "</div>",
+              "</div>",
+              '<div class="peserta-exam-actions"><a class="btn btn-secondary btn-inline" href="/ujian">Buka Halaman</a></div>',
             ].join("");
             examsBody.appendChild(card);
           });

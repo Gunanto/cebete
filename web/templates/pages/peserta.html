@@ -133,7 +133,7 @@
 
             <section id="peserta-dashboard-panel" class="panel dashboard-hero">
                 <div class="dashboard-hero-head">
-                    <div>
+                    <div class="dashboard-hero-copy">
                         <h2>Selamat datang</h2>
                         <p class="muted">
                             Lihat ujian yang tersedia melalui menu Masuk ke
@@ -149,6 +149,87 @@
                             Hasil Ujian
                         </button>
                     </div>
+                </div>
+
+                <div class="peserta-dashboard-shortcuts">
+                    <article
+                        class="peserta-shortcut-card peserta-shortcut-card-exams"
+                    >
+                        <div class="peserta-shortcut-copy">
+                            <h3>Masuk ke Ujian</h3>
+                            <p>
+                                Lihat dan pilih ujian, catat token, dan Ikut
+                                Ujian.
+                            </p>
+                        </div>
+                        <div class="peserta-shortcut-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path
+                                    d="M9 3h6M9 21h6M7 5h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"
+                                />
+                                <path d="M8 10h8M8 14h5M15 14h1" />
+                            </svg>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-secondary peserta-shortcut-btn"
+                            data-peserta-jump="exams"
+                        >
+                            Buka Halaman
+                        </button>
+                    </article>
+
+                    <article
+                        class="peserta-shortcut-card peserta-shortcut-card-results"
+                    >
+                        <div class="peserta-shortcut-copy">
+                            <h3>Hasil Ujian</h3>
+                            <p>
+                                Lihat hasil ujian dan Analisis Ketercapaian
+                                Tujuan Pembelajaran.
+                            </p>
+                        </div>
+                        <div class="peserta-shortcut-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M4 19h16" />
+                                <path d="M6 16V9" />
+                                <path d="M12 16V5" />
+                                <path d="M18 16v-7" />
+                                <path d="M5 5h14v14H5z" />
+                            </svg>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-secondary peserta-shortcut-btn"
+                            data-peserta-jump="results"
+                        >
+                            Buka Halaman
+                        </button>
+                    </article>
+
+                    <article
+                        class="peserta-shortcut-card peserta-shortcut-card-profile"
+                    >
+                        <div class="peserta-shortcut-copy">
+                            <h3>Profil</h3>
+                            <p>Lihat profil lengkap peserta ujian.</p>
+                        </div>
+                        <div class="peserta-shortcut-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path
+                                    d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4z"
+                                />
+                                <path d="M4 20a8 8 0 0 1 16 0" />
+                            </svg>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-secondary peserta-shortcut-btn"
+                            data-peserta-jump="profile"
+                        >
+                            Buka Halaman
+                        </button>
+                    </article>
                 </div>
             </section>
 

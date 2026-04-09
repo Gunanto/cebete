@@ -4847,6 +4847,11 @@ body[data-page="peserta_content"] #peserta-sidebar-toggle {
     display: none;
 }
 
+body[data-page="peserta_content"] .page-hero,
+body[data-page="peserta_content"] .dashboard-hero-head {
+    display: none;
+}
+
 body[data-page="peserta_content"] .portal-sidebar-backdrop {
     position: fixed;
     inset: 0;
@@ -4890,6 +4895,55 @@ body[data-page="ujian_content"] .peserta-exam-grid {
     gap: 4px;
 }
 
+body[data-page="peserta_content"] .peserta-exam-main,
+body[data-page="ujian_content"] .peserta-exam-main {
+    display: grid;
+    gap: 12px;
+}
+
+body[data-page="peserta_content"] .peserta-exam-header,
+body[data-page="ujian_content"] .peserta-exam-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+body[data-page="peserta_content"] .peserta-exam-title,
+body[data-page="ujian_content"] .peserta-exam-title {
+    margin: 0;
+    font-size: 18px;
+    color: #132644;
+}
+
+body[data-page="peserta_content"] .peserta-exam-subject,
+body[data-page="ujian_content"] .peserta-exam-subject {
+    margin-top: 4px;
+    color: #667998;
+    font-size: 13px;
+}
+
+body[data-page="peserta_content"] .peserta-exam-badge,
+body[data-page="ujian_content"] .peserta-exam-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 74px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: #e8eefc;
+    color: #304a88;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+body[data-page="peserta_content"] .peserta-exam-meta,
+body[data-page="ujian_content"] .peserta-exam-meta {
+    display: grid;
+    gap: 8px;
+}
+
 body[data-page="peserta_content"] .peserta-exam-row,
 body[data-page="ujian_content"] .peserta-exam-row {
     display: grid;
@@ -4924,6 +4978,108 @@ body[data-page="ujian_content"] .peserta-exam-actions .btn-inline {
     justify-content: center;
     min-width: 86px;
     white-space: nowrap;
+}
+
+body[data-page="peserta_content"] .peserta-dashboard-shortcuts {
+    display: none;
+    gap: 14px;
+    margin-top: 18px;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px 12px;
+    align-items: start;
+    padding: 22px;
+    border-radius: 18px;
+    color: #fff;
+    box-shadow: 0 14px 28px rgba(31, 41, 55, 0.18);
+    overflow: hidden;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -28px -30px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.08);
+    transform: rotate(16deg);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-copy,
+body[data-page="peserta_content"] .peserta-shortcut-icon,
+body[data-page="peserta_content"] .peserta-shortcut-btn {
+    position: relative;
+    z-index: 1;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-copy h3 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    color: #fff;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-copy p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.88);
+    line-height: 1.45;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-icon {
+    width: 42px;
+    height: 42px;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-icon svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-btn {
+    justify-self: start;
+    min-width: 138px;
+    border: 0;
+    background: rgba(255, 255, 255, 0.9);
+    color: #172554;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-exams {
+    background: linear-gradient(135deg, #17317b 0%, #244ea5 100%);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-results {
+    background: linear-gradient(135deg, #6e00d8 0%, #b100e8 100%);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-profile {
+    background: linear-gradient(135deg, #eef4ff 0%, #dce7fb 100%);
+    color: #31476f;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-profile::after {
+    background: rgba(48, 71, 111, 0.08);
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-profile h3,
+body[data-page="peserta_content"] .peserta-shortcut-card-profile p,
+body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortcut-icon {
+    color: #31476f;
+}
+
+body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortcut-btn {
+    background: #4f6596;
+    color: #fff;
 }
 
 @media (max-width: 900px) {
@@ -5049,18 +5205,199 @@ body[data-page="ujian_content"] .peserta-exam-actions .btn-inline {
     body[data-page="peserta_content"] .peserta-exam-empty,
     body[data-page="ujian_content"] .peserta-exam-card,
     body[data-page="ujian_content"] .peserta-exam-empty {
-        padding: 14px 12px;
+        padding: 18px 14px;
+        border: 0;
+        border-radius: 18px;
+        box-shadow: 0 10px 24px rgba(31, 65, 122, 0.12);
     }
 
     body[data-page="peserta_content"] .peserta-exam-row,
     body[data-page="ujian_content"] .peserta-exam-row {
-        grid-template-columns: 110px minmax(0, 1fr);
-        column-gap: 12px;
+        grid-template-columns: 92px minmax(0, 1fr);
+        column-gap: 10px;
     }
 
     body[data-page="peserta_content"] .peserta-exam-actions,
     body[data-page="ujian_content"] .peserta-exam-actions {
-        padding-left: 122px;
+        margin-top: 16px;
+        padding-left: 0;
+        justify-content: flex-end;
+    }
+
+    body[data-page="peserta_content"] {
+        background:
+            radial-gradient(circle at top left, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 26%),
+            linear-gradient(180deg, #d8ebef 0%, #edf4fb 38%, #e6ecfb 100%);
+    }
+
+    body[data-page="peserta_content"] {
+        --fixed-topbar-h: 74px;
+        --fixed-footer-h: 96px;
+    }
+
+    body[data-page="peserta_content"] .topbar {
+        padding: 14px 16px;
+        background: linear-gradient(90deg, #283e9f 0%, #2f52c2 100%);
+        box-shadow: 0 8px 22px rgba(23, 49, 123, 0.28);
+    }
+
+    body[data-page="peserta_content"] .topbar h1 {
+        font-size: 18px;
+    }
+
+    body[data-page="peserta_content"] .brand img {
+        width: 34px;
+        height: 34px;
+    }
+
+    body[data-page="peserta_content"] .topnav {
+        gap: 10px;
+    }
+
+    body[data-page="peserta_content"] .nav-user {
+        max-width: 170px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.25;
+        text-align: right;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    body[data-page="peserta_content"] .btn-nav {
+        padding: 0;
+        background: transparent;
+        color: #fff;
+        border: 0;
+        box-shadow: none;
+        font-size: 13px;
+        font-weight: 800;
+    }
+
+    body[data-page="peserta_content"] .container {
+        max-width: 560px;
+        padding: 16px 12px 20px;
+    }
+
+    body[data-page="peserta_content"] .container > .card {
+        border-radius: 28px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 18px 36px rgba(31, 65, 122, 0.12);
+    }
+
+    body[data-page="peserta_content"] .admin-content {
+        gap: 16px;
+    }
+
+    body[data-page="peserta_content"] .page-hero {
+        margin-bottom: 0;
+        padding: 26px 24px;
+        border-radius: 24px;
+        background: linear-gradient(135deg, #3420b5 0%, #4338f1 100%);
+        box-shadow: 0 14px 30px rgba(67, 56, 241, 0.24);
+    }
+
+    body[data-page="peserta_content"] .page-hero h2 {
+        margin-bottom: 10px;
+        font-size: 28px;
+        text-shadow: 0 2px 0 rgba(12, 18, 53, 0.22);
+    }
+
+    body[data-page="peserta_content"] .page-hero p {
+        max-width: 260px;
+        font-size: 14px;
+        color: rgba(239, 246, 255, 0.78);
+    }
+
+    body[data-page="peserta_content"] #peserta-sidebar-toggle {
+        display: inline-flex;
+        padding: 12px 16px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #1e2d6b;
+        border: 0;
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+    }
+
+    body[data-page="peserta_content"] #peserta-message {
+        margin: 0;
+        padding: 18px 16px;
+        border-radius: 14px;
+        background: #fff;
+        color: #5f6d84;
+        border: 1px solid #d9e1ef;
+        box-shadow: 0 8px 18px rgba(31, 65, 122, 0.06);
+    }
+
+    body[data-page="peserta_content"] .admin-content > .dashboard-hero,
+    body[data-page="peserta_content"] .admin-content > .panel {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    body[data-page="peserta_content"] .dashboard-hero-head {
+        display: none;
+    }
+
+    body[data-page="peserta_content"] .peserta-dashboard-shortcuts {
+        display: grid;
+        margin-top: 0;
+    }
+
+    body[data-page="peserta_content"] #peserta-exams-panel,
+    body[data-page="peserta_content"] #peserta-results-panel,
+    body[data-page="peserta_content"] #peserta-profile-panel {
+        padding: 20px 16px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 14px 30px rgba(31, 65, 122, 0.12);
+    }
+
+    body[data-page="peserta_content"] .peserta-shortcut-card {
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: 16px 14px;
+        border-radius: 16px;
+    }
+
+    body[data-page="peserta_content"] .peserta-shortcut-copy h3 {
+        font-size: 18px;
+    }
+
+    body[data-page="peserta_content"] .peserta-shortcut-copy p {
+        font-size: 13px;
+    }
+
+    body[data-page="peserta_content"] .peserta-shortcut-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    body[data-page="peserta_content"] .peserta-shortcut-btn,
+    body[data-page="peserta_content"] .peserta-exam-actions .btn-inline {
+        min-width: 138px;
+        border-radius: 14px;
+    }
+
+    body[data-page="peserta_content"] .landing-footer {
+        padding: 16px 16px 22px;
+        background: #161c63;
+    }
+
+    body[data-page="peserta_content"] .landing-footer p {
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    body[data-page="peserta_content"] .landing-footer small {
+        color: #67c4ff;
+        font-size: 11px;
     }
 }
 
