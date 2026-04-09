@@ -52,6 +52,7 @@
       "peserta-result-exam-select",
     );
     const resultBody = document.getElementById("peserta-result-body");
+    const resultCards = document.getElementById("peserta-result-cards");
     const resultDialog = document.getElementById("peserta-result-dialog");
     const resultDialogTitle = document.getElementById(
       "peserta-result-dialog-title",
@@ -767,10 +768,18 @@
       if (!examID || examID <= 0) {
         resultBody.innerHTML =
           '<tr><td colspan="5" class="muted">Pilih ujian untuk melihat daftar nilai.</td></tr>';
+        if (resultCards) {
+          resultCards.innerHTML =
+            '<div class="peserta-result-empty muted">Pilih ujian untuk melihat daftar nilai.</div>';
+        }
         return;
       }
       resultBody.innerHTML =
         '<tr><td colspan="5" class="muted">Memuat daftar nilai...</td></tr>';
+      if (resultCards) {
+        resultCards.innerHTML =
+          '<div class="peserta-result-empty muted">Memuat daftar nilai...</div>';
+      }
       try {
         const out = await api(
           "/api/v1/exams/" + examID + "/attempts/me",
@@ -784,9 +793,14 @@
         if (!attempts.length) {
           resultBody.innerHTML =
             '<tr><td colspan="5" class="muted">Belum ada attempt untuk ujian ini.</td></tr>';
+          if (resultCards) {
+            resultCards.innerHTML =
+              '<div class="peserta-result-empty muted">Belum ada attempt untuk ujian ini.</div>';
+          }
           return;
         }
         resultBody.innerHTML = "";
+        if (resultCards) resultCards.innerHTML = "";
         attempts.forEach(function (it) {
           const scoreValue = normalizeScore(
             it.score,
@@ -815,10 +829,52 @@
               '">Lihat</button></td>',
           ].join("");
           resultBody.appendChild(tr);
+          if (resultCards) {
+            const card = document.createElement("article");
+            card.className = "peserta-result-card";
+            card.innerHTML = [
+              '<div class="peserta-result-card-head">',
+              "<div>",
+              '<div class="peserta-result-kicker">Attempt ' +
+                escapeHtml(String(it.attempt_no || 0)) +
+                "</div>",
+              '<h4 class="peserta-result-title">' +
+                escapeHtml(
+                  String(
+                    (examMeta[examID] && examMeta[examID].title) ||
+                      "Hasil Ujian",
+                  ),
+                ) +
+                "</h4>",
+              "</div>",
+              '<div class="peserta-result-score">' +
+                escapeHtml(String(scoreLabel)) +
+                "</div>",
+              "</div>",
+              '<div class="peserta-result-meta">',
+              '<div><span>Mapel</span><strong>' +
+                escapeHtml(String(subjectLabel || "-")) +
+                "</strong></div>",
+              '<div><span>Waktu</span><strong>' +
+                escapeHtml(String(timeLabel || "-")) +
+                "</strong></div>",
+              "</div>",
+              '<button class="btn btn-secondary peserta-result-action" type="button" data-result-attempt="' +
+                escapeHtml(String(it.attempt_id || 0)) +
+                '" data-result-subject="' +
+                escapeHtml(String(subjectLabel || "-")) +
+                '">Lihat Detail</button>',
+            ].join("");
+            resultCards.appendChild(card);
+          }
         });
       } catch (err) {
         resultBody.innerHTML =
           '<tr><td colspan="5" class="muted">Gagal memuat daftar nilai.</td></tr>';
+        if (resultCards) {
+          resultCards.innerHTML =
+            '<div class="peserta-result-empty muted">Gagal memuat daftar nilai.</div>';
+        }
       }
     }
 
@@ -837,16 +893,25 @@
 
     if (resultBody) {
       resultBody.addEventListener("click", function (e) {
-        const target = e.target;
-        const btn =
-          target && target.closest && target.closest("[data-result-attempt]");
-        if (!btn) return;
-        const attemptID = Number(btn.getAttribute("data-result-attempt") || 0);
-        const subjectLabel = String(
-          btn.getAttribute("data-result-subject") || "-",
-        );
-        if (attemptID > 0) showResultDialog(attemptID, subjectLabel);
+        handleResultAttemptClick(e);
       });
+    }
+    if (resultCards) {
+      resultCards.addEventListener("click", function (e) {
+        handleResultAttemptClick(e);
+      });
+    }
+
+    function handleResultAttemptClick(e) {
+      const target = e.target;
+      const btn =
+        target && target.closest && target.closest("[data-result-attempt]");
+      if (!btn) return;
+      const attemptID = Number(btn.getAttribute("data-result-attempt") || 0);
+      const subjectLabel = String(
+        btn.getAttribute("data-result-subject") || "-",
+      );
+      if (attemptID > 0) showResultDialog(attemptID, subjectLabel);
     }
     if (resultDialogExportBtn) {
       resultDialogExportBtn.addEventListener("click", function () {

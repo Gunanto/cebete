@@ -4867,6 +4867,10 @@ body[data-page="peserta_content"] .peserta-bottom-bar {
     display: none;
 }
 
+body[data-page="peserta_content"] .peserta-result-cards {
+    display: none;
+}
+
 body[data-page="peserta_content"] #peserta-exams-panel .muted {
     color: #7587a8;
 }
@@ -5390,7 +5394,23 @@ body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortc
     }
 
     body[data-page="peserta_content"] .landing-footer {
-        display: none;
+        position: static;
+        margin: 18px auto 84px;
+        width: min(100% - 24px, 560px);
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: #161c63;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+    }
+
+    body[data-page="peserta_content"] .landing-footer p {
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    body[data-page="peserta_content"] .landing-footer small {
+        color: #67c4ff;
+        font-size: 10px;
     }
 
     body[data-page="peserta_content"] .peserta-bottom-bar {
@@ -5446,6 +5466,91 @@ body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortc
         fill: none;
         stroke-linecap: round;
         stroke-linejoin: round;
+    }
+
+    body[data-page="peserta_content"] #peserta-results-panel > .table-wrap {
+        display: none;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-cards {
+        display: grid;
+        gap: 12px;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-card,
+    body[data-page="peserta_content"] .peserta-result-empty {
+        padding: 16px 14px;
+        border-radius: 18px;
+        background: #fff;
+        box-shadow: 0 10px 24px rgba(31, 65, 122, 0.12);
+    }
+
+    body[data-page="peserta_content"] .peserta-result-card {
+        display: grid;
+        gap: 14px;
+        border-left: 5px solid #14b8a6;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-kicker {
+        color: #0f766e;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-title {
+        margin: 5px 0 0;
+        color: #132644;
+        font-size: 17px;
+        line-height: 1.25;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-score {
+        min-width: 72px;
+        padding: 9px 10px;
+        border-radius: 16px;
+        background: #e6fffb;
+        color: #0f766e;
+        font-size: 18px;
+        font-weight: 900;
+        text-align: center;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-meta {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-meta div {
+        display: grid;
+        gap: 3px;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-meta span {
+        color: #7587a8;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-meta strong {
+        color: #1f2937;
+        font-size: 13px;
+    }
+
+    body[data-page="peserta_content"] .peserta-result-action {
+        justify-self: end;
+        min-width: 138px;
+        border-radius: 14px;
     }
 }
 
