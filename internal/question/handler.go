@@ -388,6 +388,8 @@ func (h *Handler) CreateQuestionCode(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrQuestionCodeTenantReq):
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: "akun belum terhubung tenant/sekolah"})
 		case errors.Is(err, ErrSubjectNotFound), errors.Is(err, ErrQuestionCodeNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrQuestionCodeExists):

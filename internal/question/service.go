@@ -21,6 +21,7 @@ var (
 	ErrLearningGoalNotFound  = errors.New("learning goal not found")
 	ErrQuestionCodeNotFound  = errors.New("question code not found")
 	ErrQuestionCodeExists    = errors.New("question code already exists")
+	ErrQuestionCodeTenantReq = errors.New("question code tenant required")
 	ErrForbidden             = errors.New("forbidden")
 	ErrExamNotFound          = errors.New("exam not found")
 	ErrQuestionNotFound      = errors.New("question not found")
@@ -935,15 +936,39 @@ func (s *Service) CreateQuestionCode(ctx context.Context, in CreateQuestionCodeI
 	if !exists {
 		return nil, ErrSubjectNotFound
 	}
+	codeHasTenant, err := hasColumn(ctx, s.db, "question_codes", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var tenantID *int64
+	if codeHasTenant {
+		tenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, ErrQuestionCodeTenantReq
+		}
+	}
 
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO question_codes (subject_id, code, name, is_active, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, TRUE, NULLIF($4, 0), now(), now())
+	insertColumns := []string{"subject_id", "code", "name", "is_active", "created_by", "created_at", "updated_at"}
+	insertValues := []string{"$1", "$2", "$3", "TRUE", "NULLIF($4, 0)", "now()", "now()"}
+	insertArgs := []any{in.SubjectID, in.Code, in.Name, in.CreatedBy}
+	if codeHasTenant {
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *tenantID)
+	}
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO question_codes (%s)
+		VALUES (%s)
 		RETURNING id, subject_id, code, name, is_active, created_by, created_at, updated_at
-	`, in.SubjectID, in.Code, in.Name, in.CreatedBy)
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 	out, err := scanQuestionCode(row)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "question_codes_subject_id_code_key") {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "question_codes_subject_id_code_key") ||
+			strings.Contains(lower, "ux_question_codes_tenant_subject_code") {
 			return nil, ErrQuestionCodeExists
 		}
 		return nil, fmt.Errorf("create question code: %w", err)
@@ -1056,7 +1081,9 @@ func (s *Service) UpdateQuestionCode(ctx context.Context, in UpdateQuestionCodeI
 			}
 			return nil, ErrQuestionCodeNotFound
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "question_codes_subject_id_code_key") {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "question_codes_subject_id_code_key") ||
+			strings.Contains(lower, "ux_question_codes_tenant_subject_code") {
 			return nil, ErrQuestionCodeExists
 		}
 		return nil, fmt.Errorf("update question code: %w", err)
