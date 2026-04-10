@@ -5296,52 +5296,61 @@ func (s *Service) ListSubjects(ctx context.Context, level, subjectType string, a
 	level = strings.TrimSpace(level)
 	subjectType = strings.TrimSpace(subjectType)
 	role := strings.ToLower(strings.TrimSpace(actorRole))
+	applyOwnerScope := role == "guru"
+	if applyOwnerScope && actorID <= 0 {
+		return nil, ErrInvalidInput
+	}
 
-	query := `
-		SELECT id, education_level, subject_type, name
-		FROM subjects
-		WHERE is_active = TRUE
-	`
-	args := make([]any, 0, 2)
-	idx := 1
-	if role == "guru" {
-		if actorID <= 0 {
-			return nil, ErrInvalidInput
+	for {
+		query := `
+			SELECT id, education_level, subject_type, name
+			FROM subjects
+			WHERE is_active = TRUE
+		`
+		args := make([]any, 0, 3)
+		idx := 1
+		if applyOwnerScope {
+			query += fmt.Sprintf(" AND created_by = $%d", idx)
+			args = append(args, actorID)
+			idx++
 		}
-		query += fmt.Sprintf(" AND created_by = $%d", idx)
-		args = append(args, actorID)
-		idx++
-	}
-	if level != "" {
-		query += fmt.Sprintf(" AND education_level = $%d", idx)
-		args = append(args, level)
-		idx++
-	}
-	if subjectType != "" {
-		query += fmt.Sprintf(" AND subject_type = $%d", idx)
-		args = append(args, subjectType)
-		idx++
-	}
-	query += " ORDER BY education_level, subject_type, name"
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query subjects: %w", err)
-	}
-	defer rows.Close()
-
-	items := make([]SubjectOption, 0)
-	for rows.Next() {
-		var it SubjectOption
-		if err := rows.Scan(&it.ID, &it.EducationLevel, &it.SubjectType, &it.Name); err != nil {
-			return nil, fmt.Errorf("scan subject: %w", err)
+		if level != "" {
+			query += fmt.Sprintf(" AND education_level = $%d", idx)
+			args = append(args, level)
+			idx++
 		}
-		items = append(items, it)
+		if subjectType != "" {
+			query += fmt.Sprintf(" AND subject_type = $%d", idx)
+			args = append(args, subjectType)
+			idx++
+		}
+		query += " ORDER BY education_level, subject_type, name"
+
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			if applyOwnerScope && isUndefinedColumnErr(err, "subjects", "created_by") {
+				applyOwnerScope = false
+				continue
+			}
+			return nil, fmt.Errorf("query subjects: %w", err)
+		}
+
+		items := make([]SubjectOption, 0)
+		for rows.Next() {
+			var it SubjectOption
+			if err := rows.Scan(&it.ID, &it.EducationLevel, &it.SubjectType, &it.Name); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan subject: %w", err)
+			}
+			items = append(items, it)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate subjects: %w", err)
+		}
+		rows.Close()
+		return items, nil
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate subjects: %w", err)
-	}
-	return items, nil
 }
 
 func (s *Service) CreateSubject(ctx context.Context, in CreateSubjectInput) (*SubjectOption, error) {
@@ -5357,6 +5366,19 @@ func (s *Service) CreateSubject(ctx context.Context, in CreateSubjectInput) (*Su
 		VALUES ($1, $2, $3, TRUE, NULLIF($4, 0))
 		RETURNING id, education_level, subject_type, name
 	`, level, subjectType, name, in.CreatedBy).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
+		if isUndefinedColumnErr(err, "subjects", "created_by") {
+			if legacyErr := s.db.QueryRowContext(ctx, `
+				INSERT INTO subjects (education_level, subject_type, name, is_active)
+				VALUES ($1, $2, $3, TRUE)
+				RETURNING id, education_level, subject_type, name
+			`, level, subjectType, name).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); legacyErr != nil {
+				return nil, fmt.Errorf("insert subject legacy: %w", legacyErr)
+			}
+			return &out, nil
+		}
+		if isForeignKeyViolationErr(err) && strings.Contains(strings.ToLower(err.Error()), "created_by") {
+			return nil, ErrUserNotFound
+		}
 		return nil, fmt.Errorf("insert subject: %w", err)
 	}
 	return &out, nil
@@ -5374,39 +5396,46 @@ func (s *Service) UpdateSubject(ctx context.Context, in UpdateSubjectInput) (*Su
 	}
 	role := strings.ToLower(strings.TrimSpace(in.ActorRole))
 	var out SubjectOption
-	query := `
-		UPDATE subjects
-		SET education_level = $2,
-			subject_type = $3,
-			name = $4
-		WHERE id = $1
-		  AND is_active = TRUE
-	`
-	args := []any{in.ID, level, subjectType, name}
-	if role == "guru" {
-		if in.ActorID <= 0 {
-			return nil, ErrInvalidInput
-		}
-		query += " AND created_by = $5"
-		args = append(args, in.ActorID)
+	applyOwnerScope := role == "guru"
+	if applyOwnerScope && in.ActorID <= 0 {
+		return nil, ErrInvalidInput
 	}
-	query += " RETURNING id, education_level, subject_type, name"
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if role == "guru" {
-				found, checkErr := s.subjectExistsAndActive(ctx, in.ID)
-				if checkErr != nil {
-					return nil, checkErr
-				}
-				if found {
-					return nil, ErrSubjectForbidden
-				}
+	for {
+		query := `
+			UPDATE subjects
+			SET education_level = $2,
+				subject_type = $3,
+				name = $4
+			WHERE id = $1
+			  AND is_active = TRUE
+		`
+		args := []any{in.ID, level, subjectType, name}
+		if applyOwnerScope {
+			query += " AND created_by = $5"
+			args = append(args, in.ActorID)
+		}
+		query += " RETURNING id, education_level, subject_type, name"
+		if err := s.db.QueryRowContext(ctx, query, args...).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
+			if applyOwnerScope && isUndefinedColumnErr(err, "subjects", "created_by") {
+				applyOwnerScope = false
+				continue
 			}
-			return nil, ErrSubjectNotFound
+			if errors.Is(err, sql.ErrNoRows) {
+				if applyOwnerScope {
+					found, checkErr := s.subjectExistsAndActive(ctx, in.ID)
+					if checkErr != nil {
+						return nil, checkErr
+					}
+					if found {
+						return nil, ErrSubjectForbidden
+					}
+				}
+				return nil, ErrSubjectNotFound
+			}
+			return nil, fmt.Errorf("update subject: %w", err)
 		}
-		return nil, fmt.Errorf("update subject: %w", err)
+		return &out, nil
 	}
-	return &out, nil
 }
 
 func normalizeExamToken(token string) string {
@@ -5508,43 +5537,80 @@ func isUndefinedTableErr(err error, table string) bool {
 		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
 }
 
+func isUndefinedColumnErr(err error, table, column string) bool {
+	if err == nil || column == "" {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	columnPart := "column \"" + strings.ToLower(column) + "\" does not exist"
+	if table != "" {
+		columnPart = "column \"" + strings.ToLower(table) + "." + strings.ToLower(column) + "\" does not exist"
+		if strings.Contains(lower, columnPart) {
+			return true
+		}
+		columnPart = "column \"" + strings.ToLower(column) + "\" does not exist"
+	}
+	return strings.Contains(lower, columnPart) ||
+		(strings.Contains(lower, "undefined_column") && strings.Contains(lower, strings.ToLower(column)))
+}
+
+func isForeignKeyViolationErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return string(pqErr.Code) == "23503"
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "violates foreign key constraint") || strings.Contains(lower, "foreign key violation")
+}
+
 func (s *Service) DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error {
 	if subjectID <= 0 {
 		return ErrInvalidInput
 	}
 	role := strings.ToLower(strings.TrimSpace(actorRole))
-	query := `
-		UPDATE subjects
-		SET is_active = FALSE
-		WHERE id = $1
-		  AND is_active = TRUE
-	`
-	args := []any{subjectID}
-	if role == "guru" {
-		if actorID <= 0 {
-			return ErrInvalidInput
-		}
-		query += " AND created_by = $2"
-		args = append(args, actorID)
+	applyOwnerScope := role == "guru"
+	if applyOwnerScope && actorID <= 0 {
+		return ErrInvalidInput
 	}
-	query += " RETURNING id"
-	var id int64
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if role == "guru" {
-				found, checkErr := s.subjectExistsAndActive(ctx, subjectID)
-				if checkErr != nil {
-					return checkErr
-				}
-				if found {
-					return ErrSubjectForbidden
-				}
+
+	for {
+		query := `
+			UPDATE subjects
+			SET is_active = FALSE
+			WHERE id = $1
+			  AND is_active = TRUE
+		`
+		args := []any{subjectID}
+		if applyOwnerScope {
+			query += " AND created_by = $2"
+			args = append(args, actorID)
+		}
+		query += " RETURNING id"
+		var id int64
+		if err := s.db.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
+			if applyOwnerScope && isUndefinedColumnErr(err, "subjects", "created_by") {
+				applyOwnerScope = false
+				continue
 			}
-			return ErrSubjectNotFound
+			if errors.Is(err, sql.ErrNoRows) {
+				if applyOwnerScope {
+					found, checkErr := s.subjectExistsAndActive(ctx, subjectID)
+					if checkErr != nil {
+						return checkErr
+					}
+					if found {
+						return ErrSubjectForbidden
+					}
+				}
+				return ErrSubjectNotFound
+			}
+			return fmt.Errorf("delete subject: %w", err)
 		}
-		return fmt.Errorf("delete subject: %w", err)
+		return nil
 	}
-	return nil
 }
 
 func (s *Service) subjectExistsAndActive(ctx context.Context, subjectID int64) (bool, error) {

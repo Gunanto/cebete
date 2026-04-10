@@ -367,6 +367,10 @@ func (h *Handler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "education_level, subject_type, name wajib diisi"})
 			return
 		}
+		if errors.Is(err, ErrUserNotFound) {
+			writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+			return
+		}
 		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		return
 	}
