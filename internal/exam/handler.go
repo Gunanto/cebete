@@ -660,6 +660,10 @@ func (h *Handler) CreateExam(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusConflict, response{OK: false, Error: "Kode ujian sudah digunakan. Pakai kode lain."})
 			return
 		}
+		if errors.Is(err, ErrExamTenantRequired) {
+			writeJSON(w, r, http.StatusForbidden, response{OK: false, Error: "akun belum terhubung tenant/sekolah"})
+			return
+		}
 		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: err.Error()})
 		return
 	}

@@ -29,6 +29,7 @@ var (
 	ErrSubjectNotFound          = errors.New("subject not found")
 	ErrSubjectForbidden         = errors.New("subject forbidden")
 	ErrSubjectTenantRequired    = errors.New("subject tenant required")
+	ErrExamTenantRequired       = errors.New("exam tenant required")
 	ErrAttemptNotFound          = errors.New("attempt not found")
 	ErrAttemptNotEditable       = errors.New("attempt is not editable")
 	ErrQuestionNotInExam        = errors.New("question not in exam")
@@ -1974,16 +1975,49 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if _, isProktor := currentScopedProktor(ctx); isProktor {
 		return nil, ErrExamForbidden
 	}
+
+	examHasTenant, err := hasColumn(ctx, s.db, "exams", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var examTenantID *int64
+	if examHasTenant {
+		examTenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if examTenantID == nil || *examTenantID <= 0 {
+			return nil, ErrExamTenantRequired
+		}
+	}
+
 	insertOnce := func(code string) (int64, error) {
+		columns := []string{
+			"code", "title", "subject_id", "kktp", "duration_minutes", "max_attempts",
+			"start_at", "end_at", "review_policy", "randomize_questions", "randomize_options",
+			"allow_non_regular_self_enroll", "is_active", "created_by", "created_at",
+		}
+		values := []string{
+			"$1", "$2", "$3", "$4", "$5", "$6",
+			"$7", "$8", "$9", "$10", "$11",
+			"$12", "TRUE", "$13", "now()",
+		}
+		args := []any{
+			code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts,
+			in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions,
+			in.AllowNonRegular, in.CreatedBy,
+		}
+		if examHasTenant {
+			columns = append(columns, "tenant_id")
+			values = append(values, fmt.Sprintf("$%d", len(args)+1))
+			args = append(args, *examTenantID)
+		}
 		var outID int64
-		if err := s.db.QueryRowContext(ctx, `
-			INSERT INTO exams (
-				code, title, subject_id, kktp, duration_minutes, max_attempts,
-				start_at, end_at, review_policy, randomize_questions, randomize_options,
-				allow_non_regular_self_enroll, is_active, created_by, created_at
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13,now())
+		if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+			INSERT INTO exams (%s)
+			VALUES (%s)
 			RETURNING id
-		`, code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.CreatedBy).Scan(&outID); err != nil {
+		`, strings.Join(columns, ", "), strings.Join(values, ", ")), args...).Scan(&outID); err != nil {
 			return 0, err
 		}
 		return outID, nil
@@ -1992,10 +2026,14 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if in.Code != "" {
 		outID, err := insertOnce(in.Code)
 		if err != nil {
+			if errors.Is(err, ErrExamTenantRequired) {
+				return nil, err
+			}
 			if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
 				return nil, ErrReviewPolicySchema
 			}
-			if strings.Contains(strings.ToLower(err.Error()), "exams_code_key") {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "exams_code_key") || strings.Contains(errMsg, "ux_exams_tenant_code") {
 				return nil, ErrExamCodeExists
 			}
 			return nil, fmt.Errorf("create exam: %w", err)
@@ -2011,10 +2049,14 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		autoCode := "EXAM-" + time.Now().Format("20060102") + "-" + token
 		outID, err := insertOnce(autoCode)
 		if err != nil {
+			if errors.Is(err, ErrExamTenantRequired) {
+				return nil, err
+			}
 			if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
 				return nil, ErrReviewPolicySchema
 			}
-			if strings.Contains(strings.ToLower(err.Error()), "exams_code_key") {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "exams_code_key") || strings.Contains(errMsg, "ux_exams_tenant_code") {
 				continue
 			}
 			return nil, fmt.Errorf("create exam: %w", err)
