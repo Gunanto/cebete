@@ -862,12 +862,37 @@ func (s *Service) ListQuestions(ctx context.Context, subjectID int64, ownerID *i
 		args = append(args, subjectID)
 	}
 	if ownerID != nil && *ownerID > 0 {
-		query += fmt.Sprintf(` AND EXISTS (
-			SELECT 1 FROM question_versions qv
-			WHERE qv.question_id = q.id
-			  AND qv.created_by = $%d
-		)`, len(args)+1)
-		args = append(args, *ownerID)
+		ownerClauses := make([]string, 0, 3)
+		questionHasCreatedBy, err := hasColumn(ctx, s.db, "questions", "created_by")
+		if err != nil {
+			return nil, err
+		}
+		if questionHasCreatedBy {
+			ownerClauses = append(ownerClauses, fmt.Sprintf("q.created_by = $%d", len(args)+1))
+			args = append(args, *ownerID)
+		}
+		versionHasCreatedBy, err := hasColumn(ctx, s.db, "question_versions", "created_by")
+		if err != nil {
+			return nil, err
+		}
+		if versionHasCreatedBy {
+			ownerClauses = append(ownerClauses, fmt.Sprintf(`EXISTS (
+				SELECT 1 FROM question_versions qv_owner
+				WHERE qv_owner.question_id = q.id
+				  AND qv_owner.created_by = $%d
+			)`, len(args)+1))
+			args = append(args, *ownerID)
+			// Legacy fallback: jika metadata owner belum pernah diisi di version,
+			// jangan sembunyikan soal agar daftar pick/sync tidak kosong.
+			ownerClauses = append(ownerClauses, `NOT EXISTS (
+				SELECT 1 FROM question_versions qv_owner_meta
+				WHERE qv_owner_meta.question_id = q.id
+				  AND qv_owner_meta.created_by IS NOT NULL
+			)`)
+		}
+		if len(ownerClauses) > 0 {
+			query += " AND (" + strings.Join(ownerClauses, " OR ") + ")"
+		}
 	}
 	query += ` ORDER BY q.id DESC`
 
