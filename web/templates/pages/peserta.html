@@ -151,6 +151,113 @@
                     </div>
                 </div>
 
+                <div class="peserta-mobile-dashboard" aria-label="Dashboard cepat peserta">
+                    <div class="peserta-mobile-greeting">
+                        <h3 id="peserta-mobile-greeting-title">
+                            Selamat datang, Peserta.
+                        </h3>
+                    </div>
+                    <div class="peserta-mobile-shortcuts">
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-home"
+                            data-peserta-jump="dashboard"
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M4 11.5L12 5l8 6.5" />
+                                    <path d="M6 10.5v8h12v-8" />
+                                </svg>
+                            </span>
+                            <span>Home</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-exams"
+                            data-peserta-jump="exams"
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <rect x="4.5" y="4.5" width="15" height="15" rx="3" />
+                                    <path d="M8 12.2l2.2 2.2L16 8.6" />
+                                </svg>
+                            </span>
+                            <span>Buka Ujian</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-results"
+                            data-peserta-jump="results"
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <rect x="5" y="4.5" width="14" height="15" rx="2.5" />
+                                    <path d="M9 9h6M9 13h6" />
+                                </svg>
+                            </span>
+                            <span>Hasil Ujian</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-profile"
+                            data-peserta-jump="profile"
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                <circle cx="12" cy="9" r="3.2" />
+                                <path d="M5.5 18a6.5 6.5 0 0 1 13 0" />
+                                </svg>
+                            </span>
+                            <span>Profil</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-schedule"
+                            data-peserta-coming-soon="Jadwal ujian akan segera tersedia di pembaruan berikutnya."
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                <circle cx="12" cy="12" r="7.5" />
+                                <path d="M12 8v5l3 2" />
+                                </svg>
+                            </span>
+                            <span>Jadwal</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="peserta-mobile-shortcut peserta-mobile-shortcut-bank"
+                            data-peserta-coming-soon="Bank Soal sedang disiapkan untuk latihan mandiri peserta."
+                        >
+                            <span class="peserta-mobile-shortcut-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                <rect x="5" y="6" width="14" height="13" rx="2.5" />
+                                <path d="M9 6V4.5M15 6V4.5M8.5 11h7M8.5 14h5" />
+                                </svg>
+                            </span>
+                            <span>Bank Soal</span>
+                        </button>
+                    </div>
+                    <article class="peserta-mobile-next-card">
+                        <button
+                            type="button"
+                            class="peserta-mobile-next-action"
+                            data-peserta-jump="exams"
+                            aria-label="Buka daftar ujian"
+                        >
+                            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                <path d="M12 4v16" />
+                                <path d="M7 9l5-5 5 5" />
+                            </svg>
+                        </button>
+                        <div class="peserta-mobile-next-copy">
+                            <h4 id="peserta-mobile-next-title">Belum ada ujian aktif</h4>
+                            <p id="peserta-mobile-next-meta">
+                                Token ujian akan tampil setelah dikirim proktor.
+                            </p>
+                        </div>
+                    </article>
+                </div>
+
                 <div class="peserta-dashboard-shortcuts">
                     <article
                         class="peserta-shortcut-card peserta-shortcut-card-exams"

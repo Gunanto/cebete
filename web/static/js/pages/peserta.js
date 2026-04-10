@@ -35,6 +35,11 @@
     const dashboardHeroDesc = document.querySelector(
       "#peserta-dashboard-panel .dashboard-hero-copy p",
     );
+    const mobileGreetingTitle = document.getElementById(
+      "peserta-mobile-greeting-title",
+    );
+    const mobileNextTitle = document.getElementById("peserta-mobile-next-title");
+    const mobileNextMeta = document.getElementById("peserta-mobile-next-meta");
     const profileName = document.getElementById("peserta-profile-name");
     const profileParticipantNo = document.getElementById(
       "peserta-profile-participant-no",
@@ -143,6 +148,41 @@
       const d = new Date(raw);
       if (Number.isNaN(d.getTime())) return "-";
       return d.toLocaleString("id-ID");
+    }
+
+    function fmtShortTime(raw) {
+      if (!raw) return "";
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    function updateMobileNextExam(items) {
+      if (!mobileNextTitle || !mobileNextMeta) return;
+      const first = Array.isArray(items) && items.length ? items[0] : null;
+      if (!first) {
+        mobileNextTitle.textContent = "Belum ada ujian aktif";
+        mobileNextMeta.textContent =
+          "Token ujian akan tampil setelah dikirim proktor.";
+        return;
+      }
+      mobileNextTitle.textContent = String(first.title || "Ujian aktif");
+      const token = String(first.token || "").trim();
+      const expires = fmtShortDate(first.token_expires_at);
+      const timeOnly = fmtShortTime(first.token_expires_at);
+      if (token) {
+        mobileNextMeta.textContent = timeOnly
+          ? "Token: " + token + " • hingga " + timeOnly + " WIB"
+          : "Token: " + token;
+        return;
+      }
+      mobileNextMeta.textContent =
+        expires && expires !== "-"
+          ? "Token aktif hingga " + expires
+          : "Token belum dikirim proktor.";
     }
 
     function normalizeScore(score, totalWeight, totalQuestions) {
@@ -614,6 +654,16 @@
         if (target) setActiveMenu(target);
       });
     });
+    const comingSoonButtons = Array.from(
+      document.querySelectorAll("[data-peserta-coming-soon]"),
+    );
+    comingSoonButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!msg) return;
+        const note = String(btn.dataset.pesertaComingSoon || "").trim();
+        text(msg, note || "Fitur sedang disiapkan.");
+      });
+    });
     if (sidebarToggle) {
       sidebarToggle.addEventListener("click", function () {
         setSidebarOpen(!document.body.classList.contains("sidebar-open"));
@@ -671,6 +721,14 @@
             ".",
         );
       }
+      if (mobileGreetingTitle) {
+        text(
+          mobileGreetingTitle,
+          "Selamat datang, " +
+            String((fullName && String(fullName).trim()) || "Peserta") +
+            ".",
+        );
+      }
       if (dashboardHeroDesc) {
         text(
           dashboardHeroDesc,
@@ -686,6 +744,7 @@
       try {
         const list = await api("/api/v1/exams/published", "GET");
         const items = Array.isArray(list) ? list : [];
+        updateMobileNextExam(items);
         if (!items.length) {
           examsBody.innerHTML =
             '<div class="peserta-exam-empty muted">Belum ada ujian aktif yang bisa diikuti.</div>';
@@ -726,6 +785,7 @@
           });
         }
       } catch (err) {
+        updateMobileNextExam([]);
         const msgText = String(
           (err && err.message) || "Gagal memuat daftar ujian aktif.",
         ).trim();
