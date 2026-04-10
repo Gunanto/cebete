@@ -1444,6 +1444,8 @@ func (h *Handler) ReplaceExamAssignments(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrAssignmentTenantRequired):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "ujian belum terhubung tenant/sekolah"})
 		case errors.Is(err, ErrAssignmentFeature):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
 		default:
@@ -1494,6 +1496,8 @@ func (h *Handler) ReplaceExamAssignmentsByClass(w http.ResponseWriter, r *http.R
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "school_id dan class_id wajib valid"})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrAssignmentTenantRequired):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "ujian belum terhubung tenant/sekolah"})
 		case errors.Is(err, ErrAssignmentFeature):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
 		default:
@@ -1544,6 +1548,8 @@ func (h *Handler) AppendExamAssignmentsByClass(w http.ResponseWriter, r *http.Re
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "school_id dan class_id wajib valid"})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrAssignmentTenantRequired):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "ujian belum terhubung tenant/sekolah"})
 		case errors.Is(err, ErrAssignmentFeature):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
 		default:

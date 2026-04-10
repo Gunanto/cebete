@@ -46,6 +46,7 @@ var (
 	ErrExamCodeExists           = errors.New("kode ujian sudah digunakan")
 	ErrAttemptLimitReached      = errors.New("jumlah attempt ujian sudah mencapai batas")
 	ErrAssignmentFeature        = errors.New("fitur enroll ujian belum aktif di database")
+	ErrAssignmentTenantRequired = errors.New("assignment tenant required")
 	ErrStudentDataMissing       = errors.New("data peserta belum lengkap (nomor peserta, nama, kelas, nisn, nama sekolah, npsn)")
 	ErrIncidentPolicyInvalid    = errors.New("kebijakan insiden tidak valid")
 	ErrQuestionCodeRuleNotFound = errors.New("exam question code rule not found")
@@ -4013,6 +4014,20 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
+	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var assignmentTenantID *int64
+	if assignmentHasTenant {
+		assignmentTenantID, err = loadExamTenantID(ctx, s.db, in.ExamID)
+		if err != nil {
+			return nil, err
+		}
+		if assignmentTenantID == nil || *assignmentTenantID <= 0 {
+			return nil, ErrAssignmentTenantRequired
+		}
+	}
 
 	ids := make([]int64, 0, len(in.UserIDs))
 	seen := map[int64]struct{}{}
@@ -4066,17 +4081,25 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 		if role != "guru" && role != "siswa" {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO exam_assignments (
-				exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at
-			) VALUES ($1, $2, 'active', $3, now(), now(), now())
+		insertColumns := []string{"exam_id", "user_id", "status", "assigned_by", "assigned_at", "created_at", "updated_at"}
+		insertValues := []string{"$1", "$2", "'active'", "$3", "now()", "now()", "now()"}
+		insertArgs := []any{in.ExamID, userID, in.AssignedBy}
+		if assignmentHasTenant {
+			insertColumns = append(insertColumns, "tenant_id")
+			insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+			insertArgs = append(insertArgs, *assignmentTenantID)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+			INSERT INTO exam_assignments (%s)
+			VALUES (%s)
 			ON CONFLICT (exam_id, user_id)
 			DO UPDATE SET
 				status = 'active',
 				assigned_by = EXCLUDED.assigned_by,
 				assigned_at = now(),
-				updated_at = now()
-		`, in.ExamID, userID, in.AssignedBy); err != nil {
+				updated_at = now(),
+				tenant_id = COALESCE(exam_assignments.tenant_id, EXCLUDED.tenant_id)
+		`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...); err != nil {
 			return nil, fmt.Errorf("upsert exam assignment: %w", err)
 		}
 	}
@@ -4158,6 +4181,20 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
+	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var assignmentTenantID *int64
+	if assignmentHasTenant {
+		assignmentTenantID, err = loadExamTenantID(ctx, s.db, in.ExamID)
+		if err != nil {
+			return nil, err
+		}
+		if assignmentTenantID == nil || *assignmentTenantID <= 0 {
+			return nil, ErrAssignmentTenantRequired
+		}
+	}
 	if err := s.ensureProktorSchoolScope(ctx, in.SchoolID); err != nil {
 		return nil, err
 	}
@@ -4224,17 +4261,25 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 		if role != "guru" && role != "siswa" {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO exam_assignments (
-				exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at
-			) VALUES ($1, $2, 'active', $3, now(), now(), now())
+		insertColumns := []string{"exam_id", "user_id", "status", "assigned_by", "assigned_at", "created_at", "updated_at"}
+		insertValues := []string{"$1", "$2", "'active'", "$3", "now()", "now()", "now()"}
+		insertArgs := []any{in.ExamID, userID, in.AssignedBy}
+		if assignmentHasTenant {
+			insertColumns = append(insertColumns, "tenant_id")
+			insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+			insertArgs = append(insertArgs, *assignmentTenantID)
+		}
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`
+			INSERT INTO exam_assignments (%s)
+			VALUES (%s)
 			ON CONFLICT (exam_id, user_id)
 			DO UPDATE SET
 				status = 'active',
 				assigned_by = EXCLUDED.assigned_by,
 				assigned_at = now(),
-				updated_at = now()
-		`, in.ExamID, userID, in.AssignedBy); err != nil {
+				updated_at = now(),
+				tenant_id = COALESCE(exam_assignments.tenant_id, EXCLUDED.tenant_id)
+		`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...); err != nil {
 			return nil, fmt.Errorf("upsert exam assignment: %w", err)
 		}
 	}
