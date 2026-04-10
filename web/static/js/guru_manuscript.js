@@ -13,6 +13,7 @@
   var manuscriptEditingQuestionID = 0;
   var manuscriptEditSnapshot = null;
   var stimulusGroupCache = [];
+  var MANUSCRIPT_IMAGE_MAX_BYTES = 100 * 1024;
 
   function setDeps(opts) {
     deps = opts || {};
@@ -511,6 +512,7 @@
     const initialHTML = String(hidden.value || "").trim();
     const quill = deps.createQuillEditor(host, "Isi stimulus tab...", {
       defaultFontSize: "12pt",
+      imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
     });
     if (!quill) return;
     if (initialHTML) {
@@ -763,6 +765,7 @@
       const initialHTML = String(hidden.value || "").trim();
       const quill = deps.createQuillEditor(host, placeholder, {
         defaultFontSize: "12pt",
+        imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
       });
       if (!quill) return;
       if (initialHTML) {
@@ -1044,6 +1047,7 @@
     const initialHTML = String(hidden.value || "").trim();
     const quill = deps.createQuillEditor(host, "Tulis pernyataan...", {
       defaultFontSize: "12pt",
+      imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
     });
     if (!quill) return;
     if (initialHTML) {
@@ -3611,7 +3615,10 @@
       manuscriptStimulusQuill = deps.createQuillEditor(
         deps.manuscriptStimulusEditor,
         "Tulis stimulus...",
-        { defaultFontSize: "12pt" },
+        {
+          defaultFontSize: "12pt",
+          imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
+        },
       );
       if (manuscriptStimulusQuill) {
         manuscriptStimulusQuill.on("text-change", function () {
@@ -3623,7 +3630,10 @@
       manuscriptStemQuill = deps.createQuillEditor(
         deps.manuscriptStemEditor,
         "Tulis naskah soal...",
-        { defaultFontSize: "12pt" },
+        {
+          defaultFontSize: "12pt",
+          imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
+        },
       );
       if (manuscriptStemQuill) {
         manuscriptStemQuill.on("text-change", function () {
@@ -3635,7 +3645,10 @@
       manuscriptExplanationQuill = deps.createQuillEditor(
         deps.manuscriptExplanationEditor,
         "Tulis penjelasan...",
-        { defaultFontSize: "12pt" },
+        {
+          defaultFontSize: "12pt",
+          imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
+        },
       );
       if (manuscriptExplanationQuill) {
         manuscriptExplanationQuill.on("text-change", function () {
@@ -3647,7 +3660,10 @@
       manuscriptHintQuill = deps.createQuillEditor(
         deps.manuscriptHintEditor,
         "Tulis hint...",
-        { defaultFontSize: "12pt" },
+        {
+          defaultFontSize: "12pt",
+          imageMaxBytes: MANUSCRIPT_IMAGE_MAX_BYTES,
+        },
       );
       if (manuscriptHintQuill) {
         manuscriptHintQuill.on("text-change", function () {

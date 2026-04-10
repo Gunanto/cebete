@@ -75,6 +75,27 @@
 
   const QUESTION_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
+  function formatImageMaxLabel(bytes) {
+    const size = Number(bytes) || 0;
+    if (size <= 0) return "2MB";
+    if (size < 1024 * 1024) {
+      return Math.max(1, Math.round(size / 1024)) + "KB";
+    }
+    return (size / (1024 * 1024)).toFixed(1).replace(/\.0$/, "") + "MB";
+  }
+
+  function dataURLImageSizeBytes(dataURL) {
+    const raw = String(dataURL || "").trim();
+    if (!/^data:image\//i.test(raw)) return 0;
+    const marker = ";base64,";
+    const idx = raw.indexOf(marker);
+    if (idx <= 0) return 0;
+    const base64 = raw.slice(idx + marker.length).replace(/\s+/g, "");
+    if (!base64) return 0;
+    const padding = (base64.match(/=+$/) || [""])[0].length;
+    return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+  }
+
   function fileToDataURL(file) {
     return new Promise(function (resolve, reject) {
       const reader = new FileReader();
@@ -93,10 +114,10 @@
     });
   }
 
-  async function uploadQuestionImageFile(file) {
+  async function uploadQuestionImageFile(file, maxBytes, maxLabel) {
     if (!file) throw new Error("file gambar tidak ditemukan");
-    if (file.size > QUESTION_IMAGE_MAX_BYTES) {
-      throw new Error("ukuran gambar maksimal 2MB");
+    if (file.size > maxBytes) {
+      throw new Error("ukuran gambar maksimal " + maxLabel);
     }
     const form = new FormData();
     form.append("file", file);
@@ -105,6 +126,12 @@
 
   function createQuillEditor(hostEl, placeholder, options) {
     if (!hostEl || !window.Quill) return null;
+    const imageMaxBytes = Math.max(
+      1,
+      Number((options && options.imageMaxBytes) || QUESTION_IMAGE_MAX_BYTES) ||
+        QUESTION_IMAGE_MAX_BYTES,
+    );
+    const imageMaxLabel = formatImageMaxLabel(imageMaxBytes);
     const originalConsoleLog = console.log;
     const filteredConsoleLog = function () {
       if (
@@ -116,6 +143,38 @@
       return originalConsoleLog.apply(console, arguments);
     };
     let quill = null;
+
+    async function insertImageFile(file) {
+      if (!file || !quill) return;
+      const range = quill.getSelection(true);
+      const index = range ? range.index : quill.getLength();
+      try {
+        const uploaded = await uploadQuestionImageFile(
+          file,
+          imageMaxBytes,
+          imageMaxLabel,
+        );
+        const imageURL = uploaded && uploaded.url;
+        if (!imageURL) throw new Error("url kosong");
+        quill.insertEmbed(index, "image", imageURL, "user");
+        quill.setSelection(index + 1, 0, "silent");
+      } catch (err) {
+        const msg = (err && err.message) || "Upload gambar gagal.";
+        if (file.size > imageMaxBytes) {
+          window.alert("ukuran gambar maksimal " + imageMaxLabel);
+          return;
+        }
+        try {
+          const base64 = await fileToDataURL(file);
+          quill.insertEmbed(index, "image", base64, "user");
+          quill.setSelection(index + 1, 0, "silent");
+          window.alert(msg + " Gambar disisipkan lokal.");
+        } catch (_) {
+          window.alert(msg);
+        }
+      }
+    }
+
     try {
       if (typeof originalConsoleLog === "function") {
         console.log = filteredConsoleLog;
@@ -140,32 +199,11 @@
                 const input = document.createElement("input");
                 input.type = "file";
                 input.accept = "image/*";
-                input.onchange = async function () {
+                input.onchange = function () {
                   const file = input.files ? input.files[0] : null;
-                  if (!file || !quill) return;
-                  const range = quill.getSelection(true);
-                  const index = range ? range.index : quill.getLength();
-                  try {
-                    const uploaded = await uploadQuestionImageFile(file);
-                    const imageURL = uploaded && uploaded.url;
-                    if (imageURL) {
-                      quill.insertEmbed(index, "image", imageURL, "user");
-                      quill.setSelection(index + 1, 0, "silent");
-                      return;
-                    }
-                    throw new Error("url kosong");
-                  } catch (err) {
-                    const msg = (err && err.message) || "Upload gambar gagal.";
-                    try {
-                      const base64 = await fileToDataURL(file);
-                      quill.insertEmbed(index, "image", base64, "user");
-                      quill.setSelection(index + 1, 0, "silent");
-                      alert(msg + " Gambar disisipkan lokal.");
-                    } catch (_) {
-                      alert(msg);
-                    }
-                  }
-                }.bind(this);
+                  if (!file) return;
+                  insertImageFile(file);
+                };
                 input.click();
               },
             },
@@ -183,6 +221,84 @@
     const fontSize = String((options && options.defaultFontSize) || "").trim();
     if (fontSize && quill.root && quill.root.style) {
       quill.root.style.fontSize = fontSize;
+    }
+    if (quill && quill.root) {
+      quill.root.addEventListener("paste", function (e) {
+        const items =
+          e &&
+          e.clipboardData &&
+          e.clipboardData.items &&
+          e.clipboardData.items.length
+            ? Array.from(e.clipboardData.items)
+            : [];
+        const imageFiles = items
+          .map(function (it) {
+            if (!it || String(it.kind || "").toLowerCase() !== "file") {
+              return null;
+            }
+            if (!/^image\//i.test(String(it.type || ""))) return null;
+            return it.getAsFile ? it.getAsFile() : null;
+          })
+          .filter(Boolean);
+        if (!imageFiles.length) return;
+        e.preventDefault();
+        imageFiles.forEach(function (file) {
+          insertImageFile(file);
+        });
+      });
+      quill.root.addEventListener("drop", function (e) {
+        const files =
+          e && e.dataTransfer && e.dataTransfer.files
+            ? Array.from(e.dataTransfer.files)
+            : [];
+        const imageFiles = files.filter(function (file) {
+          return file && /^image\//i.test(String(file.type || ""));
+        });
+        if (!imageFiles.length) return;
+        e.preventDefault();
+        imageFiles.forEach(function (file) {
+          insertImageFile(file);
+        });
+      });
+      let suppressOversizeGuard = false;
+      quill.on("text-change", function (delta, _old, source) {
+        if (suppressOversizeGuard || source !== "user") return;
+        if (!delta || !Array.isArray(delta.ops)) return;
+        let index = 0;
+        const oversize = [];
+        delta.ops.forEach(function (op) {
+          if (op && typeof op.retain === "number") {
+            index += op.retain;
+            return;
+          }
+          if (op && typeof op.insert === "string") {
+            index += op.insert.length;
+            return;
+          }
+          if (
+            op &&
+            op.insert &&
+            typeof op.insert === "object" &&
+            typeof op.insert.image === "string"
+          ) {
+            const src = String(op.insert.image || "");
+            if (/^data:image\//i.test(src)) {
+              const bytes = dataURLImageSizeBytes(src);
+              if (bytes > imageMaxBytes) {
+                oversize.push(index);
+              }
+            }
+            index += 1;
+          }
+        });
+        if (!oversize.length) return;
+        suppressOversizeGuard = true;
+        for (let i = oversize.length - 1; i >= 0; i -= 1) {
+          quill.deleteText(oversize[i], 1, "silent");
+        }
+        suppressOversizeGuard = false;
+        window.alert("ukuran gambar maksimal " + imageMaxLabel);
+      });
     }
     return quill;
   }
