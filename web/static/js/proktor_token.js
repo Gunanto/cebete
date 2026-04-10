@@ -15,7 +15,7 @@
 
   async function fetchServerTokens() {
     if (!deps || typeof deps.api !== "function") return [];
-    const list = await deps.api("/api/v1/exams/token", "GET");
+    const list = await deps.api("/api/v1/admin/exams", "GET");
     return (Array.isArray(list) ? list : []).filter(function (item) {
       const token = String((item && item.token) || "").trim();
       const expiresAt = new Date(item && item.token_expires_at).getTime();
