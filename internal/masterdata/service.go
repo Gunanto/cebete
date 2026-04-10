@@ -18,7 +18,9 @@ import (
 )
 
 var (
-	ErrInvalidInput = errors.New("invalid input")
+	ErrInvalidInput             = errors.New("invalid input")
+	ErrLearningGoalTenantNeeded = errors.New("learning goal tenant required")
+	ErrUserNotFound             = errors.New("user not found")
 )
 
 type Service struct {
@@ -175,6 +177,51 @@ func isUndefinedTableErr(err error, table string) bool {
 	}
 	return strings.Contains(lower, "relation \""+strings.ToLower(table)+"\" does not exist") ||
 		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
+}
+
+type columnQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func hasColumn(ctx context.Context, q columnQuerier, tableName, columnName string) (bool, error) {
+	var exists bool
+	if err := q.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, tableName, columnName).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s.%s column: %w", tableName, columnName, err)
+	}
+	return exists, nil
+}
+
+func loadUserTenantID(ctx context.Context, q columnQuerier, userID int64) (*int64, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	hasTenant, err := hasColumn(ctx, q, "users", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT tenant_id FROM users WHERE id = $1`, userID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("load user tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	out := tenantID.Int64
+	return &out, nil
 }
 
 func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateSchoolInput) (*School, error) {
@@ -1099,14 +1146,36 @@ func (s *Service) CreateLearningGoal(ctx context.Context, actorID int64, in Crea
 	if tujuan == "" || materi == "" || mapel == "" || kelas == "" || in.Semester <= 0 {
 		return nil, ErrInvalidInput
 	}
+	lgHasTenant, err := hasColumn(ctx, s.db, "learning_goals", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var tenantID *int64
+	if lgHasTenant {
+		tenantID, err = loadUserTenantID(ctx, s.db, actorID)
+		if err != nil {
+			return nil, err
+		}
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, ErrLearningGoalTenantNeeded
+		}
+	}
 
 	var out LearningGoal
 	var createdBy sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO learning_goals (tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0))
+	columns := []string{"tujuan_pembelajaran", "materi", "mata_pelajaran", "kelas", "semester", "created_by"}
+	values := []string{"$1", "$2", "$3", "$4", "$5", "NULLIF($6, 0)"}
+	args := []any{tujuan, materi, mapel, kelas, in.Semester, actorID}
+	if lgHasTenant {
+		columns = append(columns, "tenant_id")
+		values = append(values, fmt.Sprintf("$%d", len(args)+1))
+		args = append(args, *tenantID)
+	}
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO learning_goals (%s)
+		VALUES (%s)
 		RETURNING id, tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester, created_by
-	`, tujuan, materi, mapel, kelas, in.Semester, actorID).Scan(
+	`, strings.Join(columns, ", "), strings.Join(values, ", ")), args...).Scan(
 		&out.ID, &out.TujuanPembelajaran, &out.Materi, &out.MataPelajaran, &out.Kelas, &out.Semester, &createdBy,
 	); err != nil {
 		return nil, fmt.Errorf("create learning goal: %w", err)

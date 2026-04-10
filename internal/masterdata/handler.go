@@ -216,6 +216,10 @@ func (h *Handler) CreateLearningGoal(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "tujuan_pembelajaran, materi, mata_pelajaran, kelas, semester wajib diisi"})
 			return
 		}
+		if errors.Is(err, ErrLearningGoalTenantNeeded) {
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: "akun belum terhubung tenant/sekolah"})
+			return
+		}
 		writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
 		return
 	}
