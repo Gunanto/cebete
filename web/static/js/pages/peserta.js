@@ -185,6 +185,49 @@
           : "Token belum dikirim proktor.";
     }
 
+    let toastTimer = 0;
+    function showPesertaToast(message) {
+      const body = document.body;
+      if (!body) return;
+      let toast = document.getElementById("peserta-toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "peserta-toast";
+        toast.className = "peserta-toast";
+        toast.setAttribute("role", "status");
+        toast.setAttribute("aria-live", "polite");
+        body.appendChild(toast);
+      }
+      text(toast, message || "");
+      toast.classList.add("is-visible");
+      if (toastTimer) window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(function () {
+        toast.classList.remove("is-visible");
+      }, 1800);
+    }
+
+    async function copyTextToClipboard(value) {
+      const raw = String(value || "").trim();
+      if (!raw) throw new Error("Token kosong.");
+      if (
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(raw);
+        return;
+      }
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = raw;
+      input.setAttribute("readonly", "readonly");
+      input.style.position = "absolute";
+      input.style.left = "-9999px";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+    }
+
     function normalizeScore(score, totalWeight, totalQuestions) {
       const raw = Number(score || 0);
       const weight = Number(totalWeight || 0);
@@ -751,6 +794,14 @@
         } else {
           examsBody.innerHTML = "";
           items.forEach(function (it) {
+            const tokenValue = String(it.token || "").trim();
+            const tokenDisplay = tokenValue
+              ? '<button type="button" class="peserta-token-copy-btn" data-copy-token="' +
+                escapeHtml(tokenValue) +
+                '" title="Salin token">' +
+                escapeHtml(tokenValue) +
+                "</button>"
+              : "-";
             const card = document.createElement("article");
             card.className = "peserta-exam-card";
             card.innerHTML = [
@@ -771,7 +822,7 @@
               "</div>",
               '<div class="peserta-exam-meta">',
               '<div class="peserta-exam-row"><div class="peserta-exam-label">Token</div><div class="peserta-exam-value">' +
-                escapeHtml(String(it.token || "-")) +
+                tokenDisplay +
                 "</div></div>",
               '<div class="peserta-exam-row"><div class="peserta-exam-label">Berlaku sampai</div><div class="peserta-exam-value">' +
                 escapeHtml(fmtShortDate(it.token_expires_at)) +
@@ -797,6 +848,19 @@
     }
 
     if (examsBody) {
+      examsBody.addEventListener("click", async function (e) {
+        const copyBtn =
+          e.target && e.target.closest("button[data-copy-token]");
+        if (!copyBtn) return;
+        const token = String(copyBtn.getAttribute("data-copy-token") || "").trim();
+        if (!token) return;
+        try {
+          await copyTextToClipboard(token);
+          showPesertaToast("Teks TOKEN sudah disalin ke papan klip");
+        } catch (_) {
+          showPesertaToast("Gagal menyalin token");
+        }
+      });
       await loadPublishedExams();
       window.setInterval(function () {
         const examsPanel = panels && panels.exams;

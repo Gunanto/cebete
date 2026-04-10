@@ -4971,6 +4971,48 @@ body[data-page="peserta_content"] .peserta-exam-value {
     overflow-wrap: anywhere;
 }
 
+body[data-page="peserta_content"] .peserta-token-copy-btn {
+    border: 0;
+    border-radius: 10px;
+    padding: 6px 10px;
+    background: #e9f2ff;
+    color: #17317b;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+body[data-page="peserta_content"] .peserta-token-copy-btn:active {
+    transform: translateY(1px);
+}
+
+body[data-page="peserta_content"] .peserta-toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%) translateY(12px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1200;
+    min-width: 220px;
+    max-width: min(90vw, 520px);
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.94);
+    color: #fff;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.32);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+body[data-page="peserta_content"] .peserta-toast.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 body[data-page="peserta_content"] .peserta-exam-actions,
 body[data-page="ujian_content"] .peserta-exam-actions {
     margin-top: 12px;
@@ -5613,6 +5655,10 @@ body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortc
         fill: none;
         stroke-linecap: round;
         stroke-linejoin: round;
+    }
+
+    body[data-page="peserta_content"] .peserta-toast {
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
     }
 
     body[data-page="peserta_content"] #peserta-results-panel > .table-wrap {
