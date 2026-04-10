@@ -28,6 +28,7 @@ var (
 	ErrExamForbidden            = errors.New("exam forbidden")
 	ErrSubjectNotFound          = errors.New("subject not found")
 	ErrSubjectForbidden         = errors.New("subject forbidden")
+	ErrSubjectTenantRequired    = errors.New("subject tenant required")
 	ErrAttemptNotFound          = errors.New("attempt not found")
 	ErrAttemptNotEditable       = errors.New("attempt is not editable")
 	ErrQuestionNotInExam        = errors.New("question not in exam")
@@ -5360,22 +5361,51 @@ func (s *Service) CreateSubject(ctx context.Context, in CreateSubjectInput) (*Su
 	if level == "" || subjectType == "" || name == "" {
 		return nil, ErrInvalidInput
 	}
-	var out SubjectOption
-	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO subjects (education_level, subject_type, name, is_active, created_by)
-		VALUES ($1, $2, $3, TRUE, NULLIF($4, 0))
-		RETURNING id, education_level, subject_type, name
-	`, level, subjectType, name, in.CreatedBy).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
-		if isUndefinedColumnErr(err, "subjects", "created_by") {
-			if legacyErr := s.db.QueryRowContext(ctx, `
-				INSERT INTO subjects (education_level, subject_type, name, is_active)
-				VALUES ($1, $2, $3, TRUE)
-				RETURNING id, education_level, subject_type, name
-			`, level, subjectType, name).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); legacyErr != nil {
-				return nil, fmt.Errorf("insert subject legacy: %w", legacyErr)
-			}
-			return &out, nil
+
+	subjectHasCreatedBy, err := hasColumn(ctx, s.db, "subjects", "created_by")
+	if err != nil {
+		return nil, err
+	}
+	subjectHasTenant, err := hasColumn(ctx, s.db, "subjects", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+
+	var tenantID *int64
+	if subjectHasTenant {
+		tenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
+		if err != nil {
+			return nil, err
 		}
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, ErrSubjectTenantRequired
+		}
+	}
+
+	columns := []string{"education_level", "subject_type", "name", "is_active"}
+	values := []string{"$1", "$2", "$3", "TRUE"}
+	args := []any{level, subjectType, name}
+	if subjectHasCreatedBy {
+		columns = append(columns, "created_by")
+		values = append(values, fmt.Sprintf("$%d", len(args)+1))
+		if in.CreatedBy > 0 {
+			args = append(args, in.CreatedBy)
+		} else {
+			args = append(args, nil)
+		}
+	}
+	if subjectHasTenant {
+		columns = append(columns, "tenant_id")
+		values = append(values, fmt.Sprintf("$%d", len(args)+1))
+		args = append(args, *tenantID)
+	}
+
+	var out SubjectOption
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO subjects (%s)
+		VALUES (%s)
+		RETURNING id, education_level, subject_type, name
+	`, strings.Join(columns, ", "), strings.Join(values, ", ")), args...).Scan(&out.ID, &out.EducationLevel, &out.SubjectType, &out.Name); err != nil {
 		if isForeignKeyViolationErr(err) && strings.Contains(strings.ToLower(err.Error()), "created_by") {
 			return nil, ErrUserNotFound
 		}
