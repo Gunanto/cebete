@@ -384,7 +384,9 @@ type ExamTokenExam struct {
 	SubjectType    string     `json:"subject_type"`
 	EndAt          *time.Time `json:"end_at,omitempty"`
 	Token          string     `json:"token,omitempty"`
+	GeneratedAt    *time.Time `json:"generated_at,omitempty"`
 	TokenExpiresAt *time.Time `json:"token_expires_at,omitempty"`
+	PublishedAt    *time.Time `json:"published_at,omitempty"`
 }
 
 type ExamAccessToken struct {
@@ -1423,6 +1425,7 @@ func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool)
 
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
 	user, isProktor := currentScopedProktor(ctx)
+	now := time.Now()
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT
 			e.id,
@@ -1432,7 +1435,11 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 			s.name AS subject_name,
 			s.education_level,
 			s.subject_type,
-			e.end_at
+			e.end_at,
+			e.exam_token_plain,
+			e.exam_token_generated_at,
+			e.exam_token_expires_at,
+			e.exam_token_published_at
 		FROM exams e
 		JOIN subjects s ON s.id = e.subject_id
 		WHERE e.is_active = TRUE
@@ -1456,6 +1463,10 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 	for rows.Next() {
 		var it ExamTokenExam
 		var endAt sql.NullTime
+		var tokenPlain sql.NullString
+		var generatedAt sql.NullTime
+		var tokenExpiresAt sql.NullTime
+		var publishedAt sql.NullTime
 		if err := rows.Scan(
 			&it.ID,
 			&it.Code,
@@ -1465,11 +1476,25 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 			&it.EducationLevel,
 			&it.SubjectType,
 			&endAt,
+			&tokenPlain,
+			&generatedAt,
+			&tokenExpiresAt,
+			&publishedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan exams for token: %w", err)
 		}
 		if endAt.Valid {
 			it.EndAt = &endAt.Time
+		}
+		if generatedAt.Valid {
+			it.GeneratedAt = &generatedAt.Time
+		}
+		if publishedAt.Valid {
+			it.PublishedAt = &publishedAt.Time
+		}
+		if tokenPlain.Valid && tokenExpiresAt.Valid && tokenExpiresAt.Time.After(now) {
+			it.Token = strings.TrimSpace(tokenPlain.String)
+			it.TokenExpiresAt = &tokenExpiresAt.Time
 		}
 		items = append(items, it)
 	}

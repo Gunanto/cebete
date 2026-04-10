@@ -125,6 +125,11 @@
         setSidebarOpen(false);
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
+      if (menu === "exams") {
+        loadPublishedExams().catch(function () {
+          // error state is rendered inside the panel
+        });
+      }
     }
 
     function setCell(el, value) {
@@ -676,7 +681,8 @@
       if (msg) text(msg, "Gagal memuat profil peserta: " + err.message);
     }
 
-    if (examsBody) {
+    async function loadPublishedExams() {
+      if (!examsBody) return;
       try {
         const list = await api("/api/v1/exams/published", "GET");
         const items = Array.isArray(list) ? list : [];
@@ -728,6 +734,17 @@
           escapeHtml(msgText || "Gagal memuat daftar ujian aktif.") +
           "</div>";
       }
+    }
+
+    if (examsBody) {
+      await loadPublishedExams();
+      window.setInterval(function () {
+        const examsPanel = panels && panels.exams;
+        if (!examsPanel || examsPanel.hidden) return;
+        loadPublishedExams().catch(function () {
+          // keep current UI state when background refresh fails
+        });
+      }, 15000);
     }
 
     const examMeta = {};

@@ -51,7 +51,8 @@ func TestListExamsForTokenProktorIncludesSameSchoolCreatorExam(t *testing.T) {
 		WithArgs(int64(17)).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "code", "title", "subject_id", "subject_name", "education_level", "subject_type", "end_at",
-		}).AddRow(91, "MAT-01", "Try Out Matematika", 8, "Matematika", "SMA", "Wajib", endAt))
+			"exam_token_plain", "exam_token_generated_at", "exam_token_expires_at", "exam_token_published_at",
+		}).AddRow(91, "MAT-01", "Try Out Matematika", 8, "Matematika", "SMA", "Wajib", endAt, nil, nil, nil, nil))
 
 	items, err := svc.ListExamsForToken(ctx)
 	if err != nil {
@@ -191,7 +192,7 @@ func TestListExamParticipantResultsProktorFiltersStudentsOutsideScope(t *testing
 	mock.ExpectQuery(`SELECT DISTINCT school_name[\s\S]*FROM attempt_base`).
 		WithArgs(int64(91), int64(17)).
 		WillReturnRows(sqlmock.NewRows([]string{"school_name"}))
-	mock.ExpectQuery(`SELECT COUNT\(1\)[\s\S]*FROM attempt_base[\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2`).
+	mock.ExpectQuery(`WITH attempt_base AS \([\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2[\s\S]*SELECT COUNT\(1\) FROM attempt_base`).
 		WithArgs(int64(91), int64(17)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`WITH attempt_base AS \([\s\S]*FROM attempts a[\s\S]*WHERE a\.exam_id = \$1[\s\S]*scoped_en\.user_id = u\.id[\s\S]*scoped_school\.user_id = \$2`).

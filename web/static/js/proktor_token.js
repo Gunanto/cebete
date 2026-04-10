@@ -13,6 +13,16 @@
     deps.tokenResult.classList.remove("muted");
   }
 
+  async function fetchServerTokens() {
+    if (!deps || typeof deps.api !== "function") return [];
+    const list = await deps.api("/api/v1/exams/token", "GET");
+    return (Array.isArray(list) ? list : []).filter(function (item) {
+      const token = String((item && item.token) || "").trim();
+      const expiresAt = new Date(item && item.token_expires_at).getTime();
+      return token && Number.isFinite(expiresAt) && expiresAt > Date.now();
+    });
+  }
+
   function readStoredTokens() {
     try {
       var raw = window.localStorage.getItem(STORAGE_KEY);
@@ -143,10 +153,41 @@
     renderTokenTable(pruneExpiredTokens());
   }
 
+  async function refreshTokenTable() {
+    try {
+      var serverItems = await fetchServerTokens();
+      var normalized = serverItems.map(function (item) {
+        return {
+          exam_id: Number((item && item.id) || 0),
+          exam_label:
+            [
+              String((item && item.code) || "").trim(),
+              String((item && item.title) || "").trim(),
+              String((item && item.subject_name) || "").trim(),
+            ]
+              .filter(Boolean)
+              .join(" | ") || examLabelByID(Number((item && item.id) || 0)),
+          token: String((item && item.token) || ""),
+          generated_at: item && item.generated_at ? item.generated_at : "",
+          expires_at: item && item.token_expires_at ? item.token_expires_at : "",
+          published_at: item && item.published_at ? item.published_at : "",
+        };
+      });
+      saveStoredTokens(normalized);
+      renderTokenTable(normalized);
+      return;
+    } catch (_err) {
+      // fall back to browser cache if server refresh fails
+    }
+    refreshStoredTokens();
+  }
+
   function startPruneLoop() {
     if (pruneTimer) return;
     pruneTimer = window.setInterval(function () {
-      refreshStoredTokens();
+      refreshTokenTable().catch(function () {
+        refreshStoredTokens();
+      });
     }, 30000);
   }
 
@@ -237,6 +278,7 @@
             expiresAt,
         );
         renderTokenTable(storedItems);
+        await refreshTokenTable();
         deps.setMsg("Token ujian berhasil dibuat.");
       } catch (err) {
         deps.setMsg("Gagal membuat token ujian: " + err.message);
@@ -280,6 +322,7 @@
               "POST",
               {},
             );
+            await refreshTokenTable();
             deps.setMsg("Token berhasil dikirim ke peserta.");
           } catch (err) {
             deps.setMsg("Gagal mengirim token: " + err.message);
@@ -298,7 +341,9 @@
 
   function init(opts) {
     setDeps(opts);
-    refreshStoredTokens();
+    refreshTokenTable().catch(function () {
+      refreshStoredTokens();
+    });
     startPruneLoop();
     bindHandlers();
   }
