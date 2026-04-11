@@ -866,6 +866,9 @@
           "Menyimpan kelas...",
         );
         try {
+          if (typeof deps.invalidateClassesCacheForSchool === "function") {
+            deps.invalidateClassesCacheForSchool(payload.school_id);
+          }
           if (id > 0) {
             await deps.api("/api/v1/admin/classes/" + id, "PUT", payload);
             setMasterMsg("Kelas berhasil diperbarui.");
@@ -908,6 +911,9 @@
             await deps.api("/api/v1/admin/schools/" + id, "DELETE", {});
             setMasterMsg("Sekolah berhasil dihapus.");
           } else if (entity === "class") {
+            if (typeof deps.invalidateAllClassesCache === "function") {
+              deps.invalidateAllClassesCache();
+            }
             await deps.api("/api/v1/admin/classes/" + id, "DELETE", {});
             setMasterMsg("Kelas berhasil dihapus.");
           }

@@ -246,6 +246,18 @@
     return items;
   }
 
+  function invalidateClassesCacheForSchool(schoolID) {
+    const sid = Number(schoolID || 0);
+    if (sid <= 0) return;
+    delete classCacheBySchool[String(sid)];
+  }
+
+  function invalidateAllClassesCache() {
+    Object.keys(classCacheBySchool).forEach(function (key) {
+      delete classCacheBySchool[key];
+    });
+  }
+
   function parseDownloadFilename(disposition, fallback) {
     const src = String(disposition || "");
     const utfMatch = src.match(/filename\*=UTF-8''([^;]+)/i);
@@ -1165,6 +1177,8 @@
     loadUsers: loadUsers,
     loadSchoolsForUserForms: loadSchoolsForUserForms,
     loadClassesBySchool: loadClassesBySchool,
+    invalidateClassesCacheForSchool: invalidateClassesCacheForSchool,
+    invalidateAllClassesCache: invalidateAllClassesCache,
     applyUserFormRoleRequirements: applyUserFormRoleRequirements,
     fillSchoolSelect: fillSchoolSelect,
     resetClassSelect: resetClassSelect,

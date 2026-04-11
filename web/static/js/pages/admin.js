@@ -316,6 +316,22 @@
         loadDashboardStats: loadDashboardStats,
         loadSchoolsForUserForms: loadSchoolsForUserForms,
         loadUsers: loadUsers,
+        invalidateClassesCacheForSchool: function (schoolID) {
+          if (
+            AdminUsers &&
+            typeof AdminUsers.invalidateClassesCacheForSchool === "function"
+          ) {
+            return AdminUsers.invalidateClassesCacheForSchool(schoolID);
+          }
+        },
+        invalidateAllClassesCache: function () {
+          if (
+            AdminUsers &&
+            typeof AdminUsers.invalidateAllClassesCache === "function"
+          ) {
+            return AdminUsers.invalidateAllClassesCache();
+          }
+        },
         getSchoolsCache: function () {
           if (AdminUsers && typeof AdminUsers.getSchoolsCache === "function") {
             return AdminUsers.getSchoolsCache();
