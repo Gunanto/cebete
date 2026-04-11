@@ -5,6 +5,7 @@
   var currentLimit = 50;
   var currentOffset = 0;
   var lastLoadedCount = 0;
+  var lastLoadedItems = [];
   var usersByID = {};
   var schoolsCache = [];
   var classCacheBySchool = {};
@@ -327,6 +328,7 @@
     pretty(deps.regOut, out);
     const items = Array.isArray(out.items) ? out.items : [];
     lastLoadedCount = items.length;
+    lastLoadedItems = items.slice(0);
     deps.text(
       deps.regSummary,
       "Peran: " +
@@ -1129,6 +1131,9 @@
     resetClassSelect: resetClassSelect,
     syncSchoolCodeDisplay: syncSchoolCodeDisplay,
     setInitialFilterFromForm: setInitialFilterFromForm,
+    getLastLoadedUsers: function () {
+      return Array.isArray(lastLoadedItems) ? lastLoadedItems.slice(0) : [];
+    },
     getSchoolsCache: getSchoolsCache,
   };
 })();

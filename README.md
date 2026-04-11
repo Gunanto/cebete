@@ -989,3 +989,18 @@ Restore check (non-destruktif, pakai temp DB):
 ```bash
 scripts/restore_check.sh /tmp/cbtlms-backups/cbtlms_cbtlms_YYYYMMDD_HHMMSS.sql.gz
 ```
+
+## 21) Telegram Monitor (SSH + Rekap Ujian Harian)
+
+Command:
+- `cmd/cebete-monitor` (binary: `cebete-monitor`)
+
+Fitur:
+- Notifikasi Telegram saat ada login SSH sukses (ambil dari journald `ssh.service`)
+- Rekap ujian harian (status `submitted`) jam 01:30 WIB: jumlah selesai, nilai tertinggi (dengan identitas siswa), durasi (avg/p95/max), dan anomali `reconnect` >= threshold (dari tabel `attempt_events`)
+
+Template systemd + contoh env:
+- `deployments/systemd/cebete-monitor-ssh.service`
+- `deployments/systemd/cebete-monitor-daily.service`
+- `deployments/systemd/cebete-monitor-daily.timer`
+- `deployments/systemd/cebete-monitor.env.example`

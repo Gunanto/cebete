@@ -1,0 +1,14 @@
+[Unit]
+Description=Cebete Monitor (daily exam summary to Telegram)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/cebete-monitor.env
+StateDirectory=cebete-monitor
+ExecStart=/usr/local/bin/cebete-monitor daily-exam-summary
+
+User=root
+Group=root
+

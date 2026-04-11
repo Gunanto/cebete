@@ -1,0 +1,20 @@
+[Unit]
+Description=Cebete Monitor (SSH login notifications)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cebete-monitor.env
+StateDirectory=cebete-monitor
+ExecStart=/usr/local/bin/cebete-monitor watch-ssh
+Restart=always
+RestartSec=2
+
+# Needs journal access (root is simplest).
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+

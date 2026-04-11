@@ -194,6 +194,16 @@
     const dashboardPanel = document.getElementById("admin-dashboard-panel");
     const usersPanel = document.getElementById("admin-users-panel");
     const masterPanel = document.getElementById("admin-master-panel");
+    const deepParams = new URLSearchParams(window.location.search || "");
+    const deepMenu = String(deepParams.get("menu") || "").trim();
+    const deepUserQ = String(deepParams.get("user_q") || "").trim();
+    const deepOpenDetail =
+      String(deepParams.get("open_detail") || "1").trim() === "1";
+    const initialMenu = ["dashboard", "users", "master", "registrations"].includes(
+      deepMenu,
+    )
+      ? deepMenu
+      : "dashboard";
 
     function setMsg(msg) {
       text(message, msg);
@@ -526,6 +536,13 @@
         AdminUsers &&
         typeof AdminUsers.setInitialFilterFromForm === "function"
       ) {
+        // Deep-link: prefill user query before module reads initial values.
+        if (initialMenu === "users" && deepUserQ && regFilterForm) {
+          const roleEl = regFilterForm.elements.namedItem("role");
+          const qEl = regFilterForm.elements.namedItem("q");
+          if (roleEl) roleEl.value = "siswa";
+          if (qEl) qEl.value = deepUserQ;
+        }
         AdminUsers.setInitialFilterFromForm();
       }
       await loadSchoolsForUserForms();
@@ -549,7 +566,26 @@
       await loadDashboardStats();
       await loadMasterSummaryTable();
       await loadPendingRegistrations();
-      activateMenu("dashboard");
+      activateMenu(initialMenu);
+      if (
+        initialMenu === "users" &&
+        deepOpenDetail &&
+        deepUserQ &&
+        AdminUsers &&
+        typeof AdminUsers.getLastLoadedUsers === "function"
+      ) {
+        const items = AdminUsers.getLastLoadedUsers();
+        const first = items && items[0];
+        if (first && userDetailOut) {
+          userDetailOut.textContent = JSON.stringify(first, null, 2);
+          if (
+            userDetailDialog &&
+            typeof userDetailDialog.showModal === "function"
+          ) {
+            userDetailDialog.showModal();
+          }
+        }
+      }
       setMsg("Dashboard admin siap.");
     } catch (err) {
       setMsg("Gagal memuat data awal admin: " + err.message);
