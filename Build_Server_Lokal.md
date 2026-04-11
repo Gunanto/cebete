@@ -18,7 +18,7 @@ cp .env.example .env.local
 ```
 
 Pastikan minimal:
-- `DB_DSN` sesuai password Postgres lokal Anda.
+- `DB_DSN` sesuai password Postgres container lokal Anda (lihat `deployments/docker-compose.yml`, default password: `cbtlms_local_only_change_me`).
 - `BOOTSTRAP_TOKEN` terisi.
 
 Load env ke shell saat menjalankan server:
@@ -38,14 +38,12 @@ Cek status:
 ```bash
 docker compose -f deployments/docker-compose.yml ps
 ```
-tanpa docker:
-pgun@pgun:
-cd ~/dev/cebete && ./bin/cbtlms
 
 ## 4) Jalankan migration
 ```bash
 ./scripts/migrate.sh up
 ```
+Catatan: `scripts/migrate.sh` menjalankan `psql` lewat `docker exec` ke container Postgres (default: `cbtlms-postgres`).
 
 ## 5) Jalankan web server
 
@@ -59,6 +57,12 @@ Opsi B (manual):
 ```bash
 set -a; source .env.local; set +a
 go run ./cmd/web
+```
+
+Opsi C (tanpa build Go, pakai binary yang sudah ada):
+```bash
+set -a; source .env.local; set +a
+./bin/cbtlms
 ```
 
 Server aktif di `http://localhost:8080`.
