@@ -63,6 +63,7 @@
     opt.textContent = placeholder || "Pilih Sekolah Dulu";
     selectEl.appendChild(opt);
     selectEl.disabled = true;
+    selectEl.dataset.emptyForSchool = "";
   }
 
   function fillSchoolSelect(selectEl, selectedID) {
@@ -133,13 +134,23 @@
 
   function fillClassSelect(selectEl, classes, selectedID) {
     if (!selectEl) return;
+    const items = Array.isArray(classes) ? classes : [];
     const selected = Number(selectedID || 0);
     selectEl.innerHTML = "";
+    selectEl.dataset.emptyForSchool = items.length ? "" : "1";
+    if (!items.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Belum ada kelas untuk sekolah ini";
+      selectEl.appendChild(opt);
+      selectEl.disabled = true;
+      return;
+    }
     const emptyOpt = document.createElement("option");
     emptyOpt.value = "";
     emptyOpt.textContent = "Tanpa Kelas";
     selectEl.appendChild(emptyOpt);
-    (classes || []).forEach(function (it) {
+    items.forEach(function (it) {
       const opt = document.createElement("option");
       opt.value = String(it.id);
       opt.textContent = classLabel(it);
@@ -784,6 +795,20 @@
           const participantNo = String(fd.get("participant_no") || "").trim();
           const nisn = String(fd.get("nisn") || "").trim();
           const schoolCode = schoolCodeByID(schoolID);
+          if (isStudentRole(role) && schoolID !== null && classID === null) {
+            const classSelect =
+              deps.userCreateForm.elements.namedItem("class_id");
+            if (
+              classSelect &&
+              classSelect.disabled &&
+              classSelect.dataset.emptyForSchool === "1"
+            ) {
+              deps.setMsg(
+                "Belum ada kelas untuk sekolah ini. Buat kelas dulu di menu Data Master > Kelas.",
+              );
+              return;
+            }
+          }
           if (isStudentRole(role) && (schoolID === null || classID === null)) {
             deps.setMsg("Untuk role siswa, sekolah dan kelas wajib dipilih.");
             return;
@@ -892,6 +917,20 @@
           const participantNo = String(fd.get("participant_no") || "").trim();
           const nisn = String(fd.get("nisn") || "").trim();
           const schoolCode = schoolCodeByID(schoolID);
+          if (isStudentRole(role) && schoolID !== null && classID === null) {
+            const classSelect =
+              deps.userUpdateForm.elements.namedItem("class_id");
+            if (
+              classSelect &&
+              classSelect.disabled &&
+              classSelect.dataset.emptyForSchool === "1"
+            ) {
+              deps.setMsg(
+                "Belum ada kelas untuk sekolah ini. Buat kelas dulu di menu Data Master > Kelas.",
+              );
+              return;
+            }
+          }
           if (isStudentRole(role) && (schoolID === null || classID === null)) {
             deps.setMsg("Untuk role siswa, sekolah dan kelas wajib dipilih.");
             return;

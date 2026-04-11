@@ -430,13 +430,95 @@ func (s *Service) CreateClass(ctx context.Context, actorID int64, in CreateClass
 	}
 
 	var class Class
-	err := s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create class tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	classHasTenant, err := hasColumn(ctx, tx, "classes", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var tenantID *int64
+	if classHasTenant {
+		schoolHasTenant, err := hasColumn(ctx, tx, "schools", "tenant_id")
+		if err != nil {
+			return nil, err
+		}
+		if schoolHasTenant {
+			var schoolTenant sql.NullInt64
+			var schoolName string
+			if err := tx.QueryRowContext(ctx, `
+				SELECT tenant_id, name
+				FROM schools
+				WHERE id = $1
+			`, in.SchoolID).Scan(&schoolTenant, &schoolName); err != nil {
+				return nil, fmt.Errorf("load school tenant: %w", err)
+			}
+			if schoolTenant.Valid && schoolTenant.Int64 > 0 {
+				v := schoolTenant.Int64
+				tenantID = &v
+			} else {
+				actorTenantID, err := loadUserTenantID(ctx, tx, actorID)
+				if err != nil {
+					return nil, fmt.Errorf("load actor tenant: %w", err)
+				}
+				schoolTenantID, err := resolveSchoolTenantIDTx(ctx, tx, actorTenantID, schoolName)
+				if err != nil {
+					return nil, err
+				}
+				if schoolTenantID == nil || *schoolTenantID <= 0 {
+					return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+				}
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE schools
+					SET tenant_id = COALESCE(tenant_id, $1),
+						updated_at = now()
+					WHERE id = $2
+				`, *schoolTenantID, in.SchoolID); err != nil {
+					return nil, fmt.Errorf("assign school tenant: %w", err)
+				}
+				tenantID = schoolTenantID
+			}
+		} else {
+			actorTenantID, err := loadUserTenantID(ctx, tx, actorID)
+			if err != nil {
+				return nil, fmt.Errorf("load actor tenant: %w", err)
+			}
+			if actorTenantID == nil || *actorTenantID <= 0 {
+				return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+			}
+			tenantID = actorTenantID
+		}
+	}
+
+	query := `
 		INSERT INTO classes (school_id, name, grade_level, created_at, updated_at)
 		VALUES ($1, $2, $3, now(), now())
 		RETURNING id, school_id, name, grade_level
-	`, in.SchoolID, name, grade).Scan(&class.ID, &class.SchoolID, &class.Name, &class.GradeLevel)
+	`
+	args := []any{in.SchoolID, name, grade}
+	if classHasTenant {
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+		}
+		query = `
+			INSERT INTO classes (school_id, name, grade_level, created_at, updated_at, tenant_id)
+			VALUES ($1, $2, $3, now(), now(), $4)
+			RETURNING id, school_id, name, grade_level
+		`
+		args = append(args, *tenantID)
+	}
+
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&class.ID, &class.SchoolID, &class.Name, &class.GradeLevel)
 	if err != nil {
 		return nil, fmt.Errorf("create class: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create class: %w", err)
 	}
 
 	_ = s.writeAudit(ctx, actorID, "class_created", "class", fmt.Sprintf("%d", class.ID), map[string]any{
@@ -542,7 +624,72 @@ func (s *Service) UpdateClass(ctx context.Context, actorID, id int64, in UpdateC
 	}
 
 	var out Class
-	err := s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin update class tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	classHasTenant, err := hasColumn(ctx, tx, "classes", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var tenantID *int64
+	if classHasTenant {
+		schoolHasTenant, err := hasColumn(ctx, tx, "schools", "tenant_id")
+		if err != nil {
+			return nil, err
+		}
+		if schoolHasTenant {
+			var schoolTenant sql.NullInt64
+			var schoolName string
+			if err := tx.QueryRowContext(ctx, `
+				SELECT tenant_id, name
+				FROM schools
+				WHERE id = $1
+			`, in.SchoolID).Scan(&schoolTenant, &schoolName); err != nil {
+				return nil, fmt.Errorf("load school tenant: %w", err)
+			}
+			if schoolTenant.Valid && schoolTenant.Int64 > 0 {
+				v := schoolTenant.Int64
+				tenantID = &v
+			} else {
+				actorTenantID, err := loadUserTenantID(ctx, tx, actorID)
+				if err != nil {
+					return nil, fmt.Errorf("load actor tenant: %w", err)
+				}
+				schoolTenantID, err := resolveSchoolTenantIDTx(ctx, tx, actorTenantID, schoolName)
+				if err != nil {
+					return nil, err
+				}
+				if schoolTenantID == nil || *schoolTenantID <= 0 {
+					return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+				}
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE schools
+					SET tenant_id = COALESCE(tenant_id, $1),
+						updated_at = now()
+					WHERE id = $2
+				`, *schoolTenantID, in.SchoolID); err != nil {
+					return nil, fmt.Errorf("assign school tenant: %w", err)
+				}
+				tenantID = schoolTenantID
+			}
+		} else {
+			actorTenantID, err := loadUserTenantID(ctx, tx, actorID)
+			if err != nil {
+				return nil, fmt.Errorf("load actor tenant: %w", err)
+			}
+			if actorTenantID == nil || *actorTenantID <= 0 {
+				return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+			}
+			tenantID = actorTenantID
+		}
+	}
+
+	query := `
 		UPDATE classes
 		SET school_id = $2,
 			name = $3,
@@ -550,12 +697,34 @@ func (s *Service) UpdateClass(ctx context.Context, actorID, id int64, in UpdateC
 			updated_at = now()
 		WHERE id = $1
 		RETURNING id, school_id, name, grade_level
-	`, id, in.SchoolID, name, grade).Scan(&out.ID, &out.SchoolID, &out.Name, &out.GradeLevel)
+	`
+	args := []any{id, in.SchoolID, name, grade}
+	if classHasTenant {
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, fmt.Errorf("resolve class tenant: tenant_id is required")
+		}
+		query = `
+			UPDATE classes
+			SET school_id = $2,
+				name = $3,
+				grade_level = $4,
+				tenant_id = COALESCE(tenant_id, $5),
+				updated_at = now()
+			WHERE id = $1
+			RETURNING id, school_id, name, grade_level
+		`
+		args = append(args, *tenantID)
+	}
+
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&out.ID, &out.SchoolID, &out.Name, &out.GradeLevel)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("update class: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit update class: %w", err)
 	}
 
 	_ = s.writeAudit(ctx, actorID, "class_updated", "class", fmt.Sprintf("%d", out.ID), map[string]any{
