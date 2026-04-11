@@ -31,7 +31,12 @@ Jika service DB Anda bukan `cebete_postgres`, sesuaikan dari output `docker comp
 3) Update source code
 ```bash
 cd ~/cebete-src
+
+# Recommended (sekali saja): ubah remote ke SSH agar git pull tidak minta PAT/username
+# git remote set-url origin git@github.com:Gunanto/cebete.git
+
 git pull origin main
+git log -1 --oneline
 ```
 
 4) Jalankan migrasi (jika ada file migrasi baru)
