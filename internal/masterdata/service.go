@@ -224,6 +224,104 @@ func loadUserTenantID(ctx context.Context, q columnQuerier, userID int64) (*int6
 	return &out, nil
 }
 
+func resolveSchoolTenantIDTx(ctx context.Context, tx *sql.Tx, preferredTenantID *int64, schoolName string) (*int64, error) {
+	hasTenant, err := hasColumn(ctx, tx, "schools", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	if preferredTenantID != nil && *preferredTenantID > 0 {
+		return preferredTenantID, nil
+	}
+	schoolName = strings.TrimSpace(schoolName)
+	if schoolName == "" {
+		return nil, fmt.Errorf("resolve school tenant: tenant_id is required")
+	}
+
+	var tenantID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM tenants
+		WHERE LOWER(name) = LOWER($1)
+		LIMIT 1
+	`, schoolName).Scan(&tenantID)
+	if err == nil {
+		return &tenantID, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("lookup tenant by school name: %w", err)
+	}
+
+	slug, err := nextSchoolTenantSlugTx(ctx, tx, schoolName)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO tenants (slug, name, status, created_at, updated_at)
+		VALUES ($1, $2, 'active', now(), now())
+		RETURNING id
+	`, slug, schoolName).Scan(&tenantID); err != nil {
+		return nil, fmt.Errorf("insert tenant: %w", err)
+	}
+	return &tenantID, nil
+}
+
+func nextSchoolTenantSlugTx(ctx context.Context, tx *sql.Tx, schoolName string) (string, error) {
+	base := schoolTenantSlugBase(schoolName)
+	slug := base
+	for i := 2; i <= 1000; i++ {
+		var existing string
+		err := tx.QueryRowContext(ctx, `
+			SELECT slug
+			FROM tenants
+			WHERE slug = $1
+			LIMIT 1
+		`, slug).Scan(&existing)
+		if errors.Is(err, sql.ErrNoRows) {
+			return slug, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("lookup tenant slug: %w", err)
+		}
+		slug = fmt.Sprintf("%s-%d", base, i)
+		if len(slug) > 80 {
+			slug = slug[:80]
+		}
+	}
+	return "", fmt.Errorf("allocate tenant slug for %q: exhausted attempts", schoolName)
+}
+
+func schoolTenantSlugBase(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "school"
+	}
+	if len(out) > 80 {
+		return out[:80]
+	}
+	return out
+}
+
 func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateSchoolInput) (*School, error) {
 	name := strings.TrimSpace(in.Name)
 	code := strings.TrimSpace(in.Code)
@@ -247,8 +345,25 @@ func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateScho
 		}
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create school tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	actorTenantID, err := loadUserTenantID(ctx, tx, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("load actor tenant: %w", err)
+	}
+	schoolTenantID, err := resolveSchoolTenantIDTx(ctx, tx, actorTenantID, name)
+	if err != nil {
+		return nil, err
+	}
+
 	var school School
-	err := s.db.QueryRowContext(ctx, `
+	query := `
 		INSERT INTO schools (
 			name, code, address, city, province, kecamatan,
 			jenjang, status_sekolah, school_email,
@@ -261,7 +376,26 @@ func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateScho
 		)
 		RETURNING id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,''),
 		          COALESCE(kecamatan,''), COALESCE(jenjang,''), COALESCE(status_sekolah,''), COALESCE(school_email,'')
-	`, name, code, address, city, province, kecamatan, jenjang, statusSekolah, schoolEmail).Scan(
+	`
+	args := []any{name, code, address, city, province, kecamatan, jenjang, statusSekolah, schoolEmail}
+	if schoolTenantID != nil && *schoolTenantID > 0 {
+		query = `
+			INSERT INTO schools (
+				name, code, address, city, province, kecamatan,
+				jenjang, status_sekolah, school_email, tenant_id,
+				created_at, updated_at
+			)
+			VALUES (
+				$1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''),
+				NULLIF($7,''), NULLIF($8,''), NULLIF($9,''), $10,
+				now(), now()
+			)
+			RETURNING id, name, COALESCE(code,''), COALESCE(address,''), COALESCE(city,''), COALESCE(province,''),
+			          COALESCE(kecamatan,''), COALESCE(jenjang,''), COALESCE(status_sekolah,''), COALESCE(school_email,'')
+		`
+		args = append(args, *schoolTenantID)
+	}
+	err = tx.QueryRowContext(ctx, query, args...).Scan(
 		&school.ID,
 		&school.Name,
 		&school.Code,
@@ -275,6 +409,9 @@ func (s *Service) CreateSchool(ctx context.Context, actorID int64, in CreateScho
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create school: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create school: %w", err)
 	}
 
 	_ = s.writeAudit(ctx, actorID, "school_created", "school", fmt.Sprintf("%d", school.ID), map[string]any{
