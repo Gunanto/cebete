@@ -39,7 +39,8 @@ fi
 : "${POSTGRES_USER:?POSTGRES_USER not set}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}"
 : "${BACKUP_ZIP_PASSWORD:?BACKUP_ZIP_PASSWORD not set}"
-: "${RCLONE_REMOTE:?RCLONE_REMOTE not set}"
+# Optional. If set and rclone exists, the backup will be uploaded.
+: "${RCLONE_REMOTE:=}"
 if [[ -z "${BOT_TOKEN:-}" && -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
   BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
 fi
@@ -65,17 +66,20 @@ docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" "${CONTAINER_NAME}" \
 zip -j -P "${BACKUP_ZIP_PASSWORD}" "${ZIP_PATH}" "${SQL_PATH}" >/dev/null
 rm -f "${SQL_PATH}"
 
-if command -v rclone >/dev/null 2>&1; then
+if [[ -n "${RCLONE_REMOTE}" ]] && command -v rclone >/dev/null 2>&1; then
   RCLONE_TARGET="${RCLONE_REMOTE}/harian"
   if [[ "${DAY_OF_MONTH}" == "01" ]]; then
     RCLONE_TARGET="${RCLONE_REMOTE}/monthly"
   elif [[ "${DAY_OF_WEEK}" == "1" ]]; then
     RCLONE_TARGET="${RCLONE_REMOTE}/mingguan"
   fi
-  rclone copy "${ZIP_PATH}" "${RCLONE_TARGET}"
+  # rclone failures (e.g. quota exceeded) should not prevent Telegram delivery.
+  if ! rclone copy "${ZIP_PATH}" "${RCLONE_TARGET}"; then
+    echo "WARN: rclone copy failed; continuing to Telegram send" >&2
+  fi
 fi
 
-curl -fsS \
+curl -fsS --http1.1 --retry 3 --retry-delay 2 --retry-max-time 60 \
   -F "chat_id=${CHAT_ID}" \
   -F "document=@${ZIP_PATH}" \
   -F "caption=Backup Cebete ${TIMESTAMP}" \
