@@ -5,9 +5,9 @@ umask 077
 
 BASE_DIR="/home/pakgun/cebete-src"
 ENV_FILE="${ENV_FILE:-${BASE_DIR}/.env}"
-MONITOR_ENV_FILE="${MONITOR_ENV_FILE:-${BASE_DIR}/.env.monitor}"
+BC_CEBETE_DBASE_ENV_FILE="${BC_CEBETE_DBASE_ENV_FILE:-${BASE_DIR}/.env.bc-cebete-dbase}"
 ALT_ENV_FILE="/home/pakgun/cebete/.env"
-ALT_MONITOR_ENV_FILE="/home/pakgun/cebete/.env.monitor"
+ALT_BC_CEBETE_DBASE_ENV_FILE="/home/pakgun/cebete/.env.bc-cebete-dbase"
 BACKUP_DIR="${BASE_DIR}/backups"
 CONTAINER_NAME="cebete_postgres"
 
@@ -24,14 +24,14 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
-if [[ ! -f "${MONITOR_ENV_FILE}" && -f "${ALT_MONITOR_ENV_FILE}" ]]; then
-  MONITOR_ENV_FILE="${ALT_MONITOR_ENV_FILE}"
+if [[ ! -f "${BC_CEBETE_DBASE_ENV_FILE}" && -f "${ALT_BC_CEBETE_DBASE_ENV_FILE}" ]]; then
+  BC_CEBETE_DBASE_ENV_FILE="${ALT_BC_CEBETE_DBASE_ENV_FILE}"
 fi
 
-if [[ -f "${MONITOR_ENV_FILE}" ]]; then
+if [[ -f "${BC_CEBETE_DBASE_ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
-  . "${MONITOR_ENV_FILE}"
+  . "${BC_CEBETE_DBASE_ENV_FILE}"
   set +a
 fi
 
