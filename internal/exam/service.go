@@ -3086,6 +3086,17 @@ func normalizeFinalScheme(v string) string {
 	}
 }
 
+func normalizedScoreScale100(rawScore, totalWeight float64, totalQuestions int) float64 {
+	base := totalWeight
+	if base <= 0 && totalQuestions > 0 {
+		base = float64(totalQuestions)
+	}
+	if base <= 0 {
+		return 0
+	}
+	return (rawScore / base) * 100
+}
+
 func buildExamScoreRecapRow(finalScheme string, assignment ExamAssignmentUser, attempts *StudentExamAttempts) ExamScoreRecapRow {
 	row := ExamScoreRecapRow{
 		UserID:     assignment.UserID,
@@ -3097,9 +3108,11 @@ func buildExamScoreRecapRow(finalScheme string, assignment ExamAssignmentUser, a
 	if attempts == nil {
 		return row
 	}
+	totalWeight := attempts.TotalWeight
+	totalQuestions := attempts.TotalQuestions
 	row.AttemptCount = len(attempts.Attempts)
 	for _, att := range attempts.Attempts {
-		score := float64(att.Score)
+		score := normalizedScoreScale100(float64(att.Score), totalWeight, totalQuestions)
 		row.AttemptScores = append(row.AttemptScores, score)
 		if att.AttemptID > 0 {
 			switch finalScheme {
@@ -3342,16 +3355,19 @@ func (s *Service) GetExamScoreRecapStudentDetail(ctx context.Context, examID, us
 		Attempts:     make([]ExamScoreRecapStudentAttempt, 0, row.AttemptCount),
 	}
 	if attempts != nil {
+		totalWeight := attempts.TotalWeight
+		totalQuestions := attempts.TotalQuestions
 		counted := make(map[int64]bool, len(row.CountedAttemptIDs))
 		for _, id := range row.CountedAttemptIDs {
 			counted[id] = true
 		}
 		for _, att := range attempts.Attempts {
+			score := normalizedScoreScale100(float64(att.Score), totalWeight, totalQuestions)
 			out.Attempts = append(out.Attempts, ExamScoreRecapStudentAttempt{
 				AttemptID:   att.AttemptID,
 				AttemptNo:   att.AttemptNo,
 				Status:      att.Status,
-				Score:       att.Score,
+				Score:       score,
 				StartedAt:   att.StartedAt,
 				SubmittedAt: att.SubmittedAt,
 				Counted:     counted[att.AttemptID],
