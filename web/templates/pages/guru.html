@@ -69,6 +69,19 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="token"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M7 8a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v6H4v-6a2 2 0 0 1 2-2h1z" />
+                                    <path d="M9 10h6V8a3 3 0 0 0-6 0z" />
+                                </svg>
+                            </span>
+                            Token Ujian
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
                             data-guru-menu="enroll"
                         >
                             <span class="admin-menu-icon" aria-hidden="true">
@@ -1657,6 +1670,64 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </section>
+
+            <section id="guru-token-panel" class="panel" hidden>
+                <h3>Token Ujian</h3>
+                <p class="muted">
+                    Buat token untuk ujian yang Anda buat sendiri, lalu kirim
+                    ke peserta bila sudah siap digunakan.
+                </p>
+                <form id="guru-token-form" class="form-grid mt">
+                    <label>
+                        Pilih Ujian
+                        <select id="guru-token-exam" required>
+                            <option value="">Pilih ujian...</option>
+                        </select>
+                    </label>
+                    <label>
+                        Berlaku (menit)
+                        <input
+                            id="guru-token-ttl"
+                            type="number"
+                            min="1"
+                            max="1440"
+                            value="120"
+                            required
+                        />
+                    </label>
+                    <button
+                        id="guru-token-generate-btn"
+                        class="btn btn-secondary"
+                        type="submit"
+                    >
+                        Buat Token
+                    </button>
+                </form>
+                <div id="guru-token-result" class="box mt muted">
+                    Pilih ujian buatan Anda lalu klik Buat Token.
+                </div>
+                <div class="table-wrap mt">
+                    <table class="bs-table">
+                        <thead>
+                            <tr>
+                                <th>Ujian</th>
+                                <th>Token</th>
+                                <th>Dibuat</th>
+                                <th>Berlaku Sampai</th>
+                                <th>Status</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="guru-token-list-body">
+                            <tr>
+                                <td colspan="6" class="muted">
+                                    Belum ada token aktif untuk ujian Anda.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 

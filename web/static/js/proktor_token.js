@@ -1,6 +1,6 @@
 (function () {
   var deps = null;
-  var STORAGE_KEY = "cbtlms.proktor.activeExamTokens";
+  var DEFAULT_STORAGE_KEY = "cbtlms.proktor.activeExamTokens";
   var pruneTimer = null;
 
   function setDeps(opts) {
@@ -25,7 +25,9 @@
 
   function readStoredTokens() {
     try {
-      var raw = window.localStorage.getItem(STORAGE_KEY);
+      var raw = window.localStorage.getItem(
+        deps && deps.storageKey ? deps.storageKey : DEFAULT_STORAGE_KEY,
+      );
       if (!raw) return [];
       var items = JSON.parse(raw);
       return Array.isArray(items) ? items : [];
@@ -36,7 +38,10 @@
 
   function saveStoredTokens(items) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items || []));
+      window.localStorage.setItem(
+        deps && deps.storageKey ? deps.storageKey : DEFAULT_STORAGE_KEY,
+        JSON.stringify(items || []),
+      );
     } catch (_err) {
       // ignore storage failures
     }
@@ -108,7 +113,14 @@
     var activeItems = Array.isArray(items) ? items : pruneExpiredTokens();
     if (!activeItems.length) {
       deps.tokenListBody.innerHTML =
-        '<tr><td colspan="6" class="muted">Belum ada token aktif tersimpan di browser ini.</td></tr>';
+        '<tr><td colspan="6" class="muted">' +
+        deps.escapeHtml(
+          String(
+            (deps && deps.emptyStateText) ||
+              "Belum ada token aktif tersimpan di browser ini.",
+          ),
+        ) +
+        "</td></tr>";
       return;
     }
     deps.tokenListBody.innerHTML = "";

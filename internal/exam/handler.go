@@ -39,6 +39,7 @@ type examService interface {
 	DeleteSubject(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	ListExamsBySubject(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error)
+	ListExamsForTokenByOwner(ctx context.Context, ownerID int64) ([]ExamTokenExam, error)
 	ListPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error)
 	GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	PublishExamToken(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
@@ -467,7 +468,20 @@ func (h *Handler) ListExams(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListExamsForToken(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListExamsForToken(r.Context())
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	var (
+		items []ExamTokenExam
+		err   error
+	)
+	if strings.ToLower(strings.TrimSpace(user.Role)) == "guru" {
+		items, err = h.svc.ListExamsForTokenByOwner(r.Context(), user.ID)
+	} else {
+		items, err = h.svc.ListExamsForToken(r.Context())
+	}
 	if err != nil {
 		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		return
@@ -2043,6 +2057,18 @@ func (h *Handler) GenerateExamToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
 		return
 	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+			return
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		return
+	}
 
 	var req generateExamTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2055,6 +2081,8 @@ func (h *Handler) GenerateExamToken(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
 		}
@@ -2074,6 +2102,18 @@ func (h *Handler) PublishExamToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
 		return
 	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+			return
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		return
+	}
 
 	out, err := h.svc.PublishExamToken(r.Context(), examID, user.ID)
 	if err != nil {
@@ -2082,6 +2122,8 @@ func (h *Handler) PublishExamToken(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request"})
 		case errors.Is(err, ErrExamNotFound):
 			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrExamTokenUnavailable):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: ErrExamTokenUnavailable.Error()})
 		case errors.Is(err, ErrExamTokenExpired):

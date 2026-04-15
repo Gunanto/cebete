@@ -103,6 +103,7 @@
     const manuscriptsPanel = document.getElementById("guru-manuscripts-panel");
     const subjectsPanel = document.getElementById("guru-subjects-panel");
     const examsPanel = document.getElementById("guru-exams-panel");
+    const tokenPanel = document.getElementById("guru-token-panel");
     const enrollPanel = document.getElementById("guru-enroll-panel");
     const resultsPanel = document.getElementById("guru-results-panel");
     const guidePanel = document.getElementById("guru-guide-panel");
@@ -461,6 +462,11 @@
       "guru-question-code-subject-select",
     );
     const examsRefreshBtn = document.getElementById("guru-exams-refresh-btn");
+    const tokenForm = document.getElementById("guru-token-form");
+    const tokenExamSelect = document.getElementById("guru-token-exam");
+    const tokenTTLInput = document.getElementById("guru-token-ttl");
+    const tokenResult = document.getElementById("guru-token-result");
+    const tokenListBody = document.getElementById("guru-token-list-body");
     const enrollRefreshBtn = document.getElementById("guru-enroll-refresh-btn");
     const examAssignForm = document.getElementById("guru-exam-assign-form");
     const assignExamIDInput = document.getElementById("guru-assign-exam-id");
@@ -1199,6 +1205,7 @@
     const GuruResults = window.GuruResults || {};
     const GuruExams = window.GuruExams || {};
     const GuruEnroll = window.GuruEnroll || {};
+    const ProktorToken = window.ProktorToken || {};
     const AuthoringReviews = window.AuthoringReviews || {};
     const ManuscriptImport = window.ManuscriptImport || {};
     const ManuscriptTable = window.ManuscriptTable || {};
@@ -1738,6 +1745,30 @@
       return [];
     }
 
+    async function loadGuruTokenExamOptions() {
+      const exams = await api("/api/v1/admin/exams", "GET");
+      const items = Array.isArray(exams) ? exams : [];
+      if (!tokenExamSelect) return items;
+      const current = String(tokenExamSelect.value || "");
+      tokenExamSelect.innerHTML = '<option value="">Pilih ujian...</option>';
+      items.forEach(function (it) {
+        const option = document.createElement("option");
+        option.value = String((it && it.id) || "");
+        option.textContent = [
+          String((it && it.code) || "").trim(),
+          String((it && it.title) || "").trim(),
+          String((it && it.subject_name) || "").trim(),
+        ]
+          .filter(Boolean)
+          .join(" | ");
+        if (current && current === option.value) {
+          option.selected = true;
+        }
+        tokenExamSelect.appendChild(option);
+      });
+      return items;
+    }
+
     async function loadGuruEnrollSchoolsAndClasses() {
       if (
         GuruEnroll &&
@@ -1997,6 +2028,7 @@
           blueprints: blueprintsPanel,
           manuscripts: manuscriptsPanel,
           exams: examsPanel,
+          token: tokenPanel,
           enroll: enrollPanel,
           results: resultsPanel,
           "score-recap": resultsPanel,
@@ -2019,6 +2051,14 @@
                 loadGuruExamManageTable(),
                 loadGuruExamSubjectOptions(),
               ]);
+            } catch (_) {
+              // error already surfaced by the module
+            }
+            return;
+          }
+          if (menuKey === "token") {
+            try {
+              await loadGuruTokenExamOptions();
             } catch (_) {
               // error already surfaced by the module
             }
@@ -2261,6 +2301,26 @@
       });
     }
 
+    function initGuruTokenModule() {
+      if (!ProktorToken || typeof ProktorToken.init !== "function") return;
+      ProktorToken.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: msg,
+        text: text,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        storageKey: "cbtlms.guru.activeExamTokens",
+        emptyStateText: "Belum ada token aktif untuk ujian Anda.",
+        tokenForm: tokenForm,
+        tokenExamSelect: tokenExamSelect,
+        tokenTTLInput: tokenTTLInput,
+        tokenResult: tokenResult,
+        tokenListBody: tokenListBody,
+      });
+    }
+
     function syncManuscriptHiddenInputs() {
       if (
         GuruManuscript &&
@@ -2446,6 +2506,17 @@
           total,
         );
       };
+      const buildTokenDesc = function () {
+        if (!tokenExamSelect) {
+          return "Buat dan kirim token untuk ujian yang Anda kelola.";
+        }
+        const total = Math.max((tokenExamSelect.options || []).length - 1, 0);
+        return buildGuruCountDesc(
+          "Buat dan kirim token untuk ujian yang Anda buat sendiri.",
+          "ujian siap token",
+          total,
+        );
+      };
       const buildResultsDesc = function () {
         const total = Number(
           GuruResults && typeof GuruResults.getResultsCount === "function"
@@ -2487,6 +2558,10 @@
         exams: {
           title: "Pengelolaan Pelaksanaan Ujian",
           desc: buildExamsDesc(),
+        },
+        token: {
+          title: "Token Ujian",
+          desc: buildTokenDesc(),
         },
         enroll: {
           title: "Enroll Peserta",
@@ -2634,6 +2709,7 @@
         loadClassesForLearningGoal(),
         loadGuruExamSubjectOptions(),
         loadGuruExamManageTable(),
+        loadGuruTokenExamOptions(),
         loadGuruResultExamOptions(),
       ]);
       await loadQuestionCodes(
@@ -2669,6 +2745,7 @@
     initManuscriptTransferExportModule();
     initManuscriptExportModule();
     initGuruExamsModule();
+    initGuruTokenModule();
     initGuruEnrollModule();
     initGuruResultsModule();
     initGuruDashboardModule();

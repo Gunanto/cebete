@@ -31,6 +31,7 @@ type mockExamService struct {
 	deleteSubjectFn                  func(ctx context.Context, subjectID, actorID int64, actorRole string) error
 	listExamsFn                      func(ctx context.Context, subjectID int64) ([]ExamOption, error)
 	listExamsForTokenFn              func(ctx context.Context) ([]ExamTokenExam, error)
+	listExamsForTokenByOwnerFn       func(ctx context.Context, ownerID int64) ([]ExamTokenExam, error)
 	listPublishedExamsForStudentFn   func(ctx context.Context, studentID int64) ([]ExamTokenExam, error)
 	generateExamTokenFn              func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error)
 	publishExamTokenFn               func(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error)
@@ -202,6 +203,13 @@ func (m *mockExamService) ListExamsForToken(ctx context.Context) ([]ExamTokenExa
 		return nil, errors.New("not implemented")
 	}
 	return m.listExamsForTokenFn(ctx)
+}
+
+func (m *mockExamService) ListExamsForTokenByOwner(ctx context.Context, ownerID int64) ([]ExamTokenExam, error) {
+	if m.listExamsForTokenByOwnerFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.listExamsForTokenByOwnerFn(ctx, ownerID)
 }
 
 func (m *mockExamService) ListPublishedExamsForStudent(ctx context.Context, studentID int64) ([]ExamTokenExam, error) {
@@ -991,5 +999,31 @@ func TestListEventsOK(t *testing.T) {
 	h.ListEvents(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListExamsForTokenGuruUsesOwnerScope(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		listExamsForTokenByOwnerFn: func(ctx context.Context, ownerID int64) ([]ExamTokenExam, error) {
+			called = true
+			if ownerID != 42 {
+				t.Fatalf("unexpected owner id: %d", ownerID)
+			}
+			return []ExamTokenExam{{ID: 7, Code: "EX-7", Title: "Ujian Guru"}}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams", nil)
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 42, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamsForToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !called {
+		t.Fatal("expected owner-scoped token listing to be called")
 	}
 }

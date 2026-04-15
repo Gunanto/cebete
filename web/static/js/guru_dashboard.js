@@ -15,6 +15,7 @@
       "blueprints",
       "manuscripts",
       "exams",
+      "token",
       "enroll",
       "results",
       "score-recap",

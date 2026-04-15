@@ -1424,9 +1424,20 @@ func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool)
 }
 
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
+	return s.listExamsForToken(ctx, nil)
+}
+
+func (s *Service) ListExamsForTokenByOwner(ctx context.Context, ownerID int64) ([]ExamTokenExam, error) {
+	if ownerID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	return s.listExamsForToken(ctx, &ownerID)
+}
+
+func (s *Service) listExamsForToken(ctx context.Context, ownerID *int64) ([]ExamTokenExam, error) {
 	user, isProktor := currentScopedProktor(ctx)
 	now := time.Now()
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+	query := `
 		SELECT
 			e.id,
 			e.code,
@@ -1443,17 +1454,21 @@ func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error
 		FROM exams e
 		JOIN subjects s ON s.id = e.subject_id
 		WHERE e.is_active = TRUE
-		  AND (
-			$1 = 0
-			OR %s
-		  )
-		ORDER BY e.created_at DESC, e.id DESC
-	`, proktorExamScopeClause("e.id", "e.created_by", "$1", true)), func() int64 {
-		if isProktor {
-			return user.ID
-		}
-		return 0
-	}())
+	`
+	args := make([]any, 0, 2)
+	if ownerID != nil {
+		query += fmt.Sprintf(" AND e.created_by = $%d", len(args)+1)
+		args = append(args, *ownerID)
+	}
+	if isProktor {
+		query += fmt.Sprintf(
+			" AND %s",
+			proktorExamScopeClause("e.id", "e.created_by", fmt.Sprintf("$%d", len(args)+1), true),
+		)
+		args = append(args, user.ID)
+	}
+	query += " ORDER BY e.created_at DESC, e.id DESC"
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query exams for token: %w", err)
 	}
