@@ -294,6 +294,35 @@ func (s *Service) loadUserPrimarySchoolID(ctx context.Context, userID int64) (*i
 	return &v, nil
 }
 
+func (s *Service) loadSchoolTenantID(ctx context.Context, schoolID int64) (*int64, error) {
+	if schoolID <= 0 {
+		return nil, nil
+	}
+	hasTenant, err := hasColumn(ctx, s.db, "schools", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasTenant {
+		return nil, nil
+	}
+	var tenantID sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT tenant_id
+		FROM schools
+		WHERE id = $1
+	`, schoolID).Scan(&tenantID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load school tenant: %w", err)
+	}
+	if !tenantID.Valid || tenantID.Int64 <= 0 {
+		return nil, nil
+	}
+	v := tenantID.Int64
+	return &v, nil
+}
+
 func (s *Service) loadExamOwnerSchoolFromCreator(ctx context.Context, examID int64) (*int64, error) {
 	if examID <= 0 {
 		return nil, ErrInvalidInput
@@ -2319,6 +2348,12 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 		examTenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
 		if err != nil {
 			return nil, err
+		}
+		if (examTenantID == nil || *examTenantID <= 0) && ownerSchoolID != nil && *ownerSchoolID > 0 {
+			examTenantID, err = s.loadSchoolTenantID(ctx, *ownerSchoolID)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if examTenantID == nil || *examTenantID <= 0 {
 			return nil, ErrExamTenantRequired

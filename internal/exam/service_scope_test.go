@@ -612,6 +612,107 @@ func TestCreateExamRejectsCrossSchoolForSchoolTeacher(t *testing.T) {
 	}
 }
 
+func TestCreateExamUsesSchoolTenantWhenGuruTenantMissing(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+	ctx := auth.ContextWithUser(context.Background(), &auth.User{ID: 21, Role: "guru"})
+	createdAt := time.Now()
+
+	mock.ExpectQuery(`SELECT school_id[\s\S]*FROM enrollments`).
+		WithArgs(int64(21)).
+		WillReturnRows(sqlmock.NewRows([]string{"school_id"}).AddRow(int64(3)))
+	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
+		WithArgs(int64(21)).
+		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("exams", "tenant_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("exams", "management_scope").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("exams", "owner_school_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("users", "tenant_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT tenant_id FROM users WHERE id = \$1`).
+		WithArgs(int64(21)).
+		WillReturnRows(sqlmock.NewRows([]string{"tenant_id"}).AddRow(nil))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("schools", "tenant_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT tenant_id[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"tenant_id"}).AddRow(int64(99)))
+	mock.ExpectQuery(`INSERT INTO exams \(`).
+		WithArgs(
+			"SC-003",
+			"Ujian Tenant Sekolah",
+			int64(8),
+			75.0,
+			90,
+			1,
+			nil,
+			nil,
+			"after_submit",
+			false,
+			false,
+			false,
+			int64(21),
+			"same_school",
+			int64(3),
+			int64(99),
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(93)))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("exams", "management_scope").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("exams", "owner_school_id").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(93)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "code", "title", "management_scope", "owner_school_id", "subject_id", "subject_name", "education_level", "subject_type",
+			"kktp", "duration_minutes", "max_attempts", "start_at", "end_at", "review_policy",
+			"randomize_questions", "randomize_options", "allow_non_regular_self_enroll", "is_active",
+			"created_by", "created_at", "question_count", "assigned_count",
+		}).AddRow(
+			93, "SC-003", "Ujian Tenant Sekolah", "same_school", int64(3), 8, "Matematika", "SMA", "Wajib",
+			75.0, 90, 1, nil, nil, "after_submit",
+			false, false, false, true,
+			21, createdAt, 0, 0,
+		))
+
+	out, err := svc.CreateExam(ctx, CreateExamInput{
+		Code:      "sc-003",
+		Title:     "Ujian Tenant Sekolah",
+		SubjectID: 8,
+		KKTP:      75,
+		CreatedBy: 21,
+	})
+	if err != nil {
+		t.Fatalf("CreateExam: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected exam, got nil")
+	}
+	if out.OwnerSchoolID == nil || *out.OwnerSchoolID != 3 {
+		t.Fatalf("expected owner_school_id 3, got %+v", out.OwnerSchoolID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func TestUpdateExamSameSchoolReplacesOwnerSchoolWithTeacherPrimarySchool(t *testing.T) {
 	t.Parallel()
 

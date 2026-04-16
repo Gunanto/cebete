@@ -48,11 +48,12 @@ MIGRATIONS_DIR=internal/db/migrations ./scripts/migrate.sh up
 
 5) Update web (pilih salah satu sesuai hasil langkah 1)
 
-Mode A: `cebete_web` memakai `image:` lokal, dan Anda build manual di `~/cebete-src`
-Catatan: tag `cebete:monitor` harus sama dengan yang dipakai oleh `image:` di compose.
+Mode A: `cebete_web` memakai `image:` dan image tersebut Anda build manual di `~/cebete-src`
+Catatan: tag image saat `docker build -t ...` harus sama persis dengan nilai `image:` yang dipakai service `cebete_web` di `docker compose config`.
+
 ```bash
 cd ~/cebete-src
-docker build -t cebete:monitor .
+docker build -t ghcr.io/gunanto/cebete:latest .
 
 cd ~/cebete
 docker compose up -d --force-recreate cebete_web
@@ -77,6 +78,11 @@ docker compose up -d --force-recreate cebete_web
 docker compose ps
 docker logs --tail=120 cebete_web
 ```
+
+Contoh penentuan mode:
+- Jika `docker compose config` menampilkan `build:`, pakai Mode B.
+- Jika menampilkan `image: ghcr.io/gunanto/cebete:latest` dan image ingin dibuild dari source lokal di VPS, pakai Mode A dengan tag yang sama.
+- Jika menampilkan `image: ghcr.io/gunanto/cebete:latest` dan image ingin diambil dari registry, pakai Mode C.
 
 6) Validasi HTTP
 ```bash

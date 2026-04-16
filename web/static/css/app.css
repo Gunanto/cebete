@@ -4300,6 +4300,28 @@ body[data-page="guru_content"]
     text-align: center;
 }
 
+body[data-page="admin_content"]
+    .dashboard-hero
+    .admin-stats-grid
+    .admin-stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+body[data-page="proktor_content"]
+    .dashboard-hero
+    .proktor-stats-grid
+    .admin-stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
 body[data-page="admin_content"] .dashboard-hero .admin-stat-card .stat-label,
 body[data-page="admin_content"] .dashboard-hero .admin-stat-card .stat-value,
 body[data-page="proktor_content"] .dashboard-hero .admin-stat-card .stat-label,
