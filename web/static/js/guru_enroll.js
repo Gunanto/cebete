@@ -91,9 +91,27 @@
     });
   }
 
+  function setAssignScopeHint(message) {
+    if (!deps || !deps.assignScopeHint) return;
+    deps.assignScopeHint.innerHTML = message || "";
+  }
+
   function applyExamSchoolScope() {
     if (!deps || !deps.assignSchoolSelect || !deps.assignClassSelect) return;
     const examID = Number((deps.assignExamIDInput && deps.assignExamIDInput.value) || 0);
+    if (examID <= 0) {
+      fillSchoolOptions([]);
+      deps.assignSchoolSelect.value = "";
+      deps.assignSchoolSelect.disabled = true;
+      deps.assignClassSelect.innerHTML =
+        '<option value="">Pilih kelas...</option>';
+      deps.assignClassSelect.value = "";
+      deps.assignClassSelect.disabled = true;
+      setAssignScopeHint(
+        "Pilih ujian terlebih dahulu. Scope enroll mengikuti scope ujian yang dipilih.",
+      );
+      return;
+    }
     const exam = findExamByID(examID);
     const selectedExamScope = String((exam && exam.management_scope) || "same_school")
       .trim()
@@ -117,6 +135,19 @@
     });
 
     if (selectedExamScope === "same_school") {
+      if (ownerSchoolID <= 0) {
+        fillSchoolOptions([]);
+        deps.assignSchoolSelect.value = "";
+        deps.assignSchoolSelect.disabled = true;
+        deps.assignClassSelect.innerHTML =
+          '<option value="">Pilih kelas...</option>';
+        deps.assignClassSelect.value = "";
+        deps.assignClassSelect.disabled = true;
+        setAssignScopeHint(
+          "Ujian ini masih ber-scope Sekolah Saya, tetapi owner school belum terdeteksi. Edit ujian dan set scope yang sesuai terlebih dahulu.",
+        );
+        return;
+      }
       const onlyOwnerSchool = selectableSchools.filter(function (it) {
         return Number((it && it.id) || 0) === ownerSchoolID;
       });
@@ -127,9 +158,31 @@
         deps.assignSchoolSelect.value = "";
       }
       deps.assignSchoolSelect.disabled = true;
+      deps.assignClassSelect.disabled = deps.assignSchoolSelect.value === "";
+      setAssignScopeHint(
+        "Ujian ini ber-scope Sekolah Saya. Field sekolah dikunci ke sekolah pemilik ujian.",
+      );
     } else {
       fillSchoolOptions(selectableSchools);
       deps.assignSchoolSelect.disabled = false;
+      if (
+        deps.assignSchoolSelect.value &&
+        !selectableSchools.some(function (it) {
+          return String((it && it.id) || "") === String(deps.assignSchoolSelect.value || "");
+        })
+      ) {
+        deps.assignSchoolSelect.value = "";
+      }
+      deps.assignClassSelect.disabled = deps.assignSchoolSelect.value === "";
+      if (selectableSchools.length > 0) {
+        setAssignScopeHint(
+          "Ujian ini ber-scope Lintas Sekolah. Pilih sekolah lalu kelas untuk enroll peserta.",
+        );
+      } else {
+        setAssignScopeHint(
+          "Ujian ini ber-scope Lintas Sekolah, tetapi belum ada sekolah aktif yang punya kelas dengan peserta.",
+        );
+      }
     }
     fillClassOptionsBySchool(deps.assignSchoolSelect.value);
   }
@@ -235,6 +288,10 @@
     if (deps.assignSchoolSelect) {
       deps.assignSchoolSelect.addEventListener("change", function () {
         fillClassOptionsBySchool(deps.assignSchoolSelect.value);
+        if (deps.assignClassSelect) {
+          deps.assignClassSelect.disabled =
+            String(deps.assignSchoolSelect.value || "").trim() === "";
+        }
       });
     }
     if (deps.assignExamIDInput) {
@@ -367,6 +424,9 @@
 
   function init(opts) {
     setDeps(opts);
+    if (deps && deps.assignClassSelect) {
+      deps.assignClassSelect.disabled = true;
+    }
     bindHandlers();
   }
 

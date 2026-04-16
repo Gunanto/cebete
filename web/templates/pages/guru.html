@@ -1573,6 +1573,12 @@
                             </button>
                         </div>
                     </div>
+                    <p class="muted mt">
+                        Kolom <strong>Scope</strong> adalah scope milik ujian.
+                        Mengubah <strong>Profil Akses Guru</strong> menjadi
+                        <strong>Lintas Sekolah</strong> tidak otomatis
+                        mengubah ujian yang sudah ada.
+                    </p>
                     <div class="table-wrap mt">
                         <table class="bs-table">
                             <thead>
@@ -1775,6 +1781,10 @@
                             Enroll Peserta per Kelas
                         </button>
                     </form>
+                    <p id="guru-assign-scope-hint" class="muted mt">
+                        Pilih ujian terlebih dahulu untuk melihat aturan scope
+                        enroll peserta.
+                    </p>
                     <button
                         id="guru-exam-assignments-load-btn"
                         class="btn btn-secondary mt"
@@ -2725,6 +2735,11 @@
                             Lintas Sekolah (butuh hak khusus)
                         </option>
                     </select>
+                    <small class="muted">
+                        Profil akses guru hanya menentukan pilihan yang
+                        diizinkan. Untuk membuat ujian lintas sekolah, ubah
+                        scope ujian ini ke <strong>Lintas Sekolah</strong>.
+                    </small>
                 </label>
                 <label>
                     KKTP

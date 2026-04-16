@@ -472,6 +472,7 @@
     const assignExamIDInput = document.getElementById("guru-assign-exam-id");
     const assignSchoolSelect = document.getElementById("guru-assign-school");
     const assignClassSelect = document.getElementById("guru-assign-class");
+    const assignScopeHint = document.getElementById("guru-assign-scope-hint");
     const examAssignmentsLoadBtn = document.getElementById(
       "guru-exam-assignments-load-btn",
     );
@@ -1881,6 +1882,7 @@
         assignExamIDInput: assignExamIDInput,
         assignSchoolSelect: assignSchoolSelect,
         assignClassSelect: assignClassSelect,
+        assignScopeHint: assignScopeHint,
         examAssignmentsLoadBtn: examAssignmentsLoadBtn,
         examAssignmentsBody: examAssignmentsBody,
       });
