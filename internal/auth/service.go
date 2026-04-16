@@ -172,32 +172,33 @@ type RegistrationFormPayload struct {
 }
 
 type AdminUserRecord struct {
-	ID                 int64      `json:"id"`
-	Username           string     `json:"username"`
-	Email              *string    `json:"email,omitempty"`
-	FullName           string     `json:"full_name"`
-	Role               string     `json:"role"`
-	ParticipantNo      *string    `json:"participant_no,omitempty"`
-	NISN               *string    `json:"nisn,omitempty"`
-	SchoolID           *int64     `json:"school_id,omitempty"`
-	SchoolName         *string    `json:"school_name,omitempty"`
-	SchoolCode         *string    `json:"school_code,omitempty"`
-	SchoolCity         *string    `json:"school_city,omitempty"`
-	SchoolProvince     *string    `json:"school_province,omitempty"`
-	SchoolAddress      *string    `json:"school_address,omitempty"`
-	SchoolKecamatan    *string    `json:"school_kecamatan,omitempty"`
-	SchoolJenjang      *string    `json:"school_jenjang,omitempty"`
-	SchoolStatus       *string    `json:"school_status,omitempty"`
-	SchoolEmail        *string    `json:"school_email,omitempty"`
-	ClassID            *int64     `json:"class_id,omitempty"`
-	ClassGrade         *string    `json:"class_grade_level,omitempty"`
-	ClassName          *string    `json:"class_name,omitempty"`
-	ManagedSchoolIDs   []int64    `json:"managed_school_ids,omitempty"`
-	ManagedSchoolNames []string   `json:"managed_school_names,omitempty"`
-	IsActive           bool       `json:"is_active"`
-	AccountStatus      string     `json:"account_status"`
-	ApprovedAt         *time.Time `json:"approved_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ID                   int64      `json:"id"`
+	Username             string     `json:"username"`
+	Email                *string    `json:"email,omitempty"`
+	FullName             string     `json:"full_name"`
+	Role                 string     `json:"role"`
+	TeacherAccessProfile string     `json:"teacher_access_profile,omitempty"`
+	ParticipantNo        *string    `json:"participant_no,omitempty"`
+	NISN                 *string    `json:"nisn,omitempty"`
+	SchoolID             *int64     `json:"school_id,omitempty"`
+	SchoolName           *string    `json:"school_name,omitempty"`
+	SchoolCode           *string    `json:"school_code,omitempty"`
+	SchoolCity           *string    `json:"school_city,omitempty"`
+	SchoolProvince       *string    `json:"school_province,omitempty"`
+	SchoolAddress        *string    `json:"school_address,omitempty"`
+	SchoolKecamatan      *string    `json:"school_kecamatan,omitempty"`
+	SchoolJenjang        *string    `json:"school_jenjang,omitempty"`
+	SchoolStatus         *string    `json:"school_status,omitempty"`
+	SchoolEmail          *string    `json:"school_email,omitempty"`
+	ClassID              *int64     `json:"class_id,omitempty"`
+	ClassGrade           *string    `json:"class_grade_level,omitempty"`
+	ClassName            *string    `json:"class_name,omitempty"`
+	ManagedSchoolIDs     []int64    `json:"managed_school_ids,omitempty"`
+	ManagedSchoolNames   []string   `json:"managed_school_names,omitempty"`
+	IsActive             bool       `json:"is_active"`
+	AccountStatus        string     `json:"account_status"`
+	ApprovedAt           *time.Time `json:"approved_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 type AdminDashboardStats struct {
@@ -226,28 +227,30 @@ type StudentExamProfile struct {
 }
 
 type AdminCreateUserInput struct {
-	Username         string
-	Email            string
-	Password         string
-	FullName         string
-	Role             string
-	ParticipantNo    string
-	NISN             string
-	SchoolID         *int64
-	ClassID          *int64
-	ManagedSchoolIDs []int64
+	Username             string
+	Email                string
+	Password             string
+	FullName             string
+	Role                 string
+	ParticipantNo        string
+	NISN                 string
+	SchoolID             *int64
+	ClassID              *int64
+	ManagedSchoolIDs     []int64
+	TeacherAccessProfile string
 }
 
 type AdminUpdateUserInput struct {
-	FullName         string
-	Email            string
-	Role             string
-	Password         string
-	ParticipantNo    string
-	NISN             string
-	SchoolID         *int64
-	ClassID          *int64
-	ManagedSchoolIDs []int64
+	FullName             string
+	Email                string
+	Role                 string
+	Password             string
+	ParticipantNo        string
+	NISN                 string
+	SchoolID             *int64
+	ClassID              *int64
+	ManagedSchoolIDs     []int64
+	TeacherAccessProfile string
 }
 
 type UserClassPlacementInput struct {
@@ -2448,6 +2451,22 @@ func hasColumnTx(ctx context.Context, tx *sql.Tx, tableName, columnName string) 
 	return exists, nil
 }
 
+func hasColumn(ctx context.Context, db *sql.DB, tableName, columnName string) (bool, error) {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, tableName, columnName).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check %s.%s column: %w", tableName, columnName, err)
+	}
+	return exists, nil
+}
+
 func loadSchoolTenantIDTx(ctx context.Context, tx *sql.Tx, schoolID int64, schoolHasTenant bool) (*int64, error) {
 	if schoolID <= 0 {
 		return nil, nil
@@ -2860,6 +2879,26 @@ func isValidRole(role string) bool {
 	}
 }
 
+func normalizeTeacherAccessProfile(role, profile string) string {
+	if strings.ToLower(strings.TrimSpace(role)) != "guru" {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "cross_school":
+		return "cross_school"
+	default:
+		return "school"
+	}
+}
+
+func nullIfEmpty(v string) any {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
 func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset int, includeInactive bool) ([]AdminUserRecord, error) {
 	role = strings.ToLower(strings.TrimSpace(role))
 	if role != "" && !isValidRole(role) {
@@ -2879,14 +2918,23 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		restrictBySchoolScope = true
 		actorID = actor.ID
 	}
+	hasTeacherAccessProfile, err := hasColumn(ctx, s.db, "users", "teacher_access_profile")
+	if err != nil {
+		return nil, err
+	}
+	teacherAccessProfileSelect := `''::text AS teacher_access_profile`
+	if hasTeacherAccessProfile {
+		teacherAccessProfileSelect = `COALESCE(NULLIF(btrim(u.teacher_access_profile), ''), CASE WHEN u.role = 'guru' THEN 'school' ELSE '' END) AS teacher_access_profile`
+	}
 
-	query := `
+	query := fmt.Sprintf(`
 		SELECT
 			u.id,
 			u.username,
 			u.email,
 			u.full_name,
 			u.role,
+			%s,
 			u.participant_no,
 			u.nisn,
 			sch.school_id,
@@ -2950,30 +2998,31 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		  )
 		  AND (
 			$2 = ''
-			OR u.username ILIKE '%' || $2 || '%'
-			OR u.full_name ILIKE '%' || $2 || '%'
-			OR COALESCE(u.email,'') ILIKE '%' || $2 || '%'
-			OR COALESCE(u.participant_no,'') ILIKE '%' || $2 || '%'
-			OR COALESCE(u.nisn,'') ILIKE '%' || $2 || '%'
-			OR COALESCE(sch.name,'') ILIKE '%' || $2 || '%'
+				OR u.username ILIKE '%%' || $2 || '%%'
+				OR u.full_name ILIKE '%%' || $2 || '%%'
+				OR COALESCE(u.email,'') ILIKE '%%' || $2 || '%%'
+				OR COALESCE(u.participant_no,'') ILIKE '%%' || $2 || '%%'
+				OR COALESCE(u.nisn,'') ILIKE '%%' || $2 || '%%'
+				OR COALESCE(sch.name,'') ILIKE '%%' || $2 || '%%'
 		  )
 		ORDER BY u.created_at DESC, u.id DESC
 		LIMIT $3
 		OFFSET $4
-	`
+	`, teacherAccessProfileSelect)
 	rows, err := s.db.QueryContext(ctx, query, role, q, limit, offset, includeInactive, restrictBySchoolScope, actorID)
 	if err != nil {
 		if isUndefinedTableErr(err, "user_school_scopes") {
 			if restrictBySchoolScope {
 				return []AdminUserRecord{}, nil
 			}
-			rows, err = s.db.QueryContext(ctx, `
+			rows, err = s.db.QueryContext(ctx, fmt.Sprintf(`
 				SELECT
 					u.id,
 					u.username,
 					u.email,
 					u.full_name,
 					u.role,
+					%s,
 					u.participant_no,
 					u.nisn,
 					sch.school_id,
@@ -3020,17 +3069,17 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 				  AND ($5 OR u.is_active = TRUE)
 				  AND (
 					$2 = ''
-					OR u.username ILIKE '%' || $2 || '%'
-					OR u.full_name ILIKE '%' || $2 || '%'
-					OR COALESCE(u.email,'') ILIKE '%' || $2 || '%'
-					OR COALESCE(u.participant_no,'') ILIKE '%' || $2 || '%'
-					OR COALESCE(u.nisn,'') ILIKE '%' || $2 || '%'
-					OR COALESCE(sch.name,'') ILIKE '%' || $2 || '%'
+						OR u.username ILIKE '%%' || $2 || '%%'
+						OR u.full_name ILIKE '%%' || $2 || '%%'
+						OR COALESCE(u.email,'') ILIKE '%%' || $2 || '%%'
+						OR COALESCE(u.participant_no,'') ILIKE '%%' || $2 || '%%'
+						OR COALESCE(u.nisn,'') ILIKE '%%' || $2 || '%%'
+						OR COALESCE(sch.name,'') ILIKE '%%' || $2 || '%%'
 				  )
 				ORDER BY u.created_at DESC, u.id DESC
 				LIMIT $3
 				OFFSET $4
-			`, role, q, limit, offset, includeInactive)
+			`, teacherAccessProfileSelect), role, q, limit, offset, includeInactive)
 		}
 	}
 	if err != nil {
@@ -3064,6 +3113,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 			&email,
 			&it.FullName,
 			&it.Role,
+			&it.TeacherAccessProfile,
 			&participantNo,
 			&nisn,
 			&schoolID,
@@ -3137,6 +3187,7 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 		if approvedAt.Valid {
 			it.ApprovedAt = &approvedAt.Time
 		}
+		it.TeacherAccessProfile = normalizeTeacherAccessProfile(it.Role, it.TeacherAccessProfile)
 		out = append(out, it)
 	}
 	if err := rows.Err(); err != nil {
@@ -3213,7 +3264,40 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 	if guruID <= 0 {
 		return nil, ErrInvalidInput
 	}
-	if err := s.db.QueryRowContext(ctx, `
+	hasManagementScope, err := hasColumn(ctx, s.db, "exams", "management_scope")
+	if err != nil {
+		return nil, err
+	}
+	hasOwnerSchoolID, err := hasColumn(ctx, s.db, "exams", "owner_school_id")
+	if err != nil {
+		return nil, err
+	}
+	participantScopeClause := "TRUE"
+	if hasManagementScope && hasOwnerSchoolID {
+		participantScopeClause = `
+			(
+				COALESCE(NULLIF(btrim(e.management_scope), ''), 'same_school') = 'cross_school'
+				OR EXISTS (
+					SELECT 1
+					FROM enrollments en_scope
+					WHERE en_scope.user_id = a.student_id
+					  AND en_scope.status = 'active'
+					  AND en_scope.school_id = COALESCE(
+						e.owner_school_id,
+						(
+							SELECT en_creator.school_id
+							FROM enrollments en_creator
+							WHERE en_creator.user_id = e.created_by
+							  AND en_creator.status = 'active'
+							ORDER BY en_creator.enrolled_at DESC, en_creator.id DESC
+							LIMIT 1
+						)
+					  )
+				)
+			)
+		`
+	}
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
 			COUNT(DISTINCT a.student_id) FILTER (WHERE u.is_non_regular = FALSE),
 			COUNT(DISTINCT a.student_id) FILTER (WHERE u.is_non_regular = TRUE)
@@ -3222,20 +3306,22 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 		JOIN users u ON u.id = a.student_id
 		WHERE e.created_by = $1
 		  AND u.role = 'siswa'
-	`, guruID).Scan(&out.RegularParticipantCount, &out.NonRegularParticipantCount); err != nil {
+		  AND %s
+	`, participantScopeClause), guruID).Scan(&out.RegularParticipantCount, &out.NonRegularParticipantCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard unique participant count: %w", err)
 	}
 	out.UniqueParticipantCount = out.RegularParticipantCount + out.NonRegularParticipantCount
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COUNT(DISTINCT e.id)
 		FROM exams e
 		JOIN attempts a ON a.exam_id = e.id
 		WHERE e.created_by = $1
 		  AND COALESCE(a.score, 0) > 0
-	`, guruID).Scan(&out.CompletedExamCount); err != nil {
+		  AND %s
+	`, participantScopeClause), guruID).Scan(&out.CompletedExamCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard completed exam count: %w", err)
 	}
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COUNT(DISTINCT a.student_id)
 		FROM attempts a
 		JOIN exams e ON e.id = a.exam_id
@@ -3245,7 +3331,8 @@ func (s *Service) GuruDashboardStats(ctx context.Context, guruID int64) (*AdminD
 		  AND a.expires_at > now()
 		  AND u.is_active = TRUE
 		  AND u.role = 'siswa'
-	`, guruID).Scan(&out.InProgressCount); err != nil {
+		  AND %s
+	`, participantScopeClause), guruID).Scan(&out.InProgressCount); err != nil {
 		return nil, fmt.Errorf("query guru dashboard in progress count: %w", err)
 	}
 	return out, nil
@@ -3278,6 +3365,7 @@ func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in Admin
 	if role != "proktor" {
 		managedSchoolIDs = nil
 	}
+	teacherAccessProfile := normalizeTeacherAccessProfile(role, in.TeacherAccessProfile)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), s.bcryptCost)
 	if err != nil {
@@ -3295,24 +3383,36 @@ func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in Admin
 			return nil, err
 		}
 	}
+	userHasTeacherProfile, err := hasColumnTx(ctx, tx, "users", "teacher_access_profile")
+	if err != nil {
+		return nil, err
+	}
 
 	var out AdminUserRecord
 	var emailNull sql.NullString
 	var participantNoNull sql.NullString
 	var nisnNull sql.NullString
 	var approvedAt sql.NullTime
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO users (
-			username, password_hash, full_name, role, is_active,
-			email, participant_no, nisn, email_verified_at, account_status, approved_by, approved_at, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, TRUE,
-			NULLIF($5,''), NULLIF($6,''), NULLIF($7,''),
-			CASE WHEN NULLIF($5,'') IS NOT NULL THEN now() ELSE NULL END,
-			'active', $8, now(), now(), now()
-		)
+	insertColumns := []string{
+		"username", "password_hash", "full_name", "role", "is_active",
+		"email", "participant_no", "nisn", "email_verified_at", "account_status", "approved_by", "approved_at", "created_at", "updated_at",
+	}
+	insertValues := []string{
+		"$1", "$2", "$3", "$4", "TRUE",
+		"NULLIF($5,'')", "NULLIF($6,'')", "NULLIF($7,'')", "CASE WHEN NULLIF($5,'') IS NOT NULL THEN now() ELSE NULL END", "'active'", "$8", "now()", "now()", "now()",
+	}
+	insertArgs := []any{username, string(hash), fullName, role, email, participantNo, nisn, actorID}
+	if userHasTeacherProfile {
+		insertColumns = append(insertColumns, "teacher_access_profile")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, nullIfEmpty(teacherAccessProfile))
+	}
+
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO users (%s)
+		VALUES (%s)
 		RETURNING id, username, email, full_name, role, participant_no, nisn, is_active, account_status, approved_at, created_at
-	`, username, string(hash), fullName, role, email, participantNo, nisn, actorID).Scan(
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...).Scan(
 		&out.ID, &out.Username, &emailNull, &out.FullName, &out.Role, &participantNoNull, &nisnNull, &out.IsActive, &out.AccountStatus, &approvedAt, &out.CreatedAt,
 	)
 	if err != nil {
@@ -3330,6 +3430,7 @@ func (s *Service) CreateUserByAdmin(ctx context.Context, actorID int64, in Admin
 	if approvedAt.Valid {
 		out.ApprovedAt = &approvedAt.Time
 	}
+	out.TeacherAccessProfile = teacherAccessProfile
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO auth_identities (user_id, provider, provider_key, created_at)
@@ -3382,6 +3483,7 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 	if role != "proktor" {
 		managedSchoolIDs = nil
 	}
+	teacherAccessProfile := normalizeTeacherAccessProfile(role, in.TeacherAccessProfile)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -3393,6 +3495,10 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 		if err := validateSchoolHasNPSNTx(ctx, tx, *in.SchoolID); err != nil {
 			return nil, err
 		}
+	}
+	userHasTeacherProfile, err := hasColumnTx(ctx, tx, "users", "teacher_access_profile")
+	if err != nil {
+		return nil, err
 	}
 
 	if strings.TrimSpace(in.Password) != "" {
@@ -3418,7 +3524,7 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 	var participantNoNull sql.NullString
 	var nisnNull sql.NullString
 	var approvedAt sql.NullTime
-	err = tx.QueryRowContext(ctx, `
+	updateQuery := `
 		UPDATE users
 		SET full_name = $2,
 			role = $3,
@@ -3428,11 +3534,19 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 			email_verified_at = CASE
 				WHEN NULLIF($4,'') IS NOT NULL THEN COALESCE(email_verified_at, now())
 				ELSE email_verified_at
-			END,
-			updated_at = now()
+			END
+	`
+	updateArgs := []any{userID, fullName, role, email, participantNo, nisn}
+	if userHasTeacherProfile {
+		updateQuery += fmt.Sprintf(", teacher_access_profile = NULLIF($%d, '')", len(updateArgs)+1)
+		updateArgs = append(updateArgs, teacherAccessProfile)
+	}
+	updateQuery += `
+			, updated_at = now()
 		WHERE id = $1
 		RETURNING id, username, email, full_name, role, participant_no, nisn, is_active, account_status, approved_at, created_at
-	`, userID, fullName, role, email, participantNo, nisn).Scan(
+	`
+	err = tx.QueryRowContext(ctx, updateQuery, updateArgs...).Scan(
 		&out.ID, &out.Username, &emailNull, &out.FullName, &out.Role, &participantNoNull, &nisnNull, &out.IsActive, &out.AccountStatus, &approvedAt, &out.CreatedAt,
 	)
 	if err != nil {
@@ -3453,6 +3567,7 @@ func (s *Service) UpdateUserByAdmin(ctx context.Context, actorID, userID int64, 
 	if approvedAt.Valid {
 		out.ApprovedAt = &approvedAt.Time
 	}
+	out.TeacherAccessProfile = teacherAccessProfile
 
 	if err := upsertUserEnrollmentTx(ctx, tx, userID, in.SchoolID, in.ClassID); err != nil {
 		return nil, err

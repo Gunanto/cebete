@@ -28,6 +28,16 @@
     });
   }
 
+  function findExamByID(examID) {
+    const id = Number(examID || 0);
+    if (id <= 0) return null;
+    return (
+      (Array.isArray(examsCache) ? examsCache : []).find(function (it) {
+        return Number((it && it.id) || 0) === id;
+      }) || null
+    );
+  }
+
   function schoolLabel(it) {
     const name = String((it && it.name) || "").trim();
     const code = String((it && it.code) || "").trim();
@@ -81,6 +91,49 @@
     });
   }
 
+  function applyExamSchoolScope() {
+    if (!deps || !deps.assignSchoolSelect || !deps.assignClassSelect) return;
+    const examID = Number((deps.assignExamIDInput && deps.assignExamIDInput.value) || 0);
+    const exam = findExamByID(examID);
+    const selectedExamScope = String((exam && exam.management_scope) || "same_school")
+      .trim()
+      .toLowerCase();
+    const ownerSchoolID = Number((exam && exam.owner_school_id) || 0);
+    const activeSchoolIDs = new Set(
+      (Array.isArray(classesCache) ? classesCache : [])
+        .filter(function (it) {
+          return Number((it && it.student_count) || 0) > 0;
+        })
+        .map(function (it) {
+          return Number((it && it.school_id) || 0);
+        })
+        .filter(function (id) {
+          return id > 0;
+        }),
+    );
+    const selectableSchools = (Array.isArray(schoolsCache) ? schoolsCache : []).filter(function (it) {
+      const id = Number((it && it.id) || 0);
+      return id > 0 && activeSchoolIDs.has(id);
+    });
+
+    if (selectedExamScope === "same_school") {
+      const onlyOwnerSchool = selectableSchools.filter(function (it) {
+        return Number((it && it.id) || 0) === ownerSchoolID;
+      });
+      fillSchoolOptions(onlyOwnerSchool);
+      if (ownerSchoolID > 0 && onlyOwnerSchool.length > 0) {
+        deps.assignSchoolSelect.value = String(ownerSchoolID);
+      } else {
+        deps.assignSchoolSelect.value = "";
+      }
+      deps.assignSchoolSelect.disabled = true;
+    } else {
+      fillSchoolOptions(selectableSchools);
+      deps.assignSchoolSelect.disabled = false;
+    }
+    fillClassOptionsBySchool(deps.assignSchoolSelect.value);
+  }
+
   function renderExamAssignments(rows, replace) {
     if (!deps || !deps.examAssignmentsBody) return;
     const items = Array.isArray(rows) ? rows : [];
@@ -127,6 +180,7 @@
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     examsCache = Array.isArray(exams) ? exams : [];
     fillAssignExamOptions(examsCache);
+    applyExamSchoolScope();
     return examsCache;
   }
 
@@ -155,9 +209,7 @@
       return id > 0 && activeSchoolIDs.has(id);
     });
     fillSchoolOptions(filteredSchools);
-    fillClassOptionsBySchool(
-      (deps.assignSchoolSelect && deps.assignSchoolSelect.value) || "",
-    );
+    applyExamSchoolScope();
   }
 
   async function loadExamAssignments(examID) {
@@ -183,6 +235,11 @@
     if (deps.assignSchoolSelect) {
       deps.assignSchoolSelect.addEventListener("change", function () {
         fillClassOptionsBySchool(deps.assignSchoolSelect.value);
+      });
+    }
+    if (deps.assignExamIDInput) {
+      deps.assignExamIDInput.addEventListener("change", function () {
+        applyExamSchoolScope();
       });
     }
 
@@ -220,6 +277,15 @@
         const classID = Number(
           (deps.assignClassSelect && deps.assignClassSelect.value) || 0,
         );
+        const exam = findExamByID(examID);
+        const examScope = String((exam && exam.management_scope) || "same_school")
+          .trim()
+          .toLowerCase();
+        const ownerSchoolID = Number((exam && exam.owner_school_id) || 0);
+        if (examScope === "same_school" && ownerSchoolID > 0 && schoolID !== ownerSchoolID) {
+          deps.setMsg("Exam ini hanya bisa assign peserta dari sekolah pemilik ujian.");
+          return;
+        }
         if (schoolID <= 0 || classID <= 0) {
           deps.setMsg("Pilih sekolah dan kelas untuk enroll peserta.");
           return;

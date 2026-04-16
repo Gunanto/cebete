@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,7 @@ type mockExamService struct {
 	saveAnswerFn                     func(ctx context.Context, input SaveAnswerInput) error
 	submitAttemptFn                  func(ctx context.Context, attemptID int64) (*AttemptSummary, error)
 	getAttemptOwnerFn                func(ctx context.Context, attemptID int64) (int64, error)
+	canAccessAttemptFn               func(ctx context.Context, attemptID, actorID int64, actorRole string) error
 	logAttemptEventFn                func(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error)
 	listAttemptEventsFn              func(ctx context.Context, attemptID int64, limit int) ([]AttemptEvent, error)
 	listExamEventsFn                 func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error)
@@ -434,6 +436,27 @@ func (m *mockExamService) GetAttemptOwner(ctx context.Context, attemptID int64) 
 		return 0, errors.New("not implemented")
 	}
 	return m.getAttemptOwnerFn(ctx, attemptID)
+}
+
+func (m *mockExamService) CanAccessAttempt(ctx context.Context, attemptID, actorID int64, actorRole string) error {
+	if m.canAccessAttemptFn != nil {
+		return m.canAccessAttemptFn(ctx, attemptID, actorID, actorRole)
+	}
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	if role == "admin" || role == "proktor" || role == "guru" {
+		return nil
+	}
+	if m.getAttemptOwnerFn == nil {
+		return errors.New("not implemented")
+	}
+	ownerID, err := m.getAttemptOwnerFn(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	if ownerID != actorID {
+		return ErrAttemptForbidden
+	}
+	return nil
 }
 
 func (m *mockExamService) LogAttemptEvent(ctx context.Context, input AttemptEventInput) (*AttemptEvent, error) {
@@ -855,6 +878,1165 @@ func TestStartAttemptReturnsForbiddenOnExamScheduleWindow(t *testing.T) {
 	}
 }
 
+func TestCreateExamReturnsForbiddenWhenServiceDeniesScope(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		createExamFn: func(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error) {
+			called = true
+			return nil, ErrExamForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams", bytes.NewBufferString(`{"title":"Exam Scope","subject_id":1,"management_scope":"cross_school"}`))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.CreateExam(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if !called {
+		t.Fatal("create exam service should be called")
+	}
+}
+
+func TestUpdateExamReturnsForbiddenWhenServiceDeniesScope(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		updateExamFn: func(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error) {
+			called = true
+			return nil, ErrExamForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/exams/12", bytes.NewBufferString(`{"code":"EX-12","title":"Exam Scope","subject_id":1,"management_scope":"cross_school"}`))
+	req = withChiParam(req, "id", "12")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.UpdateExam(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if !called {
+		t.Fatal("update exam service should be called")
+	}
+}
+
+func TestResetExamAttemptForwardsArgs(t *testing.T) {
+	var (
+		gotExamID   int64
+		gotStudent  int64
+		gotActorID  int64
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		resetExamAttemptFn: func(ctx context.Context, examID, studentID, actorID int64) (int64, error) {
+			gotExamID = examID
+			gotStudent = studentID
+			gotActorID = actorID
+			return 55, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/reset-attempt", bytes.NewBufferString(`{"student_id":21}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ResetExamAttempt(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotStudent != 21 || gotActorID != 7 {
+		t.Fatalf("unexpected forwarded args: exam=%d student=%d actor=%d", gotExamID, gotStudent, gotActorID)
+	}
+}
+
+func TestResetExamAttemptForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		resetExamAttemptFn: func(ctx context.Context, examID, studentID, actorID int64) (int64, error) {
+			called = true
+			return 55, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/reset-attempt", bytes.NewBufferString(`{"student_id":21}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ResetExamAttempt(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestGenerateExamTokenForwardsArgs(t *testing.T) {
+	var (
+		gotExamID    int64
+		gotActorID   int64
+		gotTTLMinute int
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		generateExamTokenFn: func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {
+			gotExamID = examID
+			gotActorID = generatedBy
+			gotTTLMinute = ttlMinutes
+			return &ExamAccessToken{ExamID: examID, TTLMinutes: ttlMinutes, GeneratedBy: generatedBy}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/token/generate", bytes.NewBufferString(`{"ttl_minutes":45}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GenerateExamToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotActorID != 7 || gotTTLMinute != 45 {
+		t.Fatalf("unexpected forwarded args: exam=%d actor=%d ttl=%d", gotExamID, gotActorID, gotTTLMinute)
+	}
+}
+
+func TestGenerateExamTokenForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		generateExamTokenFn: func(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {
+			called = true
+			return &ExamAccessToken{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/token/generate", bytes.NewBufferString(`{"ttl_minutes":45}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GenerateExamToken(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestPublishExamTokenForwardsArgs(t *testing.T) {
+	var (
+		gotExamID  int64
+		gotActorID int64
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		publishExamTokenFn: func(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error) {
+			gotExamID = examID
+			gotActorID = publishedBy
+			return &ExamTokenPublish{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/token/publish", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.PublishExamToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotActorID != 7 {
+		t.Fatalf("unexpected forwarded args: exam=%d actor=%d", gotExamID, gotActorID)
+	}
+}
+
+func TestPublishExamTokenForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		publishExamTokenFn: func(ctx context.Context, examID, publishedBy int64) (*ExamTokenPublish, error) {
+			called = true
+			return &ExamTokenPublish{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/token/publish", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.PublishExamToken(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestDeleteExamForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		deleteExamFn: func(ctx context.Context, examID int64) error {
+			called = true
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.DeleteExam(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestRemoveExamAssignmentForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		removeExamAssignmentFn: func(ctx context.Context, examID, userID, actorID int64) error {
+			called = true
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/assignments/21", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "user_id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.RemoveExamAssignment(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamQuestionsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamQuestionsFn: func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error) {
+			called = true
+			return []ExamQuestionManageItem{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/questions", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamQuestions(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestSyncExamQuestionsByCodeForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		syncExamQuestionsByCodeFn: func(ctx context.Context, in SyncExamQuestionsByCodeInput) (*SyncExamQuestionsByCodeResult, error) {
+			called = true
+			return &SyncExamQuestionsByCodeResult{ExamID: in.ExamID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/questions/sync-by-code", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.SyncExamQuestionsByCode(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestUpsertExamQuestionIncidentForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		upsertExamQuestionIncidentFn: func(ctx context.Context, in UpsertExamQuestionIncidentInput) (*ExamQuestionIncidentResult, error) {
+			called = true
+			return &ExamQuestionIncidentResult{ExamID: in.ExamID, QuestionID: in.QuestionID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/questions/incident", bytes.NewBufferString(`{"question_id":11,"policy":"bonus"}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.UpsertExamQuestionIncident(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestGetExamQuestionDetailForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		getExamQuestionDetailFn: func(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error) {
+			called = true
+			return &ExamQuestionDetail{QuestionID: questionID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/questions/11", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "questionID", "11")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetExamQuestionDetail(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestUpsertExamQuestionForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		upsertExamQuestionFn: func(ctx context.Context, in UpsertExamQuestionInput) (*ExamQuestionManageItem, error) {
+			called = true
+			return &ExamQuestionManageItem{ExamID: in.ExamID, QuestionID: in.QuestionID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/questions", bytes.NewBufferString(`{"question_id":11,"seq_no":1,"weight":2}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.UpsertExamQuestion(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamQuestionCodeRulesForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamQuestionCodeRulesFn: func(ctx context.Context, examID int64) ([]ExamQuestionCodeRule, error) {
+			called = true
+			return []ExamQuestionCodeRule{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/question-code-rules", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamQuestionCodeRules(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestUpsertExamQuestionCodeRuleForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		upsertExamQuestionCodeRuleFn: func(ctx context.Context, in UpsertExamQuestionCodeRuleInput) (*ExamQuestionCodeRule, error) {
+			called = true
+			return &ExamQuestionCodeRule{ExamID: in.ExamID, QuestionCodeID: in.QuestionCodeID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/question-code-rules", bytes.NewBufferString(`{"question_code_id":11,"strategy":"all","weight":2}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.UpsertExamQuestionCodeRule(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestDeleteExamQuestionCodeRuleForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		deleteExamQuestionCodeRuleFn: func(ctx context.Context, examID, questionCodeID int64) error {
+			called = true
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/question-code-rules/11", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "questionCodeID", "11")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.DeleteExamQuestionCodeRule(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestDeleteExamQuestionForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		deleteExamQuestionFn: func(ctx context.Context, examID, questionID int64) error {
+			called = true
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/questions/11", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "questionID", "11")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.DeleteExamQuestion(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamParticipantResultsForwardsFilters(t *testing.T) {
+	var (
+		gotExamID       int64
+		gotLimit        int
+		gotOffset       int
+		gotAttempt      *int
+		gotClassFilter  *string
+		gotSchoolFilter *string
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		listExamParticipantResultsFn: func(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error) {
+			gotExamID = examID
+			gotLimit = limit
+			gotOffset = offset
+			gotAttempt = attemptFilter
+			gotClassFilter = classFilter
+			gotSchoolFilter = schoolFilter
+			return &ExamParticipantResult{ExamID: examID, Rows: []ExamParticipantResultRow{}}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/results?limit=50&offset=10&attempt=2&class=X%20IPA%201&school=SMA%201", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamParticipantResults(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotLimit != 50 || gotOffset != 10 {
+		t.Fatalf("unexpected pagination args: exam=%d limit=%d offset=%d", gotExamID, gotLimit, gotOffset)
+	}
+	if gotAttempt == nil || *gotAttempt != 2 {
+		t.Fatalf("expected attempt filter 2, got %+v", gotAttempt)
+	}
+	if gotClassFilter == nil || *gotClassFilter != "X IPA 1" {
+		t.Fatalf("expected class filter, got %+v", gotClassFilter)
+	}
+	if gotSchoolFilter == nil || *gotSchoolFilter != "SMA 1" {
+		t.Fatalf("expected school filter, got %+v", gotSchoolFilter)
+	}
+}
+
+func TestListExamAssignmentsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamAssignmentsFn: func(ctx context.Context, examID int64) ([]ExamAssignmentUser, error) {
+			called = true
+			return []ExamAssignmentUser{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/assignments", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamAssignments(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestExportExamParticipantResultsExcelForwardsSchoolFilter(t *testing.T) {
+	var gotSchoolFilter *string
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		exportExamParticipantResultsFn: func(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error) {
+			if examID != 9 {
+				t.Fatalf("unexpected examID %d", examID)
+			}
+			gotSchoolFilter = schoolFilter
+			return []byte("ok"), "hasil.xlsx", nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/results/export?school=SMA%201", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportExamParticipantResultsExcel(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotSchoolFilter == nil || *gotSchoolFilter != "SMA 1" {
+		t.Fatalf("expected school filter SMA 1, got %+v", gotSchoolFilter)
+	}
+}
+
+func TestExportExamScoreRecapExcelForwardsFilters(t *testing.T) {
+	var (
+		gotFinalScheme  string
+		gotClassFilter  *string
+		gotSchoolFilter *string
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		exportExamScoreRecapFn: func(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) ([]byte, string, error) {
+			if examID != 9 {
+				t.Fatalf("unexpected examID %d", examID)
+			}
+			gotFinalScheme = finalScheme
+			gotClassFilter = classFilter
+			gotSchoolFilter = schoolFilter
+			return []byte("ok"), "rekap.xlsx", nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/score-recap/export?final_scheme=average&class=X%20IPA%201&school=SMA%201", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportExamScoreRecapExcel(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotFinalScheme != "average" {
+		t.Fatalf("expected final scheme average, got %q", gotFinalScheme)
+	}
+	if gotClassFilter == nil || *gotClassFilter != "X IPA 1" {
+		t.Fatalf("expected class filter, got %+v", gotClassFilter)
+	}
+	if gotSchoolFilter == nil || *gotSchoolFilter != "SMA 1" {
+		t.Fatalf("expected school filter, got %+v", gotSchoolFilter)
+	}
+}
+
+func TestListExamParticipantResultsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamParticipantResultsFn: func(ctx context.Context, examID int64, limit, offset int, attemptFilter *int, classFilter, schoolFilter *string) (*ExamParticipantResult, error) {
+			called = true
+			return &ExamParticipantResult{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/results", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamParticipantResults(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestGetExamScoreRecapForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		getExamScoreRecapFn: func(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) (*ExamScoreRecap, error) {
+			called = true
+			return &ExamScoreRecap{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/score-recap", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetExamScoreRecap(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestGetExamScoreRecapStudentDetailForwardsArgs(t *testing.T) {
+	var (
+		gotExamID      int64
+		gotUserID      int64
+		gotFinalScheme string
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		getExamScoreRecapStudentDetailFn: func(ctx context.Context, examID, userID int64, finalScheme string) (*ExamScoreRecapStudentDetail, error) {
+			gotExamID = examID
+			gotUserID = userID
+			gotFinalScheme = finalScheme
+			return &ExamScoreRecapStudentDetail{ExamID: examID, UserID: userID, FinalScheme: finalScheme}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/score-recap/students/21?final_scheme=latest", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "user_id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetExamScoreRecapStudentDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotUserID != 21 {
+		t.Fatalf("unexpected args: exam=%d user=%d", gotExamID, gotUserID)
+	}
+	if gotFinalScheme != "latest" {
+		t.Fatalf("expected final scheme latest, got %q", gotFinalScheme)
+	}
+}
+
+func TestGetExamScoreRecapStudentDetailForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		getExamScoreRecapStudentDetailFn: func(ctx context.Context, examID, userID int64, finalScheme string) (*ExamScoreRecapStudentDetail, error) {
+			called = true
+			return &ExamScoreRecapStudentDetail{ExamID: examID, UserID: userID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/score-recap/students/21", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "user_id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetExamScoreRecapStudentDetail(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamLearningGoalResultsForwardsFilters(t *testing.T) {
+	var (
+		gotExamID      int64
+		gotAttempt     *int
+		gotClassFilter *string
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		listExamLearningGoalResultsFn: func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {
+			gotExamID = examID
+			gotAttempt = attemptFilter
+			gotClassFilter = classFilter
+			return &LearningGoalAchievementResult{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/learning-goal-results?attempt=2&class=X%20IPA%201", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamLearningGoalResults(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 {
+		t.Fatalf("expected exam id 9, got %d", gotExamID)
+	}
+	if gotAttempt == nil || *gotAttempt != 2 {
+		t.Fatalf("expected attempt filter 2, got %+v", gotAttempt)
+	}
+	if gotClassFilter == nil || *gotClassFilter != "X IPA 1" {
+		t.Fatalf("expected class filter, got %+v", gotClassFilter)
+	}
+}
+
+func TestListExamLearningGoalResultsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamLearningGoalResultsFn: func(ctx context.Context, examID int64, attemptFilter *int, classFilter *string) (*LearningGoalAchievementResult, error) {
+			called = true
+			return &LearningGoalAchievementResult{ExamID: examID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/learning-goal-results", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamLearningGoalResults(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestExportExamParticipantResultsExcelForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		exportExamParticipantResultsFn: func(ctx context.Context, examID int64, schoolFilter *string) ([]byte, string, error) {
+			called = true
+			return []byte("ok"), "hasil.xlsx", nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/results/export", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportExamParticipantResultsExcel(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestExportExamScoreRecapExcelForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		exportExamScoreRecapFn: func(ctx context.Context, examID int64, finalScheme string, classFilter, schoolFilter *string) ([]byte, string, error) {
+			called = true
+			return []byte("ok"), "rekap.xlsx", nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/score-recap/export", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ExportExamScoreRecapExcel(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestReplaceExamAssignmentsByClassReturnsForbiddenOnScopeViolation(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		replaceExamAssignmentsByClassFn: func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+			return nil, ErrExamForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/assignments/class/replace", bytes.NewBufferString(`{"school_id":4,"class_id":11}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ReplaceExamAssignmentsByClass(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	errBody, ok := body["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected structured error body, got %#v", body["error"])
+	}
+	if errBody["message"] != "forbidden" {
+		t.Fatalf("expected forbidden message, got %#v", errBody["message"])
+	}
+}
+
+func TestAppendExamAssignmentsByClassReturnsForbiddenOnScopeViolation(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		appendExamAssignmentsByClassFn: func(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+			return nil, ErrExamForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/exams/9/assignments/class/append", bytes.NewBufferString(`{"school_id":4,"class_id":11}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.AppendExamAssignmentsByClass(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	errBody, ok := body["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected structured error body, got %#v", body["error"])
+	}
+	if errBody["message"] != "forbidden" {
+		t.Fatalf("expected forbidden message, got %#v", errBody["message"])
+	}
+}
+
+func TestDeleteExamAttemptForwardsActorContext(t *testing.T) {
+	var (
+		gotExamID    int64
+		gotAttemptID int64
+		gotActorID   int64
+		gotActorRole string
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		deleteExamAttemptFn: func(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error) {
+			gotExamID = examID
+			gotAttemptID = attemptID
+			gotActorID = actorID
+			gotActorRole = actorRole
+			return attemptID, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/attempts/31", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "attemptID", "31")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.DeleteExamAttempt(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotAttemptID != 31 || gotActorID != 7 || gotActorRole != "guru" {
+		t.Fatalf("unexpected forwarded args: exam=%d attempt=%d actor=%d role=%q", gotExamID, gotAttemptID, gotActorID, gotActorRole)
+	}
+}
+
+func TestDeleteExamAttemptForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		deleteExamAttemptFn: func(ctx context.Context, examID, attemptID, actorID int64, actorRole string) (int64, error) {
+			called = true
+			return attemptID, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/attempts/31", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "attemptID", "31")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.DeleteExamAttempt(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamEventsForwardsLimit(t *testing.T) {
+	var (
+		gotExamID int64
+		gotLimit  int
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		listExamEventsFn: func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error) {
+			gotExamID = examID
+			gotLimit = limit
+			return []AttemptEvent{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/events?limit=75", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamEvents(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotLimit != 75 {
+		t.Fatalf("unexpected args: exam=%d limit=%d", gotExamID, gotLimit)
+	}
+}
+
+func TestListExamEventsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamEventsFn: func(ctx context.Context, examID int64, limit int) ([]AttemptEvent, error) {
+			called = true
+			return []AttemptEvent{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/events?limit=75", nil)
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamEvents(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
+func TestListExamClassEventsForwardsArgs(t *testing.T) {
+	var (
+		gotExamID  int64
+		gotClassID int64
+		gotLimit   int
+	)
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		listExamClassEventsFn: func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error) {
+			gotExamID = examID
+			gotClassID = classID
+			gotLimit = limit
+			return []AttemptEvent{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/classes/21/events?limit=50", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "class_id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamClassEvents(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if gotExamID != 9 || gotClassID != 21 || gotLimit != 50 {
+		t.Fatalf("unexpected args: exam=%d class=%d limit=%d", gotExamID, gotClassID, gotLimit)
+	}
+}
+
+func TestListExamClassEventsForbiddenForNonOwnerGuru(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+		listExamClassEventsFn: func(ctx context.Context, examID int64, classID int64, limit int) ([]AttemptEvent, error) {
+			called = true
+			return []AttemptEvent{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/exams/9/classes/21/events?limit=50", nil)
+	req = withChiParam(req, "id", "9")
+	req = withChiParam(req, "class_id", "21")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.ListExamClassEvents(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when guru is not exam owner")
+	}
+}
+
 func TestSaveAnswerForbiddenForNonOwner(t *testing.T) {
 	saveCalled := false
 	h := NewHandler(&mockExamService{
@@ -950,6 +2132,85 @@ func TestResultPolicyDenied(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	h.Result(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+}
+
+func TestGetAttemptLearningGoalResultForbiddenWhenAttemptAccessDenied(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		canAccessAttemptFn: func(ctx context.Context, attemptID, actorID int64, actorRole string) error {
+			return ErrAttemptForbidden
+		},
+		getAttemptLearningGoalResultFn: func(ctx context.Context, attemptID int64) (*AttemptLearningGoalResult, error) {
+			called = true
+			return &AttemptLearningGoalResult{AttemptID: attemptID}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/55/learning-goal-result", nil)
+	req = withChiParam(req, "id", "55")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetAttemptLearningGoalResult(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when attempt access is denied")
+	}
+}
+
+func TestGetAttemptStudentSchoolInfoForbiddenWhenAttemptAccessDenied(t *testing.T) {
+	called := false
+	h := NewHandler(&mockExamService{
+		canAccessAttemptFn: func(ctx context.Context, attemptID, actorID int64, actorRole string) error {
+			return ErrAttemptForbidden
+		},
+		getAttemptStudentSchoolInfoFn: func(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error) {
+			called = true
+			return &AttemptStudentSchoolInfo{AttemptID: attemptID, ExamID: 9}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/55/student-school", nil)
+	req = withChiParam(req, "id", "55")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetAttemptStudentSchoolInfo(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	if called {
+		t.Fatal("service should not be called when attempt access is denied")
+	}
+}
+
+func TestGetAttemptStudentSchoolInfoForbiddenWhenGuruNotExamOwner(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		canAccessAttemptFn: func(ctx context.Context, attemptID, actorID int64, actorRole string) error {
+			return nil
+		},
+		getAttemptStudentSchoolInfoFn: func(ctx context.Context, attemptID int64) (*AttemptStudentSchoolInfo, error) {
+			return &AttemptStudentSchoolInfo{AttemptID: attemptID, ExamID: 9}, nil
+		},
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return false, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/attempts/55/student-school", nil)
+	req = withChiParam(req, "id", "55")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.GetAttemptStudentSchoolInfo(w, req)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)

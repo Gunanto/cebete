@@ -1580,6 +1580,7 @@
                                     <th>ID</th>
                                     <th>Nama Ujian</th>
                                     <th>Mapel</th>
+                                    <th>Scope</th>
                                     <th>Mulai</th>
                                     <th>Selesai</th>
                                     <th>Lihat Hasil</th>
@@ -1593,7 +1594,7 @@
                             </thead>
                             <tbody id="guru-exams-body">
                                 <tr>
-                                    <td colspan="12" class="muted">
+                                    <td colspan="13" class="muted">
                                         Belum ada data ujian.
                                     </td>
                                 </tr>
@@ -2714,6 +2715,15 @@
                     Mata Pelajaran (Mapel)
                     <select id="guru-exam-subject" name="subject_id" required>
                         <option value="">Pilih mapel...</option>
+                    </select>
+                </label>
+                <label>
+                    Cakupan Pengelolaan
+                    <select name="management_scope">
+                        <option value="same_school">Sekolah Saya</option>
+                        <option value="cross_school">
+                            Lintas Sekolah (butuh hak khusus)
+                        </option>
                     </select>
                 </label>
                 <label>

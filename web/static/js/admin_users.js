@@ -41,6 +41,14 @@
     );
   }
 
+  function isGuruRole(role) {
+    return (
+      String(role || "")
+        .trim()
+        .toLowerCase() === "guru"
+    );
+  }
+
   function schoolLabel(it) {
     const name = String((it && it.name) || "").trim();
     const code = String((it && it.code) || "").trim();
@@ -53,6 +61,16 @@
     const grade = String((it && it.grade_level) || "").trim();
     if (!name) return "-";
     return grade ? grade + " - " + name : name;
+  }
+
+  function roleLabelWithProfile(item) {
+    const role = String((item && item.role) || "").trim().toLowerCase();
+    if (role !== "guru") return role || "-";
+    const profile = String((item && item.teacher_access_profile) || "school")
+      .trim()
+      .toLowerCase();
+    const profileLabel = profile === "cross_school" ? "lintas sekolah" : "sekolah sendiri";
+    return role + " (" + profileLabel + ")";
   }
 
   function resetClassSelect(selectEl, placeholder) {
@@ -168,6 +186,7 @@
     const participantNoEl = formEl.elements.namedItem("participant_no");
     const nisnEl = formEl.elements.namedItem("nisn");
     const managedSchoolsEl = formEl.elements.namedItem("managed_school_ids");
+    const teacherAccessEl = formEl.elements.namedItem("teacher_access_profile");
     if (!roleEl || !schoolEl || !classEl) return;
 
     const mustHaveClass = isStudentRole(roleEl.value);
@@ -177,6 +196,7 @@
     if (nisnEl) nisnEl.required = mustHaveClass;
     if (managedSchoolsEl)
       managedSchoolsEl.required = isProktorRole(roleEl.value);
+    if (teacherAccessEl) teacherAccessEl.required = isGuruRole(roleEl.value);
 
     const schoolLabel = schoolEl.closest("label");
     const classLabel = classEl.closest("label");
@@ -188,6 +208,9 @@
     const schoolCodeLabel = schoolCodeEl ? schoolCodeEl.closest("label") : null;
     const managedSchoolsLabel = managedSchoolsEl
       ? managedSchoolsEl.closest("label")
+      : null;
+    const teacherAccessLabel = teacherAccessEl
+      ? teacherAccessEl.closest("label")
       : null;
     if (schoolLabel) {
       schoolLabel.dataset.requiredRole = mustHaveClass ? "siswa" : "";
@@ -208,6 +231,12 @@
       managedSchoolsLabel.hidden = !isProktorRole(roleEl.value);
       managedSchoolsLabel.dataset.requiredRole = isProktorRole(roleEl.value)
         ? "proktor"
+        : "";
+    }
+    if (teacherAccessLabel) {
+      teacherAccessLabel.hidden = !isGuruRole(roleEl.value);
+      teacherAccessLabel.dataset.requiredRole = isGuruRole(roleEl.value)
+        ? "guru"
         : "";
     }
   }
@@ -408,7 +437,7 @@
         "<td>" + deps.escapeHtml(String(it.id || "")) + "</td>",
         "<td>" + deps.escapeHtml(it.username || "") + "</td>",
         "<td>" + deps.escapeHtml(it.full_name || "") + "</td>",
-        "<td>" + deps.escapeHtml(it.role || "") + "</td>",
+        "<td>" + deps.escapeHtml(roleLabelWithProfile(it)) + "</td>",
         "<td>" + deps.escapeHtml(it.school_name || "-") + "</td>",
         "<td>" + deps.escapeHtml(it.school_city || "-") + "</td>",
         "<td>" + deps.escapeHtml(it.participant_no || "-") + "</td>",
@@ -698,6 +727,13 @@
             deps.userUpdateForm.elements.namedItem("role").value = String(
               userItem.role || "siswa",
             );
+            const teacherAccessField =
+              deps.userUpdateForm.elements.namedItem("teacher_access_profile");
+            if (teacherAccessField) {
+              teacherAccessField.value = String(
+                userItem.teacher_access_profile || "school",
+              );
+            }
             applyUserFormRoleRequirements(deps.userUpdateForm);
             deps.userUpdateForm.elements.namedItem("password").value = "";
             fillSchoolSelect(
@@ -804,6 +840,11 @@
           const role = String(fd.get("role") || "")
             .trim()
             .toLowerCase();
+          const teacherAccessProfile = String(
+            fd.get("teacher_access_profile") || "school",
+          )
+            .trim()
+            .toLowerCase();
           const participantNo = String(fd.get("participant_no") || "").trim();
           const nisn = String(fd.get("nisn") || "").trim();
           const schoolCode = schoolCodeByID(schoolID);
@@ -858,6 +899,7 @@
             school_id: schoolID,
             class_id: classID,
             managed_school_ids: managedSchoolIDs,
+            teacher_access_profile: teacherAccessProfile,
           });
           pretty(deps.regOut, out);
           deps.setMsg("Pengguna berhasil dibuat.");
@@ -926,6 +968,11 @@
           const role = String(fd.get("role") || "")
             .trim()
             .toLowerCase();
+          const teacherAccessProfile = String(
+            fd.get("teacher_access_profile") || "school",
+          )
+            .trim()
+            .toLowerCase();
           const participantNo = String(fd.get("participant_no") || "").trim();
           const nisn = String(fd.get("nisn") || "").trim();
           const schoolCode = schoolCodeByID(schoolID);
@@ -979,6 +1026,7 @@
             school_id: schoolID === null ? 0 : schoolID,
             class_id: classID === null ? 0 : classID,
             managed_school_ids: managedSchoolIDs,
+            teacher_access_profile: teacherAccessProfile,
           });
           pretty(deps.regOut, out);
           deps.setMsg("Pengguna berhasil diperbarui.");

@@ -61,6 +61,31 @@ type Service struct {
 	defaultExamMinutes int
 }
 
+const (
+	teacherAccessProfileSchool      = "school"
+	teacherAccessProfileCrossSchool = "cross_school"
+	examManagementScopeSameSchool   = "same_school"
+	examManagementScopeCrossSchool  = "cross_school"
+)
+
+func normalizeTeacherAccessProfile(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case teacherAccessProfileCrossSchool:
+		return teacherAccessProfileCrossSchool
+	default:
+		return teacherAccessProfileSchool
+	}
+}
+
+func normalizeExamManagementScope(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case examManagementScopeCrossSchool:
+		return examManagementScopeCrossSchool
+	default:
+		return examManagementScopeSameSchool
+	}
+}
+
 func currentScopedProktor(ctx context.Context) (*auth.User, bool) {
 	user, ok := auth.CurrentUser(ctx)
 	if !ok || user == nil || user.Role != "proktor" {
@@ -209,6 +234,188 @@ func (s *Service) ensureProktorAttemptScope(ctx context.Context, attemptID int64
 	return nil
 }
 
+func (s *Service) loadTeacherAccessProfile(ctx context.Context, userID int64) (string, error) {
+	if userID <= 0 {
+		return "", ErrInvalidInput
+	}
+	var profile sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT teacher_access_profile
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, userID).Scan(&profile); err != nil {
+		if isUndefinedColumnErr(err, "users", "teacher_access_profile") {
+			var role string
+			if roleErr := s.db.QueryRowContext(ctx, `
+				SELECT role
+				FROM users
+				WHERE id = $1
+				  AND is_active = TRUE
+			`, userID).Scan(&role); roleErr != nil {
+				if errors.Is(roleErr, sql.ErrNoRows) {
+					return "", ErrUserNotFound
+				}
+				return "", fmt.Errorf("load teacher role: %w", roleErr)
+			}
+			_ = role
+			return teacherAccessProfileSchool, nil
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", fmt.Errorf("load teacher access profile: %w", err)
+	}
+	return normalizeTeacherAccessProfile(profile.String), nil
+}
+
+func (s *Service) loadUserPrimarySchoolID(ctx context.Context, userID int64) (*int64, error) {
+	if userID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	var schoolID sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT school_id
+		FROM enrollments
+		WHERE user_id = $1
+		  AND status = 'active'
+		ORDER BY enrolled_at DESC, id DESC
+		LIMIT 1
+	`, userID).Scan(&schoolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load user primary school: %w", err)
+	}
+	if !schoolID.Valid || schoolID.Int64 <= 0 {
+		return nil, nil
+	}
+	v := schoolID.Int64
+	return &v, nil
+}
+
+func (s *Service) loadExamOwnerSchoolFromCreator(ctx context.Context, examID int64) (*int64, error) {
+	if examID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	var schoolID sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT enr.school_id
+		FROM exams e
+		LEFT JOIN LATERAL (
+			SELECT e2.school_id
+			FROM enrollments e2
+			WHERE e2.user_id = e.created_by
+			  AND e2.status = 'active'
+			ORDER BY e2.enrolled_at DESC, e2.id DESC
+			LIMIT 1
+		) enr ON TRUE
+		WHERE e.id = $1
+	`, examID).Scan(&schoolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrExamNotFound
+		}
+		return nil, fmt.Errorf("load exam owner school from creator: %w", err)
+	}
+	if !schoolID.Valid || schoolID.Int64 <= 0 {
+		return nil, nil
+	}
+	v := schoolID.Int64
+	return &v, nil
+}
+
+func (s *Service) loadExamManagementScope(ctx context.Context, examID int64) (string, *int64, error) {
+	if examID <= 0 {
+		return "", nil, ErrInvalidInput
+	}
+	var scopeRaw sql.NullString
+	var ownerSchoolID sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT management_scope, owner_school_id
+		FROM exams
+		WHERE id = $1
+	`, examID).Scan(&scopeRaw, &ownerSchoolID); err != nil {
+		if isUndefinedColumnErr(err, "exams", "management_scope") || isUndefinedColumnErr(err, "exams", "owner_school_id") {
+			schoolID, fallbackErr := s.loadExamOwnerSchoolFromCreator(ctx, examID)
+			if fallbackErr != nil {
+				return "", nil, fallbackErr
+			}
+			return examManagementScopeSameSchool, schoolID, nil
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil, ErrExamNotFound
+		}
+		return "", nil, fmt.Errorf("load exam management scope: %w", err)
+	}
+	scope := normalizeExamManagementScope(scopeRaw.String)
+	var outOwnerSchoolID *int64
+	if ownerSchoolID.Valid && ownerSchoolID.Int64 > 0 {
+		v := ownerSchoolID.Int64
+		outOwnerSchoolID = &v
+	}
+	if scope == examManagementScopeSameSchool && outOwnerSchoolID == nil {
+		fallbackOwnerSchoolID, err := s.loadExamOwnerSchoolFromCreator(ctx, examID)
+		if err != nil && !errors.Is(err, ErrExamNotFound) {
+			return "", nil, err
+		}
+		outOwnerSchoolID = fallbackOwnerSchoolID
+	}
+	return scope, outOwnerSchoolID, nil
+}
+
+func (s *Service) loadExamActorRole(ctx context.Context) string {
+	user, ok := auth.CurrentUser(ctx)
+	if !ok || user == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(user.Role))
+}
+
+func (s *Service) ensureUserInSchool(ctx context.Context, userID, schoolID int64) error {
+	if userID <= 0 || schoolID <= 0 {
+		return ErrInvalidInput
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM enrollments
+			WHERE user_id = $1
+			  AND school_id = $2
+			  AND status = 'active'
+		)
+	`, userID, schoolID).Scan(&allowed); err != nil {
+		return fmt.Errorf("check user school scope: %w", err)
+	}
+	if !allowed {
+		return ErrExamForbidden
+	}
+	return nil
+}
+
+func (s *Service) ensureStudentWithinExamScope(ctx context.Context, examID, studentID int64) error {
+	if examID <= 0 || studentID <= 0 {
+		return ErrInvalidInput
+	}
+	scope, ownerSchoolID, err := s.loadExamManagementScope(ctx, examID)
+	if err != nil {
+		return err
+	}
+	if scope != examManagementScopeSameSchool {
+		return nil
+	}
+	if ownerSchoolID == nil || *ownerSchoolID <= 0 {
+		return ErrAttemptForbidden
+	}
+	if err := s.ensureUserInSchool(ctx, studentID, *ownerSchoolID); err != nil {
+		if errors.Is(err, ErrExamForbidden) {
+			return ErrAttemptForbidden
+		}
+		return err
+	}
+	return nil
+}
+
 type Attempt struct {
 	ID        int64     `json:"id"`
 	ExamID    int64     `json:"exam_id"`
@@ -321,6 +528,8 @@ type ExamAdminRecord struct {
 	ID                 int64      `json:"id"`
 	Code               string     `json:"code"`
 	Title              string     `json:"title"`
+	ManagementScope    string     `json:"management_scope"`
+	OwnerSchoolID      *int64     `json:"owner_school_id,omitempty"`
 	SubjectID          int64      `json:"subject_id"`
 	SubjectName        string     `json:"subject_name"`
 	EducationLevel     string     `json:"education_level"`
@@ -344,6 +553,7 @@ type ExamAdminRecord struct {
 type CreateExamInput struct {
 	Code               string
 	Title              string
+	ManagementScope    string
 	SubjectID          int64
 	KKTP               float64
 	DurationMinutes    int
@@ -361,6 +571,7 @@ type UpdateExamInput struct {
 	ID                 int64
 	Code               string
 	Title              string
+	ManagementScope    string
 	SubjectID          int64
 	KKTP               float64
 	DurationMinutes    int
@@ -961,6 +1172,11 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 	if err := validateExamScheduleWindow(now, examStartAt, examEndAt); err != nil {
 		return nil, err
 	}
+	if !isSimulation {
+		if err := s.ensureStudentWithinExamScope(ctx, examID, studentID); err != nil {
+			return nil, err
+		}
+	}
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, exam_id, student_id, status, started_at, expires_at
 		FROM attempts
@@ -1129,6 +1345,9 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
 		return nil, err
 	}
+	if err := s.ensureStudentWithinExamScope(ctx, examID, studentID); err != nil {
+		return nil, err
+	}
 
 	if maxAttempts <= 0 {
 		maxAttempts = 1
@@ -1223,6 +1442,15 @@ func (s *Service) PreviewExamByTokenForStaff(ctx context.Context, examToken stri
 		s.lookupExamByToken(ctx, examToken)
 	if err != nil {
 		return nil, err
+	}
+	if user, ok := auth.CurrentUser(ctx); ok && user != nil && strings.EqualFold(strings.TrimSpace(user.Role), "guru") {
+		owned, err := s.IsExamOwnedBy(ctx, examID, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, ErrExamForbidden
+		}
 	}
 	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
 		return nil, err
@@ -1604,6 +1832,12 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 		); err != nil {
 			return nil, fmt.Errorf("scan published exams: %w", err)
 		}
+		if err := s.ensureStudentWithinExamScope(ctx, it.ID, studentID); err != nil {
+			if errors.Is(err, ErrAttemptForbidden) || errors.Is(err, ErrExamForbidden) {
+				continue
+			}
+			return nil, err
+		}
 		if !canStudentSeePublishedExam(hasAssignment, isNonRegular, allowNonRegular) {
 			continue
 		}
@@ -1845,11 +2079,29 @@ func (s *Service) ListAdminExamsByOwner(ctx context.Context, ownerID int64, incl
 
 func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, ownerID *int64) ([]ExamAdminRecord, error) {
 	user, isProktor := currentScopedProktor(ctx)
+	hasManagementScope, err := hasColumn(ctx, s.db, "exams", "management_scope")
+	if err != nil {
+		return nil, err
+	}
+	hasOwnerSchoolID, err := hasColumn(ctx, s.db, "exams", "owner_school_id")
+	if err != nil {
+		return nil, err
+	}
+	managementScopeSelect := `'same_school'::text AS management_scope`
+	if hasManagementScope {
+		managementScopeSelect = `COALESCE(NULLIF(btrim(e.management_scope), ''), 'same_school') AS management_scope`
+	}
+	ownerSchoolSelect := `NULL::bigint AS owner_school_id`
+	if hasOwnerSchoolID {
+		ownerSchoolSelect = `e.owner_school_id`
+	}
 	query := `
 		SELECT
 			e.id,
 			e.code,
 			e.title,
+			` + managementScopeSelect + `,
+			` + ownerSchoolSelect + `,
 			e.subject_id,
 			s.name AS subject_name,
 			s.education_level,
@@ -1908,6 +2160,8 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 					e.id,
 					e.code,
 					e.title,
+					` + managementScopeSelect + `,
+					` + ownerSchoolSelect + `,
 					e.subject_id,
 					s.name AS subject_name,
 					s.education_level,
@@ -1957,10 +2211,13 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 		var startAt sql.NullTime
 		var endAt sql.NullTime
 		var createdBy sql.NullInt64
+		var ownerSchoolID sql.NullInt64
 		if err := rows.Scan(
 			&it.ID,
 			&it.Code,
 			&it.Title,
+			&it.ManagementScope,
+			&ownerSchoolID,
 			&it.SubjectID,
 			&it.SubjectName,
 			&it.EducationLevel,
@@ -1991,6 +2248,11 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 		if createdBy.Valid {
 			it.CreatedBy = &createdBy.Int64
 		}
+		it.ManagementScope = normalizeExamManagementScope(it.ManagementScope)
+		if ownerSchoolID.Valid && ownerSchoolID.Int64 > 0 {
+			v := ownerSchoolID.Int64
+			it.OwnerSchoolID = &v
+		}
 		items = append(items, it)
 	}
 	if err := rows.Err(); err != nil {
@@ -2002,6 +2264,7 @@ func (s *Service) listAdminExams(ctx context.Context, includeInactive bool, owne
 func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdminRecord, error) {
 	in.Code = strings.ToUpper(strings.TrimSpace(in.Code))
 	in.Title = strings.TrimSpace(in.Title)
+	in.ManagementScope = normalizeExamManagementScope(in.ManagementScope)
 	in.ReviewPolicy = normalizeReviewPolicy(in.ReviewPolicy)
 	if in.Title == "" || in.SubjectID <= 0 || in.CreatedBy <= 0 {
 		return nil, ErrInvalidInput
@@ -2016,8 +2279,38 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 	if _, isProktor := currentScopedProktor(ctx); isProktor {
 		return nil, ErrExamForbidden
 	}
+	var err error
+	actor, hasActor := auth.CurrentUser(ctx)
+	isGuruActor := hasActor && actor != nil && strings.EqualFold(strings.TrimSpace(actor.Role), "guru")
+	var ownerSchoolID *int64
+	if in.ManagementScope == examManagementScopeSameSchool {
+		ownerSchoolID, err = s.loadUserPrimarySchoolID(ctx, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if isGuruActor && (ownerSchoolID == nil || *ownerSchoolID <= 0) {
+			return nil, ErrExamTenantRequired
+		}
+	}
+	if isGuruActor {
+		profile, err := s.loadTeacherAccessProfile(ctx, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if in.ManagementScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+	}
 
 	examHasTenant, err := hasColumn(ctx, s.db, "exams", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	examHasManagementScope, err := hasColumn(ctx, s.db, "exams", "management_scope")
+	if err != nil {
+		return nil, err
+	}
+	examHasOwnerSchoolID, err := hasColumn(ctx, s.db, "exams", "owner_school_id")
 	if err != nil {
 		return nil, err
 	}
@@ -2047,6 +2340,16 @@ func (s *Service) CreateExam(ctx context.Context, in CreateExamInput) (*ExamAdmi
 			code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts,
 			in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions,
 			in.AllowNonRegular, in.CreatedBy,
+		}
+		if examHasManagementScope {
+			columns = append(columns, "management_scope")
+			values = append(values, fmt.Sprintf("$%d", len(args)+1))
+			args = append(args, in.ManagementScope)
+		}
+		if examHasOwnerSchoolID {
+			columns = append(columns, "owner_school_id")
+			values = append(values, fmt.Sprintf("$%d", len(args)+1))
+			args = append(args, nullInt64Ptr(ownerSchoolID))
 		}
 		if examHasTenant {
 			columns = append(columns, "tenant_id")
@@ -2129,8 +2432,12 @@ func (s *Service) IsExamOwnedBy(ctx context.Context, examID, ownerID int64) (boo
 }
 
 func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdminRecord, error) {
+	scopeProvided := strings.TrimSpace(in.ManagementScope) != ""
 	in.Code = strings.ToUpper(strings.TrimSpace(in.Code))
 	in.Title = strings.TrimSpace(in.Title)
+	if scopeProvided {
+		in.ManagementScope = normalizeExamManagementScope(in.ManagementScope)
+	}
 	in.ReviewPolicy = normalizeReviewPolicy(in.ReviewPolicy)
 	if in.ID <= 0 || in.Code == "" || in.Title == "" || in.SubjectID <= 0 {
 		return nil, ErrInvalidInput
@@ -2145,8 +2452,54 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 	if err := s.ensureProktorExamScope(ctx, in.ID); err != nil {
 		return nil, err
 	}
-	var outID int64
-	if err := s.db.QueryRowContext(ctx, `
+
+	existingScope, existingOwnerSchoolID, err := s.loadExamManagementScope(ctx, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	targetScope := existingScope
+	if scopeProvided {
+		targetScope = in.ManagementScope
+	}
+	ownerSchoolID := existingOwnerSchoolID
+
+	actor, hasActor := auth.CurrentUser(ctx)
+	isGuruActor := hasActor && actor != nil && strings.EqualFold(strings.TrimSpace(actor.Role), "guru")
+	if isGuruActor {
+		profile, err := s.loadTeacherAccessProfile(ctx, actor.ID)
+		if err != nil {
+			return nil, err
+		}
+		if targetScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+		if targetScope == examManagementScopeSameSchool {
+			ownerSchoolID, err = s.loadUserPrimarySchoolID(ctx, actor.ID)
+			if err != nil {
+				return nil, err
+			}
+			if ownerSchoolID == nil || *ownerSchoolID <= 0 {
+				return nil, ErrExamTenantRequired
+			}
+		}
+	}
+	if targetScope == examManagementScopeSameSchool && (ownerSchoolID == nil || *ownerSchoolID <= 0) {
+		ownerSchoolID, err = s.loadExamOwnerSchoolFromCreator(ctx, in.ID)
+		if err != nil && !errors.Is(err, ErrExamNotFound) {
+			return nil, err
+		}
+	}
+
+	examHasManagementScope, err := hasColumn(ctx, s.db, "exams", "management_scope")
+	if err != nil {
+		return nil, err
+	}
+	examHasOwnerSchoolID, err := hasColumn(ctx, s.db, "exams", "owner_school_id")
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
 		UPDATE exams
 		SET code = $2,
 			title = $3,
@@ -2161,9 +2514,26 @@ func (s *Service) UpdateExam(ctx context.Context, in UpdateExamInput) (*ExamAdmi
 			randomize_options = $12,
 			allow_non_regular_self_enroll = $13,
 			is_active = $14
+	`
+	args := []any{
+		in.ID, in.Code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts,
+		in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions,
+		in.AllowNonRegular, in.IsActive,
+	}
+	if examHasManagementScope {
+		query += fmt.Sprintf(", management_scope = $%d", len(args)+1)
+		args = append(args, targetScope)
+	}
+	if examHasOwnerSchoolID {
+		query += fmt.Sprintf(", owner_school_id = $%d", len(args)+1)
+		args = append(args, nullInt64Ptr(ownerSchoolID))
+	}
+	query += `
 		WHERE id = $1
 		RETURNING id
-	`, in.ID, in.Code, in.Title, in.SubjectID, in.KKTP, in.DurationMinutes, in.MaxAttempts, in.StartAt, in.EndAt, in.ReviewPolicy, in.RandomizeQuestions, in.RandomizeOptions, in.AllowNonRegular, in.IsActive).Scan(&outID); err != nil {
+	`
+	var outID int64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&outID); err != nil {
 		if in.ReviewPolicy == "score_only" && isReviewPolicyConstraintErr(err) {
 			return nil, ErrReviewPolicySchema
 		}
@@ -2207,11 +2577,29 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
 		return nil, err
 	}
+	hasManagementScope, err := hasColumn(ctx, s.db, "exams", "management_scope")
+	if err != nil {
+		return nil, err
+	}
+	hasOwnerSchoolID, err := hasColumn(ctx, s.db, "exams", "owner_school_id")
+	if err != nil {
+		return nil, err
+	}
+	managementScopeSelect := `'same_school'::text AS management_scope`
+	if hasManagementScope {
+		managementScopeSelect = `COALESCE(NULLIF(btrim(e.management_scope), ''), 'same_school') AS management_scope`
+	}
+	ownerSchoolSelect := `NULL::bigint AS owner_school_id`
+	if hasOwnerSchoolID {
+		ownerSchoolSelect = `e.owner_school_id`
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			e.id,
 			e.code,
 			e.title,
+			`+managementScopeSelect+`,
+			`+ownerSchoolSelect+`,
 			e.subject_id,
 			s.name AS subject_name,
 			s.education_level,
@@ -2252,6 +2640,8 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 					e.id,
 					e.code,
 					e.title,
+					`+managementScopeSelect+`,
+					`+ownerSchoolSelect+`,
 					e.subject_id,
 					s.name AS subject_name,
 					s.education_level,
@@ -2292,10 +2682,13 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 	var startAt sql.NullTime
 	var endAt sql.NullTime
 	var createdBy sql.NullInt64
+	var ownerSchoolID sql.NullInt64
 	if err := rows.Scan(
 		&it.ID,
 		&it.Code,
 		&it.Title,
+		&it.ManagementScope,
+		&ownerSchoolID,
 		&it.SubjectID,
 		&it.SubjectName,
 		&it.EducationLevel,
@@ -2325,6 +2718,11 @@ func (s *Service) GetExamAdminByID(ctx context.Context, examID int64) (*ExamAdmi
 	}
 	if createdBy.Valid {
 		it.CreatedBy = &createdBy.Int64
+	}
+	it.ManagementScope = normalizeExamManagementScope(it.ManagementScope)
+	if ownerSchoolID.Valid && ownerSchoolID.Int64 > 0 {
+		v := ownerSchoolID.Int64
+		it.OwnerSchoolID = &v
 	}
 	return &it, nil
 }
@@ -4070,6 +4468,34 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
+	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	actorRole := s.loadExamActorRole(ctx)
+	if actorRole == "guru" {
+		profile, err := s.loadTeacherAccessProfile(ctx, in.AssignedBy)
+		if err != nil {
+			return nil, err
+		}
+		if examScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+	}
+	if examScope == examManagementScopeSameSchool {
+		if ownerSchoolID == nil || *ownerSchoolID <= 0 {
+			return nil, ErrExamForbidden
+		}
+		if actorRole == "guru" {
+			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			if err != nil {
+				return nil, err
+			}
+			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+				return nil, ErrExamForbidden
+			}
+		}
+	}
 	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
 	if err != nil {
 		return nil, err
@@ -4100,6 +4526,11 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	for _, userID := range ids {
 		if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
 			return nil, err
+		}
+		if examScope == examManagementScopeSameSchool {
+			if err := s.ensureUserInSchool(ctx, userID, *ownerSchoolID); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -4173,6 +4604,34 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
+	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	actorRole := s.loadExamActorRole(ctx)
+	if actorRole == "guru" {
+		profile, err := s.loadTeacherAccessProfile(ctx, in.AssignedBy)
+		if err != nil {
+			return nil, err
+		}
+		if examScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+	}
+	if examScope == examManagementScopeSameSchool {
+		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+			return nil, ErrExamForbidden
+		}
+		if actorRole == "guru" {
+			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			if err != nil {
+				return nil, err
+			}
+			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+				return nil, ErrExamForbidden
+			}
+		}
+	}
 	if err := s.ensureProktorSchoolScope(ctx, in.SchoolID); err != nil {
 		return nil, err
 	}
@@ -4236,6 +4695,34 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 	}
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
+	}
+	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	actorRole := s.loadExamActorRole(ctx)
+	if actorRole == "guru" {
+		profile, err := s.loadTeacherAccessProfile(ctx, in.AssignedBy)
+		if err != nil {
+			return nil, err
+		}
+		if examScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+	}
+	if examScope == examManagementScopeSameSchool {
+		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+			return nil, ErrExamForbidden
+		}
+		if actorRole == "guru" {
+			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			if err != nil {
+				return nil, err
+			}
+			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+				return nil, ErrExamForbidden
+			}
+		}
 	}
 	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
 	if err != nil {
@@ -5436,6 +5923,52 @@ func (s *Service) GetAttemptOwner(ctx context.Context, attemptID int64) (int64, 
 	return studentID, nil
 }
 
+func (s *Service) CanAccessAttempt(ctx context.Context, attemptID, actorID int64, actorRole string) error {
+	if attemptID <= 0 {
+		return ErrInvalidInput
+	}
+	row, err := s.loadAttemptRow(ctx, s.db, attemptID)
+	if err != nil {
+		return err
+	}
+
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	switch role {
+	case "admin":
+		return nil
+	case "siswa":
+		if actorID <= 0 {
+			return ErrInvalidInput
+		}
+		if row.StudentID != actorID {
+			return ErrAttemptForbidden
+		}
+		return nil
+	case "guru":
+		if actorID <= 0 {
+			return ErrInvalidInput
+		}
+		owned, err := s.IsExamOwnedBy(ctx, row.ExamID, actorID)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			return ErrAttemptForbidden
+		}
+		return nil
+	case "proktor":
+		if err := s.ensureProktorAttemptScope(ctx, attemptID); err != nil {
+			if errors.Is(err, ErrExamForbidden) {
+				return ErrAttemptForbidden
+			}
+			return err
+		}
+		return nil
+	default:
+		return ErrAttemptForbidden
+	}
+}
+
 func (s *Service) ListSubjects(ctx context.Context, level, subjectType string, actorID int64, actorRole string) ([]SubjectOption, error) {
 	level = strings.TrimSpace(level)
 	subjectType = strings.TrimSpace(subjectType)
@@ -5668,6 +6201,16 @@ func isReviewPolicyConstraintErr(err error) bool {
 }
 
 func nullIntPtr(v *int) any {
+	if v == nil {
+		return nil
+	}
+	if *v <= 0 {
+		return nil
+	}
+	return *v
+}
+
+func nullInt64Ptr(v *int64) any {
 	if v == nil {
 		return nil
 	}

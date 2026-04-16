@@ -584,6 +584,14 @@
     return "after_submit";
   }
 
+  function managementScopeLabel(scope) {
+    const key = String(scope || "")
+      .trim()
+      .toLowerCase();
+    if (key === "cross_school") return "Lintas Sekolah";
+    return "Sekolah Saya";
+  }
+
   function setReviewPolicyField(field, reviewPolicy) {
     if (!field) return;
     const normalized = normalizeReviewPolicyForForm(reviewPolicy);
@@ -607,7 +615,7 @@
     if (!deps || !deps.examsBody) return;
     if (!Array.isArray(exams) || !exams.length) {
       deps.examsBody.innerHTML =
-        '<tr><td colspan="12" class="muted">Belum ada data ujian.</td></tr>';
+        '<tr><td colspan="13" class="muted">Belum ada data ujian.</td></tr>';
       return;
     }
     deps.examsBody.innerHTML = "";
@@ -619,8 +627,11 @@
           deps.escapeHtml(String(it.code || "")) +
           "<br><small>" +
           deps.escapeHtml(String(it.title || "")) +
-          "</small></td>",
+        "</small></td>",
         "<td>" + deps.escapeHtml(String(it.subject_name || "-")) + "</td>",
+        "<td>" +
+          deps.escapeHtml(managementScopeLabel(it.management_scope)) +
+          "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.start_at)) + "</td>",
         "<td>" + deps.escapeHtml(deps.fmtDate(it.end_at)) + "</td>",
         "<td>" + deps.escapeHtml(reviewPolicyLabel(it.review_policy)) + "</td>",
@@ -874,6 +885,9 @@
         const payload = {
           code: String(fd.get("code") || "").trim(),
           title: String(fd.get("title") || "").trim(),
+          management_scope: String(
+            fd.get("management_scope") || "same_school",
+          ).trim(),
           subject_id: Number(fd.get("subject_id") || 0),
           kktp: Number(fd.get("kktp") || 70),
           duration_minutes: Number(fd.get("duration_minutes") || 90),
@@ -943,9 +957,16 @@
             const endAtField = deps.examForm.elements.namedItem("end_at_local");
             const policyField =
               deps.examForm.elements.namedItem("review_policy");
+            const managementScopeField =
+              deps.examForm.elements.namedItem("management_scope");
             if (idField) idField.value = String(examID);
             if (codeField) codeField.value = String(examRow.code || "");
             if (titleField) titleField.value = String(examRow.title || "");
+            if (managementScopeField) {
+              managementScopeField.value = String(
+                examRow.management_scope || "same_school",
+              );
+            }
             if (subjectField) {
               subjectField.value = String(examRow.subject_id || "");
             }

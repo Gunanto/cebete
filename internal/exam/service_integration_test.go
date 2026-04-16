@@ -1,6 +1,7 @@
 package exam
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -11,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"cbtlms/internal/auth"
 	internaldb "cbtlms/internal/db"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func TestSubmitAttemptIdempotent_DBIntegration(t *testing.T) {
@@ -669,6 +673,278 @@ func TestListExamParticipantResultsAutoFinalizesExpiredAttempt_DBIntegration(t *
 	}
 }
 
+func TestScopedProktorResultsAndRecapCrossSchoolExam_DBIntegration(t *testing.T) {
+	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
+		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
+	}
+
+	dsn := os.Getenv("CBTLMS_TEST_DSN")
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://cbtlms:cbtlms_dev_password@localhost:5432/cbtlms?sslmode=disable"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	dbConn, err := internaldb.OpenPostgres(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer dbConn.Close()
+
+	svc := NewService(dbConn, 90)
+
+	suffix := time.Now().UnixNano()
+	subjectName := fmt.Sprintf("ITEST Scoped Result Subject %d", suffix)
+	examCode := fmt.Sprintf("ITEST-SCOPED-RESULT-%d", suffix)
+	schoolAName := fmt.Sprintf("ITEST Scoped School A %d", suffix)
+	schoolBName := fmt.Sprintf("ITEST Scoped School B %d", suffix)
+	classAName := fmt.Sprintf("X-A-%d", suffix)
+	classBName := fmt.Sprintf("X-B-%d", suffix)
+	proktorUsername := fmt.Sprintf("itest_proktor_%d", suffix)
+	studentAUsername := fmt.Sprintf("itest_scoped_student_a_%d", suffix)
+	studentBUsername := fmt.Sprintf("itest_scoped_student_b_%d", suffix)
+
+	var (
+		subjectID   int64
+		questionID  int64
+		examID      int64
+		schoolAID   int64
+		schoolBID   int64
+		classAID    int64
+		classBID    int64
+		proktorID   int64
+		studentAID  int64
+		studentBID  int64
+		attemptAID  int64
+		attemptBID  int64
+	)
+
+	tx, err := dbConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin seed tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO subjects (education_level, subject_type, name, is_active)
+		VALUES ('SMA', 'Wajib', $1, TRUE)
+		RETURNING id
+	`, subjectName).Scan(&subjectID); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Scoped A', TRUE, now(), now())
+		RETURNING id
+	`, schoolAName, fmt.Sprintf("ITEST-SA-%d", suffix)).Scan(&schoolAID); err != nil {
+		t.Fatalf("insert school A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Scoped B', TRUE, now(), now())
+		RETURNING id
+	`, schoolBName, fmt.Sprintf("ITEST-SB-%d", suffix)).Scan(&schoolBID); err != nil {
+		t.Fatalf("insert school B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolAID, classAName).Scan(&classAID); err != nil {
+		t.Fatalf("insert class A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolBID, classBName).Scan(&classBID); err != nil {
+		t.Fatalf("insert class B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Proktor', 'proktor', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, proktorUsername, proktorUsername+"@example.test").Scan(&proktorID); err != nil {
+		t.Fatalf("insert proktor: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Scoped Student A', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentAUsername, studentAUsername+"@example.test").Scan(&studentAID); err != nil {
+		t.Fatalf("insert student A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Scoped Student B', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentBUsername, studentBUsername+"@example.test").Scan(&studentBID); err != nil {
+		t.Fatalf("insert student B: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
+		VALUES
+		($1, $2, $3, 'active', now(), now()),
+		($4, $5, $6, 'active', now(), now())
+	`, studentAID, schoolAID, classAID, studentBID, schoolBID, classBID); err != nil {
+		t.Fatalf("insert enrollments: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_school_scopes (user_id, school_id, created_at)
+		VALUES ($1, $2, now())
+	`, proktorID, schoolAID); err != nil {
+		t.Fatalf("insert proktor school scope: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO exams (
+			code, title, subject_id, duration_minutes,
+			randomize_questions, randomize_options, review_policy,
+			management_scope, owner_school_id,
+			is_active, created_at
+		) VALUES (
+			$1, 'Integration Scoped Cross School Exam', $2, 30,
+			FALSE, FALSE, 'after_submit',
+			'cross_school', $3,
+			TRUE, now()
+		)
+		RETURNING id
+	`, examCode, subjectID, schoolAID).Scan(&examID); err != nil {
+		t.Fatalf("insert exam: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO questions (subject_id, question_type, stem_html, metadata, is_active, version, created_at, updated_at)
+		VALUES ($1, 'pg_tunggal', '<p>Scoped Q1</p>', '{}'::jsonb, TRUE, 1, now(), now())
+		RETURNING id
+	`, subjectID).Scan(&questionID); err != nil {
+		t.Fatalf("insert question: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exam_questions (exam_id, question_id, seq_no, weight)
+		VALUES ($1, $2, 1, 1.0)
+	`, examID, questionID); err != nil {
+		t.Fatalf("insert exam question: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exam_assignments (exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at)
+		VALUES
+		($1, $2, 'active', $4, now(), now(), now()),
+		($1, $3, 'active', $4, now(), now(), now())
+	`, examID, studentAID, studentBID, proktorID); err != nil {
+		t.Fatalf("insert exam assignments: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, submitted_at, expires_at, score)
+		VALUES ($1, $2, 'submitted', now() - interval '20 minute', now() - interval '10 minute', now() + interval '10 minute', 1)
+		RETURNING id
+	`, examID, studentAID).Scan(&attemptAID); err != nil {
+		t.Fatalf("insert attempt A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, submitted_at, expires_at, score)
+		VALUES ($1, $2, 'submitted', now() - interval '18 minute', now() - interval '8 minute', now() + interval '12 minute', 1)
+		RETURNING id
+	`, examID, studentBID).Scan(&attemptBID); err != nil {
+		t.Fatalf("insert attempt B: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+
+		cleanupTx, cleanupErr := dbConn.BeginTx(cleanupCtx, nil)
+		if cleanupErr != nil {
+			t.Logf("cleanup begin tx failed: %v", cleanupErr)
+			return
+		}
+		defer func() { _ = cleanupTx.Rollback() }()
+
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_scores WHERE attempt_id IN ($1, $2)`, attemptAID, attemptBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_answers WHERE attempt_id IN ($1, $2)`, attemptAID, attemptBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempts WHERE id IN ($1, $2)`, attemptAID, attemptBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_assignments WHERE exam_id = $1`, examID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_questions WHERE exam_id = $1`, examID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exams WHERE id = $1`, examID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM question_options WHERE question_id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM question_versions WHERE question_id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM questions WHERE id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM user_school_scopes WHERE user_id = $1`, proktorID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM enrollments WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM classes WHERE id IN ($1, $2)`, classAID, classBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM schools WHERE id IN ($1, $2)`, schoolAID, schoolBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM stimuli WHERE subject_id = $1`, subjectID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM subjects WHERE id = $1`, subjectID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_identities WHERE user_id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_sessions WHERE user_id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM student_profiles WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM users WHERE id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+
+		if err := cleanupTx.Commit(); err != nil {
+			t.Logf("cleanup commit failed: %v", err)
+		}
+	}()
+
+	scopedCtx := auth.ContextWithUser(ctx, &auth.User{ID: proktorID, Role: "proktor"})
+
+	matrix, err := svc.ListExamParticipantResults(scopedCtx, examID, 0, 0, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("list participant results: %v", err)
+	}
+	if matrix.TotalRows != 1 || len(matrix.Rows) != 1 {
+		t.Fatalf("expected exactly 1 scoped result row, total=%d rows=%d", matrix.TotalRows, len(matrix.Rows))
+	}
+	if matrix.Rows[0].UserID != studentAID {
+		t.Fatalf("expected scoped student A only, got user_id=%d", matrix.Rows[0].UserID)
+	}
+	if matrix.Filters == nil {
+		t.Fatal("expected result filters")
+	}
+	if len(matrix.Filters.Classes) != 1 || matrix.Filters.Classes[0] != classAName {
+		t.Fatalf("expected only scoped class filter, got %+v", matrix.Filters.Classes)
+	}
+	if len(matrix.Filters.Schools) != 1 || matrix.Filters.Schools[0] != schoolAName {
+		t.Fatalf("expected only scoped school filter, got %+v", matrix.Filters.Schools)
+	}
+
+	recap, err := svc.GetExamScoreRecap(scopedCtx, examID, "highest", nil, nil)
+	if err != nil {
+		t.Fatalf("get exam score recap: %v", err)
+	}
+	if recap.Summary.ParticipantCount != 1 || len(recap.Rows) != 1 {
+		t.Fatalf("expected exactly 1 scoped recap row, summary=%d rows=%d", recap.Summary.ParticipantCount, len(recap.Rows))
+	}
+	if recap.Rows[0].UserID != studentAID {
+		t.Fatalf("expected recap to include student A only, got user_id=%d", recap.Rows[0].UserID)
+	}
+}
+
 func TestStartAttemptRequiresNewTokenAfterSubmit_DBIntegration(t *testing.T) {
 	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
 		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
@@ -788,6 +1064,611 @@ func TestStartAttemptRequiresNewTokenAfterSubmit_DBIntegration(t *testing.T) {
 	if secondAttempt.Status != "in_progress" {
 		t.Fatalf("expected in_progress for second attempt, got %s", secondAttempt.Status)
 	}
+}
+
+func TestAdminToGuruTeacherAccessProfileFlow_DBIntegration(t *testing.T) {
+	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
+		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
+	}
+
+	dsn := os.Getenv("CBTLMS_TEST_DSN")
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://cbtlms:cbtlms_dev_password@localhost:5432/cbtlms?sslmode=disable"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	dbConn, err := internaldb.OpenPostgres(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer dbConn.Close()
+
+	authSvc := auth.NewService(dbConn, auth.ServiceConfig{BcryptCost: 4})
+	examSvc := NewService(dbConn, 90)
+
+	suffix := time.Now().UnixNano()
+	subjectName := fmt.Sprintf("ITEST Admin-Guru Subject %d", suffix)
+	schoolAName := fmt.Sprintf("ITEST Admin-Guru School A %d", suffix)
+	schoolBName := fmt.Sprintf("ITEST Admin-Guru School B %d", suffix)
+	classAName := fmt.Sprintf("X-A-AG-%d", suffix)
+	classBName := fmt.Sprintf("X-B-AG-%d", suffix)
+	adminUsername := fmt.Sprintf("itest_admin_%d", suffix)
+	guruUsername := fmt.Sprintf("itest_guru_%d", suffix)
+	studentAUsername := fmt.Sprintf("itest_ag_student_a_%d", suffix)
+	studentBUsername := fmt.Sprintf("itest_ag_student_b_%d", suffix)
+
+	var (
+		subjectID  int64
+		schoolAID  int64
+		schoolBID  int64
+		classAID   int64
+		classBID   int64
+		adminID    int64
+		guruID     int64
+		studentAID int64
+		studentBID int64
+		examID     int64
+	)
+
+	tx, err := dbConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin seed tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO subjects (education_level, subject_type, name, is_active)
+		VALUES ('SMA', 'Wajib', $1, TRUE)
+		RETURNING id
+	`, subjectName).Scan(&subjectID); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Admin Guru A', TRUE, now(), now())
+		RETURNING id
+	`, schoolAName, fmt.Sprintf("ITEST-AGA-%d", suffix)).Scan(&schoolAID); err != nil {
+		t.Fatalf("insert school A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Admin Guru B', TRUE, now(), now())
+		RETURNING id
+	`, schoolBName, fmt.Sprintf("ITEST-AGB-%d", suffix)).Scan(&schoolBID); err != nil {
+		t.Fatalf("insert school B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolAID, classAName).Scan(&classAID); err != nil {
+		t.Fatalf("insert class A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolBID, classBName).Scan(&classBID); err != nil {
+		t.Fatalf("insert class B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Admin', 'admin', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, adminUsername, adminUsername+"@example.test").Scan(&adminID); err != nil {
+		t.Fatalf("insert admin: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Student A', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentAUsername, studentAUsername+"@example.test").Scan(&studentAID); err != nil {
+		t.Fatalf("insert student A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Integration Student B', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentBUsername, studentBUsername+"@example.test").Scan(&studentBID); err != nil {
+		t.Fatalf("insert student B: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
+		VALUES
+		($1, $2, $3, 'active', now(), now()),
+		($4, $5, $6, 'active', now(), now())
+	`, studentAID, schoolAID, classAID, studentBID, schoolBID, classBID); err != nil {
+		t.Fatalf("insert student enrollments: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+
+		cleanupTx, cleanupErr := dbConn.BeginTx(cleanupCtx, nil)
+		if cleanupErr != nil {
+			t.Logf("cleanup begin tx failed: %v", cleanupErr)
+			return
+		}
+		defer func() { _ = cleanupTx.Rollback() }()
+
+		if examID > 0 {
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_scores WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id = $1)`, examID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_answers WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id = $1)`, examID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempts WHERE exam_id = $1`, examID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_assignments WHERE exam_id = $1`, examID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_questions WHERE exam_id = $1`, examID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exams WHERE id = $1`, examID)
+		}
+
+		if guruID > 0 {
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM enrollments WHERE user_id = $1`, guruID)
+		}
+
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM enrollments WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM classes WHERE id IN ($1, $2)`, classAID, classBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM schools WHERE id IN ($1, $2)`, schoolAID, schoolBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM stimuli WHERE subject_id = $1`, subjectID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM subjects WHERE id = $1`, subjectID)
+
+		if guruID > 0 {
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_identities WHERE user_id = $1`, guruID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_sessions WHERE user_id = $1`, guruID)
+			_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM users WHERE id = $1`, guruID)
+		}
+
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_identities WHERE user_id IN ($1, $2, $3)`, adminID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_sessions WHERE user_id IN ($1, $2, $3)`, adminID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM student_profiles WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM users WHERE id IN ($1, $2, $3)`, adminID, studentAID, studentBID)
+
+		if err := cleanupTx.Commit(); err != nil {
+			t.Logf("cleanup commit failed: %v", err)
+		}
+	}()
+
+	createdGuru, err := authSvc.CreateUserByAdmin(ctx, adminID, auth.AdminCreateUserInput{
+		Username:             guruUsername,
+		Email:                guruUsername + "@example.test",
+		Password:             "AdminGuru123!",
+		FullName:             "Integration Guru",
+		Role:                 "guru",
+		TeacherAccessProfile: "school",
+	})
+	if err != nil {
+		t.Fatalf("create guru by admin: %v", err)
+	}
+	guruID = createdGuru.ID
+	if createdGuru.TeacherAccessProfile != "school" {
+		t.Fatalf("expected initial guru profile school, got %q", createdGuru.TeacherAccessProfile)
+	}
+
+	if _, err := dbConn.ExecContext(ctx, `
+		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
+		VALUES ($1, $2, $3, 'active', now(), now())
+	`, guruID, schoolAID, classAID); err != nil {
+		t.Fatalf("insert guru enrollment: %v", err)
+	}
+
+	guruCtx := auth.ContextWithUser(ctx, &auth.User{ID: guruID, Role: "guru"})
+
+	createdExam, err := examSvc.CreateExam(guruCtx, CreateExamInput{
+		Code:      fmt.Sprintf("ITEST-AG-%d", suffix),
+		Title:     "Integration Admin->Guru Exam",
+		SubjectID: subjectID,
+		CreatedBy: guruID,
+	})
+	if err != nil {
+		t.Fatalf("create exam by guru: %v", err)
+	}
+	examID = createdExam.ID
+	if createdExam.ManagementScope != "same_school" {
+		t.Fatalf("expected same_school default scope, got %q", createdExam.ManagementScope)
+	}
+	if createdExam.OwnerSchoolID == nil || *createdExam.OwnerSchoolID != schoolAID {
+		t.Fatalf("expected owner school id %d, got %+v", schoolAID, createdExam.OwnerSchoolID)
+	}
+
+	_, err = examSvc.UpdateExam(guruCtx, UpdateExamInput{
+		ID:              examID,
+		Code:            createdExam.Code,
+		Title:           createdExam.Title,
+		SubjectID:       createdExam.SubjectID,
+		KKTP:            createdExam.KKTP,
+		DurationMinutes: createdExam.DurationMinutes,
+		MaxAttempts:     createdExam.MaxAttempts,
+		ReviewPolicy:    createdExam.ReviewPolicy,
+		ManagementScope: "cross_school",
+		IsActive:        true,
+	})
+	if !errors.Is(err, ErrExamForbidden) {
+		t.Fatalf("expected ErrExamForbidden when school-profile guru updates to cross_school, got %v", err)
+	}
+
+	_, err = examSvc.AppendExamAssignmentsByClass(guruCtx, AppendExamAssignmentsByClassInput{
+		ExamID:     examID,
+		SchoolID:   schoolBID,
+		ClassID:    classBID,
+		AssignedBy: guruID,
+	})
+	if !errors.Is(err, ErrExamForbidden) {
+		t.Fatalf("expected ErrExamForbidden for cross-school assign while profile=school, got %v", err)
+	}
+
+	updatedGuru, err := authSvc.UpdateUserByAdmin(ctx, adminID, guruID, auth.AdminUpdateUserInput{
+		FullName:             createdGuru.FullName,
+		Email:                guruUsername + "@example.test",
+		Role:                 "guru",
+		TeacherAccessProfile: "cross_school",
+	})
+	if err != nil {
+		t.Fatalf("update guru profile to cross_school: %v", err)
+	}
+	if updatedGuru.TeacherAccessProfile != "cross_school" {
+		t.Fatalf("expected updated guru profile cross_school, got %q", updatedGuru.TeacherAccessProfile)
+	}
+
+	updatedExam, err := examSvc.UpdateExam(guruCtx, UpdateExamInput{
+		ID:              examID,
+		Code:            createdExam.Code,
+		Title:           createdExam.Title + " Updated",
+		SubjectID:       createdExam.SubjectID,
+		KKTP:            createdExam.KKTP,
+		DurationMinutes: createdExam.DurationMinutes,
+		MaxAttempts:     createdExam.MaxAttempts,
+		ReviewPolicy:    createdExam.ReviewPolicy,
+		ManagementScope: "cross_school",
+		IsActive:        true,
+	})
+	if err != nil {
+		t.Fatalf("update exam to cross_school after profile change: %v", err)
+	}
+	if updatedExam.ManagementScope != "cross_school" {
+		t.Fatalf("expected updated scope cross_school, got %q", updatedExam.ManagementScope)
+	}
+
+	assignments, err := examSvc.AppendExamAssignmentsByClass(guruCtx, AppendExamAssignmentsByClassInput{
+		ExamID:     examID,
+		SchoolID:   schoolBID,
+		ClassID:    classBID,
+		AssignedBy: guruID,
+	})
+	if err != nil {
+		t.Fatalf("append assignments after cross_school enabled: %v", err)
+	}
+	if len(assignments) != 1 || assignments[0].UserID != studentBID {
+		t.Fatalf("expected one assignment for student B (id=%d), got %+v", studentBID, assignments)
+	}
+}
+
+func TestExportResultAndRecapScopedAcrossSameAndCrossSchool_DBIntegration(t *testing.T) {
+	if os.Getenv("CBTLMS_INTEGRATION") != "1" {
+		t.Skip("set CBTLMS_INTEGRATION=1 to run integration tests")
+	}
+
+	dsn := os.Getenv("CBTLMS_TEST_DSN")
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://cbtlms:cbtlms_dev_password@localhost:5432/cbtlms?sslmode=disable"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	dbConn, err := internaldb.OpenPostgres(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer dbConn.Close()
+
+	svc := NewService(dbConn, 90)
+
+	suffix := time.Now().UnixNano()
+	subjectName := fmt.Sprintf("ITEST Export Scope Subject %d", suffix)
+	schoolAName := fmt.Sprintf("ITEST Export School A %d", suffix)
+	schoolBName := fmt.Sprintf("ITEST Export School B %d", suffix)
+	classAName := fmt.Sprintf("X-A-EX-%d", suffix)
+	classBName := fmt.Sprintf("X-B-EX-%d", suffix)
+	proktorUsername := fmt.Sprintf("itest_export_proktor_%d", suffix)
+	studentAUsername := fmt.Sprintf("itest_export_student_a_%d", suffix)
+	studentBUsername := fmt.Sprintf("itest_export_student_b_%d", suffix)
+
+	var (
+		subjectID    int64
+		schoolAID    int64
+		schoolBID    int64
+		classAID     int64
+		classBID     int64
+		proktorID    int64
+		studentAID   int64
+		studentBID   int64
+		questionID   int64
+		sameExamID   int64
+		crossExamID  int64
+		attemptSame  int64
+		attemptCross int64
+	)
+
+	tx, err := dbConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin seed tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO subjects (education_level, subject_type, name, is_active)
+		VALUES ('SMA', 'Wajib', $1, TRUE)
+		RETURNING id
+	`, subjectName).Scan(&subjectID); err != nil {
+		t.Fatalf("insert subject: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Export A', TRUE, now(), now())
+		RETURNING id
+	`, schoolAName, fmt.Sprintf("ITEST-EA-%d", suffix)).Scan(&schoolAID); err != nil {
+		t.Fatalf("insert school A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO schools (name, code, address, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Jl. Export B', TRUE, now(), now())
+		RETURNING id
+	`, schoolBName, fmt.Sprintf("ITEST-EB-%d", suffix)).Scan(&schoolBID); err != nil {
+		t.Fatalf("insert school B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolAID, classAName).Scan(&classAID); err != nil {
+		t.Fatalf("insert class A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO classes (school_id, name, grade_level, is_active, created_at, updated_at)
+		VALUES ($1, $2, '10', TRUE, now(), now())
+		RETURNING id
+	`, schoolBID, classBName).Scan(&classBID); err != nil {
+		t.Fatalf("insert class B: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Export Proktor', 'proktor', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, proktorUsername, proktorUsername+"@example.test").Scan(&proktorID); err != nil {
+		t.Fatalf("insert proktor: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Export Student A', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentAUsername, studentAUsername+"@example.test").Scan(&studentAID); err != nil {
+		t.Fatalf("insert student A: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users (
+			username, password_hash, full_name, role, is_active,
+			email, email_verified_at, account_status, created_at, updated_at
+		) VALUES (
+			$1, 'dummy_hash', 'Export Student B', 'siswa', TRUE,
+			$2, now(), 'active', now(), now()
+		)
+		RETURNING id
+	`, studentBUsername, studentBUsername+"@example.test").Scan(&studentBID); err != nil {
+		t.Fatalf("insert student B: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO enrollments (user_id, school_id, class_id, status, enrolled_at, created_at)
+		VALUES
+		($1, $2, $3, 'active', now(), now()),
+		($4, $5, $6, 'active', now(), now())
+	`, studentAID, schoolAID, classAID, studentBID, schoolBID, classBID); err != nil {
+		t.Fatalf("insert enrollments: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_school_scopes (user_id, school_id, created_at)
+		VALUES ($1, $2, now())
+	`, proktorID, schoolAID); err != nil {
+		t.Fatalf("insert proktor scope: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO questions (subject_id, question_type, stem_html, metadata, is_active, version, created_at, updated_at)
+		VALUES ($1, 'pg_tunggal', '<p>Export Q1</p>', '{}'::jsonb, TRUE, 1, now(), now())
+		RETURNING id
+	`, subjectID).Scan(&questionID); err != nil {
+		t.Fatalf("insert question: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO exams (
+			code, title, subject_id, duration_minutes,
+			randomize_questions, randomize_options, review_policy,
+			management_scope, owner_school_id, is_active, created_at
+		) VALUES (
+			$1, 'Integration Same School Export', $2, 30,
+			FALSE, FALSE, 'after_submit',
+			'same_school', $3, TRUE, now()
+		)
+		RETURNING id
+	`, fmt.Sprintf("ITEST-EX-SAME-%d", suffix), subjectID, schoolAID).Scan(&sameExamID); err != nil {
+		t.Fatalf("insert same_school exam: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO exams (
+			code, title, subject_id, duration_minutes,
+			randomize_questions, randomize_options, review_policy,
+			management_scope, owner_school_id, is_active, created_at
+		) VALUES (
+			$1, 'Integration Cross School Export', $2, 30,
+			FALSE, FALSE, 'after_submit',
+			'cross_school', $3, TRUE, now()
+		)
+		RETURNING id
+	`, fmt.Sprintf("ITEST-EX-CROSS-%d", suffix), subjectID, schoolAID).Scan(&crossExamID); err != nil {
+		t.Fatalf("insert cross_school exam: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exam_questions (exam_id, question_id, seq_no, weight)
+		VALUES
+		($1, $2, 1, 1.0),
+		($3, $2, 1, 1.0)
+	`, sameExamID, questionID, crossExamID); err != nil {
+		t.Fatalf("insert exam questions: %v", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO exam_assignments (exam_id, user_id, status, assigned_by, assigned_at, created_at, updated_at)
+		VALUES
+		($1, $2, 'active', $2, now(), now(), now()),
+		($3, $2, 'active', $2, now(), now(), now()),
+		($3, $4, 'active', $2, now(), now(), now())
+	`, sameExamID, studentAID, crossExamID, studentBID); err != nil {
+		t.Fatalf("insert assignments: %v", err)
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, submitted_at, expires_at, score)
+		VALUES ($1, $2, 'submitted', now() - interval '20 minute', now() - interval '10 minute', now() + interval '10 minute', 1)
+		RETURNING id
+	`, sameExamID, studentAID).Scan(&attemptSame); err != nil {
+		t.Fatalf("insert same exam attempt: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, submitted_at, expires_at, score)
+		VALUES ($1, $2, 'submitted', now() - interval '18 minute', now() - interval '8 minute', now() + interval '12 minute', 1)
+		RETURNING id
+	`, crossExamID, studentAID).Scan(&attemptCross); err != nil {
+		t.Fatalf("insert cross exam attempt A: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO attempts (exam_id, student_id, status, started_at, submitted_at, expires_at, score)
+		VALUES ($1, $2, 'submitted', now() - interval '16 minute', now() - interval '6 minute', now() + interval '14 minute', 1)
+	`, crossExamID, studentBID); err != nil {
+		t.Fatalf("insert cross exam attempt B: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+
+		cleanupTx, cleanupErr := dbConn.BeginTx(cleanupCtx, nil)
+		if cleanupErr != nil {
+			t.Logf("cleanup begin tx failed: %v", cleanupErr)
+			return
+		}
+		defer func() { _ = cleanupTx.Rollback() }()
+
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_scores WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id IN ($1, $2))`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempt_answers WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id IN ($1, $2))`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM attempts WHERE exam_id IN ($1, $2)`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_assignments WHERE exam_id IN ($1, $2)`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exam_questions WHERE exam_id IN ($1, $2)`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM exams WHERE id IN ($1, $2)`, sameExamID, crossExamID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM question_options WHERE question_id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM question_versions WHERE question_id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM questions WHERE id = $1`, questionID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM user_school_scopes WHERE user_id = $1`, proktorID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM enrollments WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM classes WHERE id IN ($1, $2)`, classAID, classBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM schools WHERE id IN ($1, $2)`, schoolAID, schoolBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM stimuli WHERE subject_id = $1`, subjectID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM subjects WHERE id = $1`, subjectID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_identities WHERE user_id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM auth_sessions WHERE user_id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM student_profiles WHERE user_id IN ($1, $2)`, studentAID, studentBID)
+		_, _ = cleanupTx.ExecContext(cleanupCtx, `DELETE FROM users WHERE id IN ($1, $2, $3)`, proktorID, studentAID, studentBID)
+
+		if err := cleanupTx.Commit(); err != nil {
+			t.Logf("cleanup commit failed: %v", err)
+		}
+	}()
+
+	scopedCtx := auth.ContextWithUser(ctx, &auth.User{ID: proktorID, Role: "proktor"})
+
+	sameResultExcel, _, err := svc.ExportExamParticipantResultsExcel(scopedCtx, sameExamID, nil)
+	if err != nil {
+		t.Fatalf("export same-school participant result: %v", err)
+	}
+	if got := countParticipantExcelRowsByName(t, sameResultExcel, "Export Student A"); got != 1 {
+		t.Fatalf("expected 1 row for student A in same-school export, got %d", got)
+	}
+
+	crossResultExcel, _, err := svc.ExportExamParticipantResultsExcel(scopedCtx, crossExamID, nil)
+	if err != nil {
+		t.Fatalf("export cross-school participant result: %v", err)
+	}
+	if got := countParticipantExcelRowsByName(t, crossResultExcel, "Export Student A"); got != 1 {
+		t.Fatalf("expected scoped row for student A in cross-school export, got %d", got)
+	}
+	if got := countParticipantExcelRowsByName(t, crossResultExcel, "Export Student B"); got != 0 {
+		t.Fatalf("expected student B hidden by proktor scope, got %d rows", got)
+	}
+
+	crossFilteredB, _, err := svc.ExportExamParticipantResultsExcel(scopedCtx, crossExamID, &schoolBName)
+	if err != nil {
+		t.Fatalf("export cross-school participant result with school B filter: %v", err)
+	}
+	if got := countParticipantExcelDataRows(t, crossFilteredB); got != 0 {
+		t.Fatalf("expected 0 rows after school B filter on scoped export, got %d", got)
+	}
+
+	crossRecapExcel, _, err := svc.ExportExamScoreRecapExcel(scopedCtx, crossExamID, "highest", nil, nil)
+	if err != nil {
+		t.Fatalf("export cross-school recap: %v", err)
+	}
+	if got := countRecapExcelRowsByName(t, crossRecapExcel, "Export Student A"); got != 1 {
+		t.Fatalf("expected recap row for student A, got %d", got)
+	}
+	if got := countRecapExcelRowsByName(t, crossRecapExcel, "Export Student B"); got != 0 {
+		t.Fatalf("expected no recap row for student B due to proktor scope, got %d", got)
+	}
+
+	_ = attemptSame
+	_ = attemptCross
 }
 
 func TestSubmitAttempt_ScoringThreeTypes_DBIntegration(t *testing.T) {
@@ -1062,4 +1943,101 @@ func cleanupIntegrationFixtureExtraQuestions(t *testing.T, db *sql.DB, questionI
 	if err := tx.Commit(); err != nil {
 		t.Logf("cleanup extra commit failed: %v", err)
 	}
+}
+
+func countParticipantExcelRowsByName(t *testing.T, content []byte, fullName string) int {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("open participant excel: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sheet := f.GetSheetName(0)
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("read participant excel rows: %v", err)
+	}
+	count := 0
+	for idx, row := range rows {
+		if idx < 2 {
+			continue
+		}
+		if len(row) == 0 || strings.TrimSpace(row[0]) == "" {
+			continue
+		}
+		if strings.TrimSpace(row[0]) == strings.TrimSpace(fullName) {
+			count++
+		}
+	}
+	return count
+}
+
+func countParticipantExcelDataRows(t *testing.T, content []byte) int {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("open participant excel: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sheet := f.GetSheetName(0)
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("read participant excel rows: %v", err)
+	}
+	count := 0
+	for idx, row := range rows {
+		if idx < 2 {
+			continue
+		}
+		if len(row) == 0 || strings.TrimSpace(row[0]) == "" {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func countRecapExcelRowsByName(t *testing.T, content []byte, fullName string) int {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("open recap excel: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sheet := f.GetSheetName(0)
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("read recap excel rows: %v", err)
+	}
+
+	headerRow := -1
+	for idx, row := range rows {
+		if len(row) < 2 {
+			continue
+		}
+		if strings.TrimSpace(row[0]) == "Nama" && strings.TrimSpace(row[1]) == "Username" {
+			headerRow = idx
+			break
+		}
+	}
+	if headerRow < 0 {
+		t.Fatalf("recap header row not found")
+	}
+
+	count := 0
+	for idx, row := range rows {
+		if idx <= headerRow {
+			continue
+		}
+		if len(row) == 0 || strings.TrimSpace(row[0]) == "" {
+			continue
+		}
+		if strings.TrimSpace(row[0]) == strings.TrimSpace(fullName) {
+			count++
+		}
+	}
+	return count
 }
