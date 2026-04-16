@@ -807,6 +807,39 @@ func TestUpdateExamSameSchoolReplacesOwnerSchoolWithTeacherPrimarySchool(t *test
 	}
 }
 
+func TestCanAutoAssignNonRegularStudentAllowsCrossSchoolExam(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+
+	mock.ExpectQuery(`SELECT role, COALESCE\(is_non_regular, FALSE\)`).
+		WithArgs(int64(31)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "is_non_regular"}).AddRow("siswa", true))
+	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("cross_school", nil))
+	mock.ExpectQuery(`SELECT COALESCE\(allow_non_regular_self_enroll, FALSE\)`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"allow_non_regular_self_enroll"}).AddRow(true))
+
+	allowed, err := svc.canAutoAssignNonRegularStudent(context.Background(), 91, 31)
+	if err != nil {
+		t.Fatalf("canAutoAssignNonRegularStudent: %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected non-regular cross-school student to be auto-assignable")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func TestUpdateExamRejectsCrossSchoolForSchoolTeacher(t *testing.T) {
 	t.Parallel()
 

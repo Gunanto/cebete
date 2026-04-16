@@ -1253,7 +1253,16 @@ func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, exa
 			return nil, fmt.Errorf("check assignment: %w", err)
 		}
 		if !assigned {
-			return nil, ErrExamNotAssigned
+			autoAssign, err := s.canAutoAssignNonRegularStudent(ctx, examID, studentID)
+			if err != nil {
+				return nil, err
+			}
+			if !autoAssign {
+				return nil, ErrExamNotAssigned
+			}
+			if err := s.upsertExamAssignment(ctx, examID, studentID, nil); err != nil {
+				return nil, err
+			}
 		}
 	}
 	inputToken := normalizeExamToken(examToken)
@@ -1411,7 +1420,16 @@ func (s *Service) PreviewExamByToken(ctx context.Context, studentID int64, examT
 			return nil, fmt.Errorf("check assignment: %w", err)
 		}
 		if !assigned {
-			return nil, ErrExamNotAssigned
+			autoAssign, err := s.canAutoAssignNonRegularStudent(ctx, examID, studentID)
+			if err != nil {
+				return nil, err
+			}
+			if !autoAssign {
+				return nil, ErrExamNotAssigned
+			}
+			if err := s.upsertExamAssignment(ctx, examID, studentID, nil); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1662,6 +1680,26 @@ func (s *Service) ensureStudentAttemptProfileComplete(ctx context.Context, stude
 	return nil
 }
 
+func (s *Service) loadStudentAccessProfile(ctx context.Context, studentID int64) (string, bool, error) {
+	if studentID <= 0 {
+		return "", false, ErrInvalidInput
+	}
+	var role string
+	var isNonRegular bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT role, COALESCE(is_non_regular, FALSE)
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, studentID).Scan(&role, &isNonRegular); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, ErrAttemptForbidden
+		}
+		return "", false, fmt.Errorf("load student access profile: %w", err)
+	}
+	return strings.TrimSpace(strings.ToLower(role)), isNonRegular, nil
+}
+
 func canStudentSeePublishedExam(hasAssignment, isNonRegular, allowNonRegular bool) bool {
 	if hasAssignment {
 		return true
@@ -1678,6 +1716,96 @@ func canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular bool)
 		return true
 	}
 	return allowNonRegular
+}
+
+func shouldAutoAssignNonRegularForExam(scope string, isNonRegular, allowNonRegular bool) bool {
+	return normalizeExamManagementScope(scope) == examManagementScopeCrossSchool &&
+		isNonRegular &&
+		allowNonRegular
+}
+
+func (s *Service) canAutoAssignNonRegularStudent(ctx context.Context, examID, studentID int64) (bool, error) {
+	if examID <= 0 || studentID <= 0 {
+		return false, ErrInvalidInput
+	}
+	role, isNonRegular, err := s.loadStudentAccessProfile(ctx, studentID)
+	if err != nil {
+		return false, err
+	}
+	if role != "siswa" || !isNonRegular {
+		return false, nil
+	}
+	scope, _, err := s.loadExamManagementScope(ctx, examID)
+	if err != nil {
+		return false, err
+	}
+	var allowNonRegular bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(allow_non_regular_self_enroll, FALSE)
+		FROM exams
+		WHERE id = $1
+		  AND is_active = TRUE
+	`, examID).Scan(&allowNonRegular); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrExamNotFound
+		}
+		return false, fmt.Errorf("load exam non-regular policy: %w", err)
+	}
+	return shouldAutoAssignNonRegularForExam(scope, isNonRegular, allowNonRegular), nil
+}
+
+func (s *Service) upsertExamAssignment(ctx context.Context, examID, studentID int64, assignedBy *int64) error {
+	if examID <= 0 || studentID <= 0 {
+		return ErrInvalidInput
+	}
+	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
+	if err != nil {
+		return err
+	}
+	var examTenantID *int64
+	if assignmentHasTenant {
+		examTenantID, err = loadExamTenantID(ctx, s.db, examID)
+		if err != nil {
+			return err
+		}
+		if examTenantID == nil || *examTenantID <= 0 {
+			return ErrAssignmentTenantRequired
+		}
+	}
+
+	insertColumns := []string{"exam_id", "user_id", "status", "assigned_by", "assigned_at", "created_at", "updated_at"}
+	insertValues := []string{"$1", "$2", "'active'", "$3", "now()", "now()", "now()"}
+	insertArgs := []any{examID, studentID, nullInt64Ptr(assignedBy)}
+	if assignmentHasTenant {
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *examTenantID)
+	}
+	query := fmt.Sprintf(`
+		INSERT INTO exam_assignments (
+			%s
+		) VALUES (
+			%s
+		)
+		ON CONFLICT (exam_id, user_id)
+		DO UPDATE SET
+			status = 'active',
+			assigned_by = EXCLUDED.assigned_by,
+			assigned_at = now(),
+			updated_at = now()
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", "))
+	if assignmentHasTenant {
+		query += `,
+			tenant_id = COALESCE(exam_assignments.tenant_id, EXCLUDED.tenant_id)
+	`
+	}
+	if _, err := s.db.ExecContext(ctx, query, insertArgs...); err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return ErrAssignmentFeature
+		}
+		return fmt.Errorf("upsert exam assignment: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ListExamsForToken(ctx context.Context) ([]ExamTokenExam, error) {
@@ -1784,19 +1912,11 @@ func (s *Service) listPublishedExamsForStudent(ctx context.Context, studentID in
 	if studentID <= 0 {
 		return nil, ErrInvalidInput
 	}
-	var role string
-	var isNonRegular bool
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT role, COALESCE(is_non_regular, FALSE)
-		FROM users
-		WHERE id = $1
-	`, studentID).Scan(&role, &isNonRegular); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrAttemptForbidden
-		}
-		return nil, fmt.Errorf("load student visibility profile: %w", err)
+	role, isNonRegular, err := s.loadStudentAccessProfile(ctx, studentID)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(strings.ToLower(role)) != "siswa" {
+	if role != "siswa" {
 		return nil, ErrAttemptForbidden
 	}
 	now := time.Now()
@@ -1891,35 +2011,11 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 	if examID <= 0 || studentID <= 0 {
 		return ErrInvalidInput
 	}
-	assignmentHasTenant, err := hasColumn(ctx, s.db, "exam_assignments", "tenant_id")
+	role, isNonRegular, err := s.loadStudentAccessProfile(ctx, studentID)
 	if err != nil {
 		return err
 	}
-	var examTenantID *int64
-	if assignmentHasTenant {
-		examTenantID, err = loadExamTenantID(ctx, s.db, examID)
-		if err != nil {
-			return err
-		}
-		if examTenantID == nil || *examTenantID <= 0 {
-			return fmt.Errorf("resolve exam assignment tenant: tenant_id is required")
-		}
-	}
-
-	var role string
-	var isNonRegular bool
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT role, COALESCE(is_non_regular, FALSE)
-		FROM users
-		WHERE id = $1
-		  AND is_active = TRUE
-	`, studentID).Scan(&role, &isNonRegular); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrAttemptForbidden
-		}
-		return fmt.Errorf("load user role: %w", err)
-	}
-	if strings.TrimSpace(strings.ToLower(role)) != "siswa" {
+	if role != "siswa" {
 		return ErrAttemptForbidden
 	}
 
@@ -1954,34 +2050,7 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 		return ErrAttemptForbidden
 	}
 
-	assignmentColumns := []string{"exam_id", "user_id", "status", "assigned_by", "assigned_at", "created_at", "updated_at"}
-	assignmentValues := []string{"$1", "$2", "'active'", "NULL", "now()", "now()", "now()"}
-	assignmentArgs := []any{examID, studentID}
-	if assignmentHasTenant {
-		assignmentColumns = append(assignmentColumns, "tenant_id")
-		assignmentValues = append(assignmentValues, fmt.Sprintf("$%d", len(assignmentArgs)+1))
-		assignmentArgs = append(assignmentArgs, *examTenantID)
-	}
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`
-		INSERT INTO exam_assignments (
-			%s
-		) VALUES (
-			%s
-		)
-		ON CONFLICT (exam_id, user_id)
-		DO UPDATE SET
-			status = 'active',
-			assigned_by = NULL,
-			assigned_at = now(),
-			updated_at = now()
-	`, strings.Join(assignmentColumns, ", "), strings.Join(assignmentValues, ", ")), assignmentArgs...); err != nil {
-		if isUndefinedTableErr(err, "exam_assignments") {
-			return ErrAssignmentFeature
-		}
-		return fmt.Errorf("upsert exam assignment: %w", err)
-	}
-
-	return nil
+	return s.upsertExamAssignment(ctx, examID, studentID, nil)
 }
 
 func (s *Service) GenerateExamToken(ctx context.Context, examID, generatedBy int64, ttlMinutes int) (*ExamAccessToken, error) {
