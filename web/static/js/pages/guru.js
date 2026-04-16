@@ -642,6 +642,18 @@
     const scoreRecapDetailBody = document.getElementById(
       "guru-score-recap-detail-body",
     );
+    const examParticipantsDialog = document.getElementById(
+      "guru-exam-participants-dialog",
+    );
+    const examParticipantsSubtitle = document.getElementById(
+      "guru-exam-participants-subtitle",
+    );
+    const examParticipantsSummary = document.getElementById(
+      "guru-exam-participants-summary",
+    );
+    const examParticipantsBody = document.getElementById(
+      "guru-exam-participants-body",
+    );
     const resultsPageInfo = document.getElementById("guru-results-page-info");
     const resultsPrevBtn = document.getElementById("guru-results-prev-btn");
     const resultsNextBtn = document.getElementById("guru-results-next-btn");
@@ -1837,6 +1849,10 @@
         examQuestionViewStimulus: examQuestionViewStimulus,
         examQuestionViewStem: examQuestionViewStem,
         examQuestionViewOptions: examQuestionViewOptions,
+        examParticipantsDialog: examParticipantsDialog,
+        examParticipantsSubtitle: examParticipantsSubtitle,
+        examParticipantsSummary: examParticipantsSummary,
+        examParticipantsBody: examParticipantsBody,
         onExamsLoaded: function (list) {
           if (
             GuruDashboard &&

@@ -602,6 +602,75 @@
     field.value = hasOption ? normalized : "after_submit";
   }
 
+  function openDialog(dialogEl) {
+    if (!dialogEl) return;
+    if (typeof dialogEl.showModal === "function") {
+      dialogEl.showModal();
+      return;
+    }
+    dialogEl.setAttribute("open", "open");
+  }
+
+  function renderExamParticipants(rows, examRow) {
+    if (!deps || !deps.examParticipantsBody) return;
+    const items = Array.isArray(rows) ? rows : [];
+    const examCode = String((examRow && examRow.code) || "").trim();
+    const examTitle = String((examRow && examRow.title) || "").trim();
+    const examLabel = [examCode, examTitle].filter(Boolean).join(" - ");
+    if (deps.examParticipantsSubtitle) {
+      deps.examParticipantsSubtitle.textContent = examLabel
+        ? "Peserta terdaftar untuk ujian " + examLabel + "."
+        : "Peserta terdaftar untuk ujian ini.";
+    }
+    if (deps.examParticipantsSummary) {
+      deps.examParticipantsSummary.textContent =
+        "Total peserta terdaftar: " + String(items.length) + ".";
+    }
+    if (!items.length) {
+      deps.examParticipantsBody.innerHTML =
+        '<tr><td colspan="5" class="muted">Belum ada peserta terdaftar pada ujian ini.</td></tr>';
+      return;
+    }
+    deps.examParticipantsBody.innerHTML = "";
+    items.forEach(function (it) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = [
+        "<td>" + deps.escapeHtml(String(it.full_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.email || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.school_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.class_name || "-")) + "</td>",
+        "<td>" + deps.escapeHtml(String(it.username || "-")) + "</td>",
+      ].join("");
+      deps.examParticipantsBody.appendChild(tr);
+    });
+  }
+
+  async function openExamParticipants(examID) {
+    if (
+      !deps ||
+      !deps.api ||
+      !deps.examParticipantsDialog ||
+      !deps.examParticipantsBody
+    ) {
+      return;
+    }
+    const examRow = findExamByID(examID);
+    if (deps.examParticipantsSubtitle) {
+      deps.examParticipantsSubtitle.textContent = "Memuat daftar peserta...";
+    }
+    if (deps.examParticipantsSummary) {
+      deps.examParticipantsSummary.textContent = "Memuat data peserta ujian...";
+    }
+    deps.examParticipantsBody.innerHTML =
+      '<tr><td colspan="5" class="muted">Memuat data peserta...</td></tr>';
+    openDialog(deps.examParticipantsDialog);
+    const rows = await deps.api(
+      "/api/v1/admin/exams/" + Number(examID) + "/assignments",
+      "GET",
+    );
+    renderExamParticipants(rows, examRow);
+  }
+
   async function loadExamManageTable() {
     const exams = await deps.api("/api/v1/admin/exams/manage", "GET");
     examsCache = Array.isArray(exams) ? exams : [];
@@ -647,7 +716,15 @@
           " menit</td>",
         "<td>" + deps.escapeHtml(String(it.max_attempts || 1)) + "x</td>",
         "<td>" + deps.escapeHtml(String(it.question_count || 0)) + "</td>",
-        "<td>" + deps.escapeHtml(String(it.assigned_count || 0)) + "</td>",
+        "<td>" +
+          (Number(it.assigned_count || 0) > 0
+            ? '<button class="btn btn-secondary btn-inline" type="button" data-exam-action="participants" data-id="' +
+              deps.escapeHtml(String(it.id || "")) +
+              '" title="Lihat daftar peserta" aria-label="Lihat daftar peserta">' +
+              deps.escapeHtml(String(it.assigned_count || 0)) +
+              "</button>"
+            : '<span class="muted">0</span>') +
+          "</td>",
         '<td><span class="action-icons">' +
           '<button class="icon-only-btn" type="button" data-exam-action="use" data-id="' +
           deps.escapeHtml(String(it.id || "")) +
@@ -1055,6 +1132,24 @@
                 deps.escapeHtml(err.message || "") +
                 "</td></tr>";
             }
+          }
+          return;
+        }
+        if (action === "participants") {
+          try {
+            await openExamParticipants(examID);
+          } catch (err) {
+            if (deps.examParticipantsSummary) {
+              deps.examParticipantsSummary.textContent =
+                "Gagal memuat data peserta.";
+            }
+            if (deps.examParticipantsBody) {
+              deps.examParticipantsBody.innerHTML =
+                '<tr><td colspan="5" class="muted">Gagal memuat data peserta: ' +
+                deps.escapeHtml(err.message || "") +
+                "</td></tr>";
+            }
+            deps.setMsg("Gagal memuat daftar peserta: " + err.message);
           }
           return;
         }
