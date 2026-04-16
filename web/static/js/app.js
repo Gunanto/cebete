@@ -68,6 +68,47 @@
     });
   }
 
+  async function initPresenceHeartbeat() {
+    if (
+      !window.location ||
+      String(window.location.pathname || "").startsWith("/login")
+    ) {
+      return;
+    }
+    const user = await meOrNull();
+    if (!user) return;
+
+    let inFlight = false;
+    const sendHeartbeat = async function () {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        await api("/api/v1/auth/heartbeat", "POST", {});
+      } catch (_) {
+        // Ignore transient heartbeat failures.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    sendHeartbeat();
+    window.setInterval(function () {
+      if (document.visibilityState === "hidden") return;
+      sendHeartbeat();
+    }, 60000);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") {
+        sendHeartbeat();
+      }
+    });
+    window.addEventListener("focus", function () {
+      sendHeartbeat();
+    });
+    window.addEventListener("online", function () {
+      sendHeartbeat();
+    });
+  }
+
   function readSelectedFromPayload(payload) {
     if (!payload || typeof payload !== "object") return [];
     const v = payload.selected;
@@ -4856,6 +4897,7 @@
 
   initTopbarAuth();
   if (pages.initLoginPage) pages.initLoginPage();
+  initPresenceHeartbeat();
   initHomePage();
   if (pages.initSimulasiPage) pages.initSimulasiPage();
   if (pages.initAdminPage) pages.initAdminPage();

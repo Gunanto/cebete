@@ -698,6 +698,51 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
+func (h *Handler) ListOnlineUsers(w http.ResponseWriter, r *http.Request) {
+	role := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := 50
+	offset := 0
+	onlineWindowSeconds := 120
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil {
+			limit = n
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("offset")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil {
+			offset = n
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("window_seconds")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil {
+			onlineWindowSeconds = n
+		}
+	}
+
+	items, err := h.svc.ListOnlineUsers(r.Context(), role, q, limit, offset, onlineWindowSeconds)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid role filter") {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]any{
+		"items":          items,
+		"limit":          limit,
+		"offset":         offset,
+		"role":           role,
+		"q":              q,
+		"window_seconds": onlineWindowSeconds,
+	}})
+}
+
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	user, ok := CurrentUser(r.Context())
 	if !ok {
@@ -719,6 +764,19 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: out})
+}
+
+func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
+	token := readSessionToken(r)
+	if err := h.svc.TouchSession(r.Context(), token, readIP(r), r.UserAgent()); err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			writeJSON(w, r, http.StatusUnauthorized, apiResponse{OK: false, Error: "unauthorized"})
+			return
+		}
+		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
+		return
+	}
+	writeJSON(w, r, http.StatusOK, apiResponse{OK: true, Data: map[string]string{"status": "ok"}})
 }
 
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {

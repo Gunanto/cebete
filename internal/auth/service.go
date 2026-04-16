@@ -201,6 +201,27 @@ type AdminUserRecord struct {
 	CreatedAt            time.Time  `json:"created_at"`
 }
 
+type OnlineUserRecord struct {
+	ID                   int64      `json:"id"`
+	Username             string     `json:"username"`
+	Email                *string    `json:"email,omitempty"`
+	FullName             string     `json:"full_name"`
+	Role                 string     `json:"role"`
+	TeacherAccessProfile string     `json:"teacher_access_profile,omitempty"`
+	ParticipantNo        *string    `json:"participant_no,omitempty"`
+	SchoolID             *int64     `json:"school_id,omitempty"`
+	SchoolName           *string    `json:"school_name,omitempty"`
+	ClassID              *int64     `json:"class_id,omitempty"`
+	ClassName            *string    `json:"class_name,omitempty"`
+	IsActive             bool       `json:"is_active"`
+	AccountStatus        string     `json:"account_status"`
+	LastSeenAt           time.Time  `json:"last_seen_at"`
+	SessionCreatedAt     time.Time  `json:"session_created_at"`
+	ActiveSessionCount   int64      `json:"active_session_count"`
+	IPAddress            *string    `json:"ip_address,omitempty"`
+	UserAgent            *string    `json:"user_agent,omitempty"`
+}
+
 type AdminDashboardStats struct {
 	AdminCount                 int64 `json:"admin_count"`
 	ProktorCount               int64 `json:"proktor_count"`
@@ -212,6 +233,7 @@ type AdminDashboardStats struct {
 	UniqueParticipantCount     int64 `json:"unique_participant_count"`
 	CompletedExamCount         int64 `json:"completed_exam_count"`
 	InProgressCount            int64 `json:"in_progress_count"`
+	OnlineUserCount            int64 `json:"online_user_count"`
 	ActiveUserCountDaily       int64 `json:"active_user_count_daily"`
 	ActiveUserCountWeekly      int64 `json:"active_user_count_weekly"`
 	ActiveUserCountMonthly     int64 `json:"active_user_count_monthly"`
@@ -2662,14 +2684,28 @@ func (s *Service) CreateSession(ctx context.Context, userID int64, ipAddress, us
 	}
 	tokenHash := hashToken(token)
 	expiresAt := time.Now().Add(s.sessionTTL)
-
-	_, err = s.db.ExecContext(ctx, `
+	hasLastSeenAt, err := hasColumn(ctx, s.db, "auth_sessions", "last_seen_at")
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	query := `
 		INSERT INTO auth_sessions (
 			user_id, session_token_hash, expires_at, ip_address, user_agent, created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, now()
 		)
-	`, userID, tokenHash, expiresAt, nullableString(ipAddress), nullableString(userAgent))
+	`
+	args := []any{userID, tokenHash, expiresAt, nullableString(ipAddress), nullableString(userAgent)}
+	if hasLastSeenAt {
+		query = `
+			INSERT INTO auth_sessions (
+				user_id, session_token_hash, expires_at, ip_address, user_agent, created_at, last_seen_at
+			) VALUES (
+				$1, $2, $3, $4, $5, now(), now()
+			)
+		`
+	}
+	_, err = s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("insert session: %w", err)
 	}
@@ -2730,6 +2766,33 @@ func (s *Service) RevokeSession(ctx context.Context, token string) error {
 	`, hashToken(token))
 	if err != nil {
 		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) TouchSession(ctx context.Context, token, ipAddress, userAgent string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ErrUnauthorized
+	}
+	hasLastSeenAt, err := hasColumn(ctx, s.db, "auth_sessions", "last_seen_at")
+	if err != nil {
+		return err
+	}
+	if !hasLastSeenAt {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE auth_sessions
+		SET last_seen_at = now(),
+			ip_address = COALESCE(NULLIF($2, ''), ip_address),
+			user_agent = COALESCE(NULLIF($3, ''), user_agent)
+		WHERE session_token_hash = $1
+		  AND revoked_at IS NULL
+		  AND expires_at > now()
+	`, hashToken(token), strings.TrimSpace(ipAddress), strings.TrimSpace(userAgent))
+	if err != nil {
+		return fmt.Errorf("touch session: %w", err)
 	}
 	return nil
 }
@@ -3199,6 +3262,285 @@ func (s *Service) ListUsers(ctx context.Context, role, q string, limit, offset i
 	return out, nil
 }
 
+func (s *Service) ListOnlineUsers(ctx context.Context, role, q string, limit, offset, onlineWindowSeconds int) ([]OnlineUserRecord, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if role != "" && !isValidRole(role) {
+		return nil, errors.New("invalid role filter")
+	}
+	q = strings.TrimSpace(q)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if onlineWindowSeconds <= 0 {
+		onlineWindowSeconds = 120
+	}
+	if onlineWindowSeconds > 3600 {
+		onlineWindowSeconds = 3600
+	}
+	hasLastSeenAt, err := hasColumn(ctx, s.db, "auth_sessions", "last_seen_at")
+	if err != nil {
+		return nil, err
+	}
+	if !hasLastSeenAt {
+		return []OnlineUserRecord{}, nil
+	}
+	actor, _ := CurrentUser(ctx)
+	actorID := int64(0)
+	restrictBySchoolScope := false
+	if actor != nil && actor.Role == "proktor" {
+		restrictBySchoolScope = true
+		actorID = actor.ID
+	}
+	hasTeacherAccessProfile, err := hasColumn(ctx, s.db, "users", "teacher_access_profile")
+	if err != nil {
+		return nil, err
+	}
+	teacherAccessProfileSelect := `''::text AS teacher_access_profile`
+	if hasTeacherAccessProfile {
+		teacherAccessProfileSelect = `COALESCE(NULLIF(btrim(u.teacher_access_profile), ''), CASE WHEN u.role = 'guru' THEN 'school' ELSE '' END) AS teacher_access_profile`
+	}
+
+	query := fmt.Sprintf(`
+		WITH live_sessions AS (
+			SELECT
+				s.user_id,
+				MAX(COALESCE(s.last_seen_at, s.created_at)) AS last_seen_at,
+				MAX(s.created_at) AS session_created_at,
+				COUNT(*)::bigint AS active_session_count
+			FROM auth_sessions s
+			WHERE s.revoked_at IS NULL
+			  AND s.expires_at > now()
+			  AND COALESCE(s.last_seen_at, s.created_at) >= now() - make_interval(secs => $5)
+			GROUP BY s.user_id
+		)
+		SELECT
+			u.id,
+			u.username,
+			u.email,
+			u.full_name,
+			u.role,
+			%s,
+			u.participant_no,
+			sch.school_id,
+			sch.name AS school_name,
+			sch.class_id,
+			sch.class_name,
+			u.is_active,
+			u.account_status,
+			ls.last_seen_at,
+			ls.session_created_at,
+			ls.active_session_count,
+			sess.ip_address,
+			sess.user_agent
+		FROM live_sessions ls
+		JOIN users u ON u.id = ls.user_id
+		JOIN LATERAL (
+			SELECT s2.ip_address, s2.user_agent
+			FROM auth_sessions s2
+			WHERE s2.user_id = ls.user_id
+			  AND s2.revoked_at IS NULL
+			  AND s2.expires_at > now()
+			ORDER BY COALESCE(s2.last_seen_at, s2.created_at) DESC, s2.created_at DESC, s2.id DESC
+			LIMIT 1
+		) sess ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT
+				s.name,
+				e.school_id,
+				e.class_id,
+				c.name AS class_name
+			FROM enrollments e
+			JOIN schools s ON s.id = e.school_id
+			LEFT JOIN classes c ON c.id = e.class_id
+			WHERE e.user_id = u.id
+			ORDER BY e.enrolled_at DESC, e.id DESC
+			LIMIT 1
+		) sch ON TRUE
+		WHERE ($1 = '' OR u.role = $1)
+		  AND u.is_active = TRUE
+		  AND (
+			NOT $6
+			OR EXISTS (
+				SELECT 1
+				FROM user_school_scopes actor_scope
+				WHERE actor_scope.user_id = $7
+				  AND (
+					actor_scope.school_id = sch.school_id
+					OR EXISTS (
+						SELECT 1
+						FROM user_school_scopes scoped
+						WHERE scoped.user_id = u.id
+						  AND scoped.school_id = actor_scope.school_id
+					)
+				  )
+			)
+		  )
+		  AND (
+			$2 = ''
+				OR u.username ILIKE '%%' || $2 || '%%'
+				OR u.full_name ILIKE '%%' || $2 || '%%'
+				OR COALESCE(u.email,'') ILIKE '%%' || $2 || '%%'
+				OR COALESCE(u.participant_no,'') ILIKE '%%' || $2 || '%%'
+				OR COALESCE(sch.name,'') ILIKE '%%' || $2 || '%%'
+		  )
+		ORDER BY ls.last_seen_at DESC, u.full_name, u.id DESC
+		LIMIT $3
+		OFFSET $4
+	`, teacherAccessProfileSelect)
+	rows, err := s.db.QueryContext(ctx, query, role, q, limit, offset, onlineWindowSeconds, restrictBySchoolScope, actorID)
+	if err != nil {
+		if isUndefinedTableErr(err, "user_school_scopes") {
+			if restrictBySchoolScope {
+				return []OnlineUserRecord{}, nil
+			}
+			rows, err = s.db.QueryContext(ctx, fmt.Sprintf(`
+				WITH live_sessions AS (
+					SELECT
+						s.user_id,
+						MAX(COALESCE(s.last_seen_at, s.created_at)) AS last_seen_at,
+						MAX(s.created_at) AS session_created_at,
+						COUNT(*)::bigint AS active_session_count
+					FROM auth_sessions s
+					WHERE s.revoked_at IS NULL
+					  AND s.expires_at > now()
+					  AND COALESCE(s.last_seen_at, s.created_at) >= now() - make_interval(secs => $5)
+					GROUP BY s.user_id
+				)
+				SELECT
+					u.id,
+					u.username,
+					u.email,
+					u.full_name,
+					u.role,
+					%s,
+					u.participant_no,
+					sch.school_id,
+					sch.name AS school_name,
+					sch.class_id,
+					sch.class_name,
+					u.is_active,
+					u.account_status,
+					ls.last_seen_at,
+					ls.session_created_at,
+					ls.active_session_count,
+					sess.ip_address,
+					sess.user_agent
+				FROM live_sessions ls
+				JOIN users u ON u.id = ls.user_id
+				JOIN LATERAL (
+					SELECT s2.ip_address, s2.user_agent
+					FROM auth_sessions s2
+					WHERE s2.user_id = ls.user_id
+					  AND s2.revoked_at IS NULL
+					  AND s2.expires_at > now()
+					ORDER BY COALESCE(s2.last_seen_at, s2.created_at) DESC, s2.created_at DESC, s2.id DESC
+					LIMIT 1
+				) sess ON TRUE
+				LEFT JOIN LATERAL (
+					SELECT
+						s.name,
+						e.school_id,
+						e.class_id,
+						c.name AS class_name
+					FROM enrollments e
+					JOIN schools s ON s.id = e.school_id
+					LEFT JOIN classes c ON c.id = e.class_id
+					WHERE e.user_id = u.id
+					ORDER BY e.enrolled_at DESC, e.id DESC
+					LIMIT 1
+				) sch ON TRUE
+				WHERE ($1 = '' OR u.role = $1)
+				  AND u.is_active = TRUE
+				  AND (
+					$2 = ''
+						OR u.username ILIKE '%%' || $2 || '%%'
+						OR u.full_name ILIKE '%%' || $2 || '%%'
+						OR COALESCE(u.email,'') ILIKE '%%' || $2 || '%%'
+						OR COALESCE(u.participant_no,'') ILIKE '%%' || $2 || '%%'
+						OR COALESCE(sch.name,'') ILIKE '%%' || $2 || '%%'
+				  )
+				ORDER BY ls.last_seen_at DESC, u.full_name, u.id DESC
+				LIMIT $3
+				OFFSET $4
+			`, teacherAccessProfileSelect), role, q, limit, offset, onlineWindowSeconds)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list online users: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]OnlineUserRecord, 0, limit)
+	for rows.Next() {
+		var it OnlineUserRecord
+		var email sql.NullString
+		var participantNo sql.NullString
+		var schoolID sql.NullInt64
+		var schoolName sql.NullString
+		var classID sql.NullInt64
+		var className sql.NullString
+		var ipAddress sql.NullString
+		var userAgent sql.NullString
+		if err := rows.Scan(
+			&it.ID,
+			&it.Username,
+			&email,
+			&it.FullName,
+			&it.Role,
+			&it.TeacherAccessProfile,
+			&participantNo,
+			&schoolID,
+			&schoolName,
+			&classID,
+			&className,
+			&it.IsActive,
+			&it.AccountStatus,
+			&it.LastSeenAt,
+			&it.SessionCreatedAt,
+			&it.ActiveSessionCount,
+			&ipAddress,
+			&userAgent,
+		); err != nil {
+			return nil, fmt.Errorf("scan online user: %w", err)
+		}
+		if email.Valid {
+			it.Email = &email.String
+		}
+		if participantNo.Valid {
+			it.ParticipantNo = &participantNo.String
+		}
+		if schoolID.Valid {
+			it.SchoolID = &schoolID.Int64
+		}
+		if schoolName.Valid {
+			it.SchoolName = &schoolName.String
+		}
+		if classID.Valid {
+			it.ClassID = &classID.Int64
+		}
+		if className.Valid {
+			it.ClassName = &className.String
+		}
+		if ipAddress.Valid {
+			v := strings.TrimSpace(ipAddress.String)
+			it.IPAddress = &v
+		}
+		if userAgent.Valid {
+			v := strings.TrimSpace(userAgent.String)
+			it.UserAgent = &v
+		}
+		it.TeacherAccessProfile = normalizeTeacherAccessProfile(it.Role, it.TeacherAccessProfile)
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate online users: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats, error) {
 	out := &AdminDashboardStats{}
 	if err := s.db.QueryRowContext(ctx, `
@@ -3244,6 +3586,23 @@ func (s *Service) AdminDashboardStats(ctx context.Context) (*AdminDashboardStats
 		WHERE u.is_active = TRUE
 	`).Scan(&out.ActiveUserCountDaily, &out.ActiveUserCountWeekly, &out.ActiveUserCountMonthly); err != nil {
 		return nil, fmt.Errorf("query active user stats: %w", err)
+	}
+	hasLastSeenAt, err := hasColumn(ctx, s.db, "auth_sessions", "last_seen_at")
+	if err != nil {
+		return nil, err
+	}
+	if hasLastSeenAt {
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COUNT(DISTINCT s.user_id)
+			FROM auth_sessions s
+			JOIN users u ON u.id = s.user_id
+			WHERE s.revoked_at IS NULL
+			  AND s.expires_at > now()
+			  AND COALESCE(s.last_seen_at, s.created_at) >= now() - interval '2 minutes'
+			  AND u.is_active = TRUE
+		`).Scan(&out.OnlineUserCount); err != nil {
+			return nil, fmt.Errorf("query online user count: %w", err)
+		}
 	}
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT a.student_id)

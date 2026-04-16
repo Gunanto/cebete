@@ -89,6 +89,20 @@
                             </span>
                             Daftar Pengguna
                         </button>
+                        <button
+                            class="btn btn-secondary admin-menu-btn"
+                            type="button"
+                            data-admin-menu="online-users"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <circle cx="12" cy="12" r="7" />
+                                    <circle cx="12" cy="12" r="2" />
+                                    <path d="M20 4 4 20" />
+                                </svg>
+                            </span>
+                            Pengguna Online
+                        </button>
                     </div>
                 </section>
             </div>
@@ -202,11 +216,14 @@
                         class="admin-stat-card stat-proktor stat-variant-rose"
                         data-stat-icon="pulse"
                     >
-                        <div class="stat-label">Pengguna Yang Aktif</div>
+                        <div class="stat-label">Pengguna Aktif / Online</div>
                         <div id="admin-stat-active-users" class="stat-value">
                             0
                         </div>
                         <div class="stat-sub stat-sub-strong">
+                            Online:
+                            <span id="admin-stat-online-users">0</span>
+                            |
                             DAU:
                             <span id="admin-stat-active-users-daily">0</span>
                             | WAU:
@@ -427,6 +444,95 @@
                     id="admin-registration-output"
                     class="box code-box mt"
                 ></pre>
+            </section>
+
+            <section id="admin-online-users-panel" class="panel" hidden>
+                <div class="admin-section-head">
+                    <h3>Pengguna Online</h3>
+                    <button
+                        id="admin-online-users-refresh-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        Muat Ulang
+                    </button>
+                </div>
+                <form id="admin-online-users-filter-form" class="form-grid mt">
+                    <label
+                        >Peran
+                        <select name="role">
+                            <option value="">semua</option>
+                            <option value="admin">admin</option>
+                            <option value="proktor">proktor</option>
+                            <option value="guru">guru</option>
+                            <option value="siswa">siswa</option>
+                        </select>
+                    </label>
+                    <label
+                        >Cari (nama/email/username)
+                        <input
+                            type="text"
+                            name="q"
+                            placeholder="Ketik kata kunci"
+                    /></label>
+                    <label
+                        >Jendela online (detik)
+                        <input
+                            type="number"
+                            name="window_seconds"
+                            min="30"
+                            max="3600"
+                            value="120"
+                            required
+                    /></label>
+                    <label
+                        >Batas Data
+                        <input
+                            type="number"
+                            name="limit"
+                            min="1"
+                            max="200"
+                            value="50"
+                            required
+                    /></label>
+                    <button class="btn btn-secondary icon-btn" type="submit">
+                        <span class="icon-wrap" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                        </span>
+                        Muat Data
+                    </button>
+                </form>
+                <div id="admin-online-users-summary" class="mt muted">
+                    Memuat daftar pengguna online...
+                </div>
+                <div class="table-wrap mt">
+                    <table class="bs-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Nama</th>
+                                <th>Peran</th>
+                                <th>Sekolah</th>
+                                <th>Kelas</th>
+                                <th>Sesi</th>
+                                <th>Terakhir Aktif</th>
+                                <th>IP</th>
+                                <th>User Agent</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-online-users-body">
+                            <tr>
+                                <td colspan="10" class="muted">
+                                    Belum ada data pengguna online.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </section>
 
             <section id="admin-master-panel" class="panel" hidden>

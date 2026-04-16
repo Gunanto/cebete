@@ -64,6 +64,7 @@
       "admin-stat-non-regular-participants",
     );
     const statActiveUsers = document.getElementById("admin-stat-active-users");
+    const statOnlineUsers = document.getElementById("admin-stat-online-users");
     const statActiveUsersDaily = document.getElementById(
       "admin-stat-active-users-daily",
     );
@@ -193,17 +194,33 @@
     const adminPageDesc = document.getElementById("admin-page-desc");
     const dashboardPanel = document.getElementById("admin-dashboard-panel");
     const usersPanel = document.getElementById("admin-users-panel");
+    const onlineUsersPanel = document.getElementById("admin-online-users-panel");
     const masterPanel = document.getElementById("admin-master-panel");
+    const onlineUsersFilterForm = document.getElementById(
+      "admin-online-users-filter-form",
+    );
+    const onlineUsersRefreshBtn = document.getElementById(
+      "admin-online-users-refresh-btn",
+    );
+    const onlineUsersSummary = document.getElementById(
+      "admin-online-users-summary",
+    );
+    const onlineUsersBody = document.getElementById("admin-online-users-body");
     const deepParams = new URLSearchParams(window.location.search || "");
     const deepMenu = String(deepParams.get("menu") || "").trim();
     const deepUserQ = String(deepParams.get("user_q") || "").trim();
     const deepOpenDetail =
       String(deepParams.get("open_detail") || "1").trim() === "1";
-    const initialMenu = ["dashboard", "users", "master", "registrations"].includes(
-      deepMenu,
-    )
+    const initialMenu = [
+      "dashboard",
+      "users",
+      "online-users",
+      "master",
+      "registrations",
+    ].includes(deepMenu)
       ? deepMenu
       : "dashboard";
+    let onlineUsersRefreshTimer = 0;
 
     function setMsg(msg) {
       text(message, msg);
@@ -218,6 +235,97 @@
       const d = new Date(raw);
       if (Number.isNaN(d.getTime())) return String(raw);
       return d.toLocaleString("id-ID");
+    }
+
+    function previewUserAgent(raw) {
+      const value = String(raw || "").trim();
+      if (!value) return "-";
+      if (value.length <= 80) return value;
+      return value.slice(0, 77) + "...";
+    }
+
+    function onlineRoleLabel(role) {
+      const value = String(role || "").trim().toLowerCase();
+      if (value === "admin") return "Admin";
+      if (value === "proktor") return "Proktor";
+      if (value === "guru") return "Guru";
+      if (value === "siswa") return "Siswa";
+      return value || "-";
+    }
+
+    function renderOnlineUsers(items, windowSeconds) {
+      if (!onlineUsersBody || !onlineUsersSummary) return;
+      const rows = Array.isArray(items) ? items : [];
+      onlineUsersSummary.textContent =
+        "Online dalam " +
+        String(windowSeconds || 120) +
+        " detik terakhir: " +
+        String(rows.length) +
+        " pengguna.";
+      if (!rows.length) {
+        onlineUsersBody.innerHTML =
+          '<tr><td colspan="10" class="muted">Belum ada pengguna yang terdeteksi online pada jendela waktu ini.</td></tr>';
+        return;
+      }
+      onlineUsersBody.innerHTML = "";
+      rows.forEach(function (it) {
+        const tr = document.createElement("tr");
+        const school = String((it && it.school_name) || "").trim() || "-";
+        const className = String((it && it.class_name) || "").trim() || "-";
+        const sessionCount = Number((it && it.active_session_count) || 0);
+        const ipAddress = String((it && it.ip_address) || "").trim() || "-";
+        const userAgent = String((it && it.user_agent) || "").trim();
+        tr.innerHTML = [
+          "<td>" + escapeHtml(String((it && it.id) || "")) + "</td>",
+          "<td>" + escapeHtml(String((it && it.username) || "-")) + "</td>",
+          "<td>" + escapeHtml(String((it && it.full_name) || "-")) + "</td>",
+          "<td>" + escapeHtml(onlineRoleLabel(it && it.role)) + "</td>",
+          "<td>" + escapeHtml(school) + "</td>",
+          "<td>" + escapeHtml(className) + "</td>",
+          "<td>" + escapeHtml(String(sessionCount)) + "</td>",
+          "<td>" + escapeHtml(fmtDate(it && it.last_seen_at)) + "</td>",
+          "<td>" + escapeHtml(ipAddress) + "</td>",
+          '<td title="' +
+            escapeHtml(userAgent || "-") +
+            '">' +
+            escapeHtml(previewUserAgent(userAgent)) +
+            "</td>",
+        ].join("");
+        onlineUsersBody.appendChild(tr);
+      });
+    }
+
+    async function loadOnlineUsers() {
+      if (!onlineUsersFilterForm) return;
+      const form = new FormData(onlineUsersFilterForm);
+      const params = new URLSearchParams();
+      const role = String(form.get("role") || "").trim();
+      const q = String(form.get("q") || "").trim();
+      const windowSeconds = Number(form.get("window_seconds") || 120);
+      const limit = Number(form.get("limit") || 50);
+      if (role) params.set("role", role);
+      if (q) params.set("q", q);
+      params.set("window_seconds", String(windowSeconds > 0 ? windowSeconds : 120));
+      params.set("limit", String(limit > 0 ? limit : 50));
+      const out = await api("/api/v1/admin/users/online?" + params.toString(), "GET");
+      renderOnlineUsers(out && out.items, out && out.window_seconds);
+    }
+
+    function syncOnlineUsersAutoRefresh(target) {
+      const active = target === "online-users";
+      if (!active && onlineUsersRefreshTimer) {
+        window.clearInterval(onlineUsersRefreshTimer);
+        onlineUsersRefreshTimer = 0;
+        return;
+      }
+      if (active && !onlineUsersRefreshTimer) {
+        onlineUsersRefreshTimer = window.setInterval(function () {
+          if (!onlineUsersPanel || onlineUsersPanel.hidden) return;
+          loadOnlineUsers().catch(function () {
+            // Keep current table state when background refresh fails.
+          });
+        }, 30000);
+      }
     }
 
     function initAdminUsersModule() {
@@ -430,6 +538,7 @@
     function activateMenu(target) {
       if (dashboardPanel) dashboardPanel.hidden = target !== "dashboard";
       if (usersPanel) usersPanel.hidden = target !== "users";
+      if (onlineUsersPanel) onlineUsersPanel.hidden = target !== "online-users";
       if (masterPanel) masterPanel.hidden = target !== "master";
       if (adminRegistrationsPanel)
         adminRegistrationsPanel.hidden = target !== "registrations";
@@ -454,13 +563,30 @@
           title: "Daftar Pengguna",
           desc: "Kelola akun admin, proktor, guru, dan siswa.",
         },
+        "online-users": {
+          title: "Pengguna Online",
+          desc: "Pantau akun yang masih aktif mengirim heartbeat ke sistem.",
+        },
       };
       const info = adminTitles[target] || adminTitles.dashboard;
       if (adminPageTitle) adminPageTitle.textContent = info.title;
       if (adminPageDesc) adminPageDesc.textContent = info.desc;
+      syncOnlineUsersAutoRefresh(target);
       if (target === "registrations") {
         loadPendingRegistrations().catch(function (err) {
           setMsg("Gagal memuat pendaftaran pending: " + err.message);
+        });
+      }
+      if (target === "online-users") {
+        loadOnlineUsers().catch(function (err) {
+          if (onlineUsersSummary) {
+            onlineUsersSummary.textContent =
+              "Gagal memuat pengguna online: " + err.message;
+          }
+          if (onlineUsersBody) {
+            onlineUsersBody.innerHTML =
+              '<tr><td colspan="10" class="muted">Gagal memuat pengguna online.</td></tr>';
+          }
         });
       }
     }
@@ -515,6 +641,8 @@
         statActiveUsers.textContent = String(
           out.active_user_count_monthly || 0,
         );
+      if (statOnlineUsers)
+        statOnlineUsers.textContent = String(out.online_user_count || 0);
       if (statActiveUsersDaily)
         statActiveUsersDaily.textContent = String(
           out.active_user_count_daily || 0,
@@ -533,6 +661,54 @@
     initAdminUsersModule();
     initAdminMasterModule();
     initAdminRegistrationsModule();
+
+    if (onlineUsersFilterForm) {
+      onlineUsersFilterForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const done = beginBusy(
+          onlineUsersRefreshBtn || onlineUsersFilterForm,
+          message,
+          "Memuat pengguna online...",
+        );
+        try {
+          await loadOnlineUsers();
+        } catch (err) {
+          if (onlineUsersSummary) {
+            onlineUsersSummary.textContent =
+              "Gagal memuat pengguna online: " + err.message;
+          }
+          if (onlineUsersBody) {
+            onlineUsersBody.innerHTML =
+              '<tr><td colspan="10" class="muted">Gagal memuat pengguna online.</td></tr>';
+          }
+        } finally {
+          done();
+        }
+      });
+    }
+    if (onlineUsersRefreshBtn) {
+      onlineUsersRefreshBtn.addEventListener("click", async function () {
+        const done = beginBusy(
+          onlineUsersRefreshBtn,
+          message,
+          "Memuat pengguna online...",
+        );
+        try {
+          await loadOnlineUsers();
+        } catch (err) {
+          if (onlineUsersSummary) {
+            onlineUsersSummary.textContent =
+              "Gagal memuat pengguna online: " + err.message;
+          }
+          if (onlineUsersBody) {
+            onlineUsersBody.innerHTML =
+              '<tr><td colspan="10" class="muted">Gagal memuat pengguna online.</td></tr>';
+          }
+        } finally {
+          done();
+        }
+      });
+    }
 
     menuButtons.forEach(function (btn) {
       btn.addEventListener("click", function () {

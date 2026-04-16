@@ -190,6 +190,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.Use(CSRFMiddleware(cfg.CSRFEnforced))
 			secure.Get("/auth/me", authHandler.Me)
 			secure.Get("/auth/me/student-profile", authHandler.MeStudentProfile)
+			secure.Post("/auth/heartbeat", authHandler.Heartbeat)
 			secure.Post("/auth/logout", authHandler.Logout)
 			secure.Get("/subjects", examHandler.ListSubjects)
 			secure.With(authHandler.RequireRoles("admin", "guru")).Get("/learning-goals", masterHandler.ListLearningGoals)
@@ -285,6 +286,7 @@ func NewRouter(cfg Config, db *sql.DB) http.Handler {
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/schools", masterHandler.ListSchools)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/schools/{id}/user-stats", masterHandler.GetSchoolUserStats)
 			secure.With(authHandler.RequireRoles("admin", "proktor", "guru")).Get("/admin/users", authHandler.ListUsers)
+			secure.With(authHandler.RequireRoles("admin", "proktor")).Get("/admin/users/online", authHandler.ListOnlineUsers)
 
 			secure.Group(func(admin chi.Router) {
 				admin.Use(authHandler.RequireRoles("admin", "proktor", "guru"))
