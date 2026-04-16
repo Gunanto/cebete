@@ -911,6 +911,9 @@ func TestReplaceExamAssignmentsByClassRejectsSchoolOutsideSameSchoolScope(t *tes
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(91)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("same_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
@@ -964,6 +967,9 @@ func TestReplaceExamAssignmentsRejectsStudentOutsideSameSchoolScopeForSchoolTeac
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(91)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("same_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
@@ -976,6 +982,12 @@ func TestReplaceExamAssignmentsRejectsStudentOutsideSameSchoolScopeForSchoolTeac
 	mock.ExpectQuery(`SELECT EXISTS\([\s\S]*FROM enrollments[\s\S]*WHERE user_id = \$1[\s\S]*school_id = \$2`).
 		WithArgs(int64(55), int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("12345678", "SMA Owner"))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM enrollments e[\s\S]*JOIN schools s ON s\.id = e\.school_id[\s\S]*WHERE e\.user_id = \$1`).
+		WithArgs(int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("87654321", "SMA Peserta"))
 
 	_, err = svc.ReplaceExamAssignments(ctx, ReplaceExamAssignmentsInput{
 		ExamID:     91,
@@ -1025,6 +1037,9 @@ func TestAppendExamAssignmentsByClassRejectsCrossSchoolForSchoolTeacher(t *testi
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(92)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("cross_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(92)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("admin", ""))
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
@@ -1078,6 +1093,9 @@ func TestReplaceExamAssignmentsRejectsCrossSchoolExamForSchoolTeacher(t *testing
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(92)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("cross_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(92)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("admin", ""))
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
@@ -1108,9 +1126,18 @@ func TestEnsureStudentWithinExamScopeRejectsStudentOutsideOwnerSchool(t *testing
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(91)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("same_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
 	mock.ExpectQuery(`SELECT EXISTS\([\s\S]*FROM enrollments[\s\S]*WHERE user_id = \$1[\s\S]*school_id = \$2`).
 		WithArgs(int64(55), int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("12345678", "SMA Owner"))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM enrollments e[\s\S]*JOIN schools s ON s\.id = e\.school_id[\s\S]*WHERE e\.user_id = \$1`).
+		WithArgs(int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("87654321", "SMA Peserta"))
 
 	err = svc.ensureStudentWithinExamScope(context.Background(), 91, 55)
 	if !errors.Is(err, ErrAttemptForbidden) {
@@ -1134,9 +1161,122 @@ func TestEnsureStudentWithinExamScopeAllowsCrossSchoolExam(t *testing.T) {
 	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
 		WithArgs(int64(92)).
 		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("cross_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(92)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("admin", ""))
 
 	if err := svc.ensureStudentWithinExamScope(context.Background(), 92, 55); err != nil {
 		t.Fatalf("ensureStudentWithinExamScope: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestEnsureStudentWithinExamScopeAllowsStudentWithMatchingSchoolCode(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
+		WithArgs(int64(93)).
+		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("same_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(93)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
+	mock.ExpectQuery(`SELECT EXISTS\([\s\S]*FROM enrollments[\s\S]*WHERE user_id = \$1[\s\S]*school_id = \$2`).
+		WithArgs(int64(55), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("12345678", "SMA Contoh"))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM enrollments e[\s\S]*JOIN schools s ON s\.id = e\.school_id[\s\S]*WHERE e\.user_id = \$1`).
+		WithArgs(int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("12345678", "SMA Lain"))
+
+	if err := svc.ensureStudentWithinExamScope(context.Background(), 93, 55); err != nil {
+		t.Fatalf("ensureStudentWithinExamScope: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestEnsureStudentWithinExamScopeAllowsStudentWithMatchingSchoolName(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
+		WithArgs(int64(94)).
+		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("same_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(94)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
+	mock.ExpectQuery(`SELECT EXISTS\([\s\S]*FROM enrollments[\s\S]*WHERE user_id = \$1[\s\S]*school_id = \$2`).
+		WithArgs(int64(56), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("", "SMA Nusantara"))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM enrollments e[\s\S]*JOIN schools s ON s\.id = e\.school_id[\s\S]*WHERE e\.user_id = \$1`).
+		WithArgs(int64(56)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("", "  sma nusantara  "))
+
+	if err := svc.ensureStudentWithinExamScope(context.Background(), 94, 56); err != nil {
+		t.Fatalf("ensureStudentWithinExamScope: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestSelfEnrollExamRejectsStudentOutsideTeacherSchoolScope(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+
+	mock.ExpectQuery(`SELECT role, COALESCE\(is_non_regular, FALSE\)`).
+		WithArgs(int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "is_non_regular"}).AddRow("siswa", false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*WHERE id = \$1 AND is_active = TRUE`).
+		WithArgs(int64(91), int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"start_at", "end_at", "allow_non_regular_self_enroll", "has_assignment"}).AddRow(nil, nil, false, false))
+	mock.ExpectQuery(`SELECT management_scope, owner_school_id[\s\S]*FROM exams`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"management_scope", "owner_school_id"}).AddRow("cross_school", int64(3)))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM exams e[\s\S]*JOIN users u ON u\.id = e\.created_by[\s\S]*WHERE e\.id = \$1`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"role", "teacher_access_profile"}).AddRow("guru", "school"))
+	mock.ExpectQuery(`SELECT EXISTS\([\s\S]*FROM enrollments[\s\S]*WHERE user_id = \$1[\s\S]*school_id = \$2`).
+		WithArgs(int64(55), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM schools[\s\S]*WHERE id = \$1`).
+		WithArgs(int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("12345678", "SMA Owner"))
+	mock.ExpectQuery(`SELECT[\s\S]*FROM enrollments e[\s\S]*JOIN schools s ON s\.id = e\.school_id[\s\S]*WHERE e\.user_id = \$1`).
+		WithArgs(int64(55)).
+		WillReturnRows(sqlmock.NewRows([]string{"code", "name"}).AddRow("87654321", "SMA Peserta"))
+
+	err = svc.SelfEnrollExam(context.Background(), 91, 55)
+	if !errors.Is(err, ErrAttemptForbidden) {
+		t.Fatalf("expected ErrAttemptForbidden, got %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

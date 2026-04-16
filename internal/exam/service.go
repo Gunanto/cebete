@@ -392,6 +392,55 @@ func (s *Service) loadExamManagementScope(ctx context.Context, examID int64) (st
 	return scope, outOwnerSchoolID, nil
 }
 
+func (s *Service) loadExamEffectiveParticipantScope(ctx context.Context, examID int64) (string, *int64, error) {
+	scope, ownerSchoolID, err := s.loadExamManagementScope(ctx, examID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var creatorRole string
+	var creatorProfile sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(btrim(u.role), ''), ''),
+			COALESCE(NULLIF(btrim(u.teacher_access_profile), ''), '')
+		FROM exams e
+		JOIN users u ON u.id = e.created_by
+		WHERE e.id = $1
+	`, examID).Scan(&creatorRole, &creatorProfile); err != nil {
+		if isUndefinedColumnErr(err, "users", "teacher_access_profile") {
+			if err := s.db.QueryRowContext(ctx, `
+				SELECT COALESCE(NULLIF(btrim(u.role), ''), '')
+				FROM exams e
+				JOIN users u ON u.id = e.created_by
+				WHERE e.id = $1
+			`, examID).Scan(&creatorRole); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return "", nil, ErrExamNotFound
+				}
+				return "", nil, fmt.Errorf("load exam creator role: %w", err)
+			}
+			creatorProfile = sql.NullString{String: teacherAccessProfileSchool, Valid: true}
+		} else if errors.Is(err, sql.ErrNoRows) {
+			return "", nil, ErrExamNotFound
+		} else {
+			return "", nil, fmt.Errorf("load exam creator profile: %w", err)
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(creatorRole), "guru") &&
+		normalizeTeacherAccessProfile(creatorProfile.String) != teacherAccessProfileCrossSchool {
+		scope = examManagementScopeSameSchool
+	}
+	if scope == examManagementScopeSameSchool && (ownerSchoolID == nil || *ownerSchoolID <= 0) {
+		ownerSchoolID, err = s.loadExamOwnerSchoolFromCreator(ctx, examID)
+		if err != nil && !errors.Is(err, ErrExamNotFound) {
+			return "", nil, err
+		}
+	}
+	return scope, ownerSchoolID, nil
+}
+
 func (s *Service) loadExamActorRole(ctx context.Context) string {
 	user, ok := auth.CurrentUser(ctx)
 	if !ok || user == nil {
@@ -416,17 +465,66 @@ func (s *Service) ensureUserInSchool(ctx context.Context, userID, schoolID int64
 	`, userID, schoolID).Scan(&allowed); err != nil {
 		return fmt.Errorf("check user school scope: %w", err)
 	}
-	if !allowed {
-		return ErrExamForbidden
+	if allowed {
+		return nil
 	}
-	return nil
+
+	var targetSchoolCode sql.NullString
+	var targetSchoolName sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(btrim(code), ''), ''),
+			COALESCE(NULLIF(btrim(name), ''), '')
+		FROM schools
+		WHERE id = $1
+	`, schoolID).Scan(&targetSchoolCode, &targetSchoolName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrExamForbidden
+		}
+		return fmt.Errorf("load target school identity: %w", err)
+	}
+
+	var userSchoolCode sql.NullString
+	var userSchoolName sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(btrim(s.code), ''), ''),
+			COALESCE(NULLIF(btrim(s.name), ''), '')
+		FROM enrollments e
+		JOIN schools s ON s.id = e.school_id
+		WHERE e.user_id = $1
+		  AND e.status = 'active'
+		ORDER BY e.enrolled_at DESC, e.id DESC
+		LIMIT 1
+	`, userID).Scan(&userSchoolCode, &userSchoolName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrExamForbidden
+		}
+		return fmt.Errorf("load user school identity: %w", err)
+	}
+
+	targetCode := normalizeSchoolScopeKey(targetSchoolCode.String)
+	targetName := normalizeSchoolScopeKey(targetSchoolName.String)
+	userCode := normalizeSchoolScopeKey(userSchoolCode.String)
+	userName := normalizeSchoolScopeKey(userSchoolName.String)
+	if targetCode != "" && userCode != "" && targetCode == userCode {
+		return nil
+	}
+	if targetName != "" && userName != "" && targetName == userName {
+		return nil
+	}
+	return ErrExamForbidden
+}
+
+func normalizeSchoolScopeKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func (s *Service) ensureStudentWithinExamScope(ctx context.Context, examID, studentID int64) error {
 	if examID <= 0 || studentID <= 0 {
 		return ErrInvalidInput
 	}
-	scope, ownerSchoolID, err := s.loadExamManagementScope(ctx, examID)
+	scope, ownerSchoolID, err := s.loadExamEffectiveParticipantScope(ctx, examID)
 	if err != nil {
 		return err
 	}
@@ -2044,6 +2142,9 @@ func (s *Service) SelfEnrollExam(ctx context.Context, examID, studentID int64) e
 		return fmt.Errorf("load exam schedule: %w", err)
 	}
 	if err := validateExamScheduleWindow(time.Now(), startAt, endAt); err != nil {
+		return err
+	}
+	if err := s.ensureStudentWithinExamScope(ctx, examID, studentID); err != nil {
 		return err
 	}
 	if !canStudentSelfEnrollExam(hasAssignment, isNonRegular, allowNonRegular) {
@@ -4572,7 +4673,7 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
-	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	examScope, ownerSchoolID, err := s.loadExamEffectiveParticipantScope(ctx, in.ExamID)
 	if err != nil {
 		return nil, err
 	}
@@ -4708,7 +4809,7 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
-	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	examScope, ownerSchoolID, err := s.loadExamEffectiveParticipantScope(ctx, in.ExamID)
 	if err != nil {
 		return nil, err
 	}
@@ -4800,7 +4901,7 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
 		return nil, err
 	}
-	examScope, ownerSchoolID, err := s.loadExamManagementScope(ctx, in.ExamID)
+	examScope, ownerSchoolID, err := s.loadExamEffectiveParticipantScope(ctx, in.ExamID)
 	if err != nil {
 		return nil, err
 	}
