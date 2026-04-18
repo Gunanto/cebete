@@ -47,7 +47,7 @@
     selectEl.innerHTML = "";
     const firstOpt = document.createElement("option");
     firstOpt.value = "";
-    firstOpt.textContent = "Pilih Soal";
+    firstOpt.textContent = "Buat Soal Baru";
     selectEl.appendChild(firstOpt);
     cache.forEach(function (it) {
       const opt = document.createElement("option");

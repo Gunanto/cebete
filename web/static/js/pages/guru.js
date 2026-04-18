@@ -113,6 +113,10 @@
     const guruPageDesc = document.getElementById("guru-page-desc");
     const guruSidebar = root.querySelector(".portal-sidebar");
     const guruSidebarToggleBtn = root.querySelector(".guru-sidebar-toggle");
+    const guruProfileCard = root.querySelector(".portal-user-card");
+    const guruProfilePopover = root.querySelector(".guru-profile-popover");
+    const guruProfileLogoutBtn = root.querySelector(".guru-profile-logout-btn");
+    const navLogoutBtn = document.getElementById("nav-logout");
     const dashboardGreetingEyebrow = root.querySelector(
       ".dashboard-greeting-eyebrow",
     );
@@ -845,6 +849,17 @@
 
     function updateDashboardGreeting() {
       if (!dashboardGreetingEyebrow) return;
+      const fullName = String((user && user.full_name) || "").trim();
+      const username = String((user && user.username) || "").trim();
+      const displayName = fullName || username;
+      if (displayName) {
+        dashboardGreetingEyebrow.textContent =
+          resolveDayGreeting() +
+          " Sdr. " +
+          displayName +
+          ", semoga aktivitas mengajar lancar.";
+        return;
+      }
       dashboardGreetingEyebrow.textContent =
         resolveDayGreeting() + ", semoga aktivitas mengajar lancar.";
     }
@@ -904,6 +919,20 @@
       if (guruSidebar) {
         guruSidebar.classList.toggle("is-collapsed", collapsed);
       }
+    }
+
+    function setGuruProfilePopoverOpen(value) {
+      const open = value === true;
+      if (!guruProfileCard || !guruProfilePopover) return;
+      guruProfileCard.classList.toggle("is-open", open);
+      guruProfileCard.setAttribute("aria-expanded", open ? "true" : "false");
+      guruProfilePopover.hidden = !open;
+    }
+
+    function toggleGuruProfilePopover() {
+      if (!guruProfileCard) return;
+      const nextOpen = !guruProfileCard.classList.contains("is-open");
+      setGuruProfilePopoverOpen(nextOpen);
     }
 
     const setMsg = function (value) {
@@ -2857,6 +2886,55 @@
         );
         applyGuruSidebarCollapsed(nextCollapsed);
         saveGuruSidebarCollapsed(nextCollapsed);
+      });
+    }
+    if (guruProfileCard && guruProfilePopover) {
+      guruProfileCard.addEventListener("click", function (e) {
+        const target = e.target;
+        if (
+          target &&
+          typeof target.closest === "function" &&
+          target.closest(".guru-profile-logout-btn")
+        ) {
+          return;
+        }
+        toggleGuruProfilePopover();
+      });
+      guruProfileCard.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleGuruProfilePopover();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setGuruProfilePopoverOpen(false);
+        }
+      });
+      document.addEventListener("click", function (e) {
+        if (!guruProfileCard.classList.contains("is-open")) return;
+        if (guruProfileCard.contains(e.target)) return;
+        setGuruProfilePopoverOpen(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape") return;
+        setGuruProfilePopoverOpen(false);
+      });
+    }
+    if (guruProfileLogoutBtn) {
+      guruProfileLogoutBtn.addEventListener("click", async function (e) {
+        e.preventDefault();
+        setGuruProfilePopoverOpen(false);
+        if (navLogoutBtn) {
+          navLogoutBtn.click();
+          return;
+        }
+        try {
+          await api("/api/v1/auth/logout", "POST");
+        } catch (_) {
+          // Ignore logout API error and still force redirect.
+        }
+        window.location.href = "/login";
       });
     }
     if (dashboardMonitorRefreshBtn) {

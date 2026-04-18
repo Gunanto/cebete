@@ -51,7 +51,21 @@
     Object.keys(panels).forEach(function (name) {
       const panel = panels[name];
       if (!panel) return;
-      panel.hidden = !visiblePanels.has(panel);
+      const isVisible = visiblePanels.has(panel);
+      if (isVisible) {
+        panel.hidden = false;
+        panel.classList.remove("guru-panel-active");
+        if (typeof window !== "undefined" && window.requestAnimationFrame) {
+          window.requestAnimationFrame(function () {
+            panel.classList.add("guru-panel-active");
+          });
+        } else {
+          panel.classList.add("guru-panel-active");
+        }
+        return;
+      }
+      panel.classList.remove("guru-panel-active");
+      panel.hidden = true;
     });
   }
 

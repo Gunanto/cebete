@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 :root {
     --bg: #eef3fb;
     --primary: #2056a8;
@@ -8,6 +10,7 @@
     --border: #d8e1f0;
     --danger: #c7362f;
     --danger-dark: #a21f1a;
+    --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
 }
 
 body[data-page="guru_content"] .learning-goals-pro {
@@ -202,6 +205,9 @@ body[data-page="guru_content"] {
     --guru-accent-end: #0ea5e9;
     --guru-text-main: #0f172a;
     --guru-text-muted: #475569;
+    --guru-font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+    --guru-font-heading: "Inter", "Segoe UI", Arial, sans-serif;
+    font-family: var(--guru-font-sans);
 }
 
 body[data-page="guru_content"] {
@@ -241,14 +247,50 @@ body[data-page="guru_content"] .guru-sidebar-toggle:hover {
 body[data-page="guru_content"] .portal-user-card {
     background: var(--guru-surface-strong);
     border-color: rgba(148, 163, 184, 0.22);
+    position: relative;
+    cursor: pointer;
     transition:
         transform 0.2s ease,
         box-shadow 0.2s ease;
 }
 
+body[data-page="guru_content"] .portal-user-card:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.75);
+    outline-offset: 2px;
+}
+
 body[data-page="guru_content"] .portal-user-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 10px 24px rgba(30, 58, 138, 0.14);
+}
+
+body[data-page="guru_content"] .portal-user-card.is-open {
+    box-shadow: 0 14px 30px rgba(30, 58, 138, 0.2);
+}
+
+body[data-page="guru_content"] .guru-profile-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    min-width: 180px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+    padding: 10px;
+    z-index: 12;
+}
+
+body[data-page="guru_content"] .guru-profile-popover-label {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+}
+
+body[data-page="guru_content"] .guru-profile-logout-btn {
+    width: 100%;
+    justify-content: center;
 }
 
 body[data-page="guru_content"] .admin-content > .dashboard-hero {
@@ -262,16 +304,286 @@ body[data-page="guru_content"] .admin-content > .dashboard-hero {
 
 body[data-page="guru_content"] .dashboard-greeting-eyebrow {
     margin: 0 0 8px;
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 20px;
+    font-weight: 800;
     letter-spacing: 0.01em;
     color: rgba(224, 242, 254, 0.92);
+    line-height: 1.35;
 }
 
 body[data-page="guru_content"] .dashboard-greeting-summary {
     margin: 8px 0 0;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 500;
     color: rgba(224, 242, 254, 0.92);
+}
+
+body[data-page="guru_content"] .page-hero h2,
+body[data-page="guru_content"] .dashboard-hero-head h2,
+body[data-page="guru_content"] .dashboard-monitor h3,
+body[data-page="guru_content"] .portal-brand h3 {
+    font-family: var(--guru-font-heading);
+    letter-spacing: -0.012em;
+}
+
+body[data-page="guru_content"] .page-hero h2 {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.08;
+}
+
+body[data-page="guru_content"] .dashboard-hero-head h2 {
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1.04;
+}
+
+body[data-page="guru_content"] .page-hero p,
+body[data-page="guru_content"] .dashboard-hero .muted,
+body[data-page="guru_content"] .dashboard-monitor-filter span,
+body[data-page="guru_content"] .portal-user-meta span {
+    font-weight: 500;
+}
+
+body[data-page="guru_content"] .portal-sidebar-group h4 {
+    font-size: 12px;
+    letter-spacing: 0.17em;
+}
+
+body[data-page="guru_content"] .portal-sidebar .admin-menu-btn {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.004em;
+    transition:
+        transform 0.22s ease,
+        box-shadow 0.22s ease,
+        background-color 0.2s ease;
+}
+
+body[data-page="guru_content"] .portal-sidebar .admin-menu-btn:hover {
+    transform: translateY(-1px) translateX(2px);
+}
+
+body[data-page="guru_content"] .admin-content > .panel {
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+        opacity 0.24s ease,
+        transform 0.24s ease;
+}
+
+body[data-page="guru_content"] .admin-content > .panel.guru-panel-active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+body[data-page="guru_content"] .stat-label {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+body[data-page="guru_content"] .stat-value {
+    font-size: 38px;
+    font-weight: 800;
+}
+
+@media (prefers-color-scheme: dark) {
+    body[data-page="guru_content"] {
+        --guru-surface: rgba(15, 23, 42, 0.74);
+        --guru-surface-strong: rgba(15, 23, 42, 0.9);
+        --guru-border: rgba(148, 163, 184, 0.22);
+        --guru-shadow: 0 24px 46px rgba(2, 6, 23, 0.5);
+        --guru-text-main: #e2e8f0;
+        --guru-text-muted: #94a3b8;
+        background:
+            radial-gradient(circle at 0% 0%, rgba(30, 64, 175, 0.34), transparent 34%),
+            radial-gradient(circle at 88% 16%, rgba(14, 116, 144, 0.28), transparent 38%),
+            linear-gradient(180deg, #0b1220 0%, #0f172a 52%, #111827 100%);
+    }
+
+    body[data-page="guru_content"] .admin-sidebar.portal-sidebar {
+        border-color: rgba(148, 163, 184, 0.24);
+        background: var(--guru-surface);
+    }
+
+    body[data-page="guru_content"] .portal-brand {
+        border-bottom-color: rgba(148, 163, 184, 0.22);
+    }
+
+    body[data-page="guru_content"] .portal-brand h3 {
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .portal-brand p {
+        color: #94a3b8;
+    }
+
+    body[data-page="guru_content"] .portal-sidebar-group h4 {
+        color: #8ea0bd;
+    }
+
+    body[data-page="guru_content"] .portal-sidebar .admin-menu-btn {
+        color: #cbd5e1;
+    }
+
+    body[data-page="guru_content"] .portal-sidebar .admin-menu-icon {
+        color: #94a3b8;
+    }
+
+    body[data-page="guru_content"] .portal-sidebar .admin-menu-btn:hover {
+        background: rgba(59, 130, 246, 0.2);
+        color: #e0e7ff;
+    }
+
+    body[data-page="guru_content"] .portal-sidebar .admin-menu-btn:hover .admin-menu-icon {
+        color: #bfdbfe;
+    }
+
+    body[data-page="guru_content"] .guru-sidebar-toggle {
+        border-color: rgba(148, 163, 184, 0.4);
+        background: rgba(15, 23, 42, 0.78);
+        color: #bfdbfe;
+    }
+
+    body[data-page="guru_content"] .guru-sidebar-toggle:hover {
+        background: rgba(30, 41, 59, 0.94);
+        border-color: rgba(96, 165, 250, 0.6);
+    }
+
+    body[data-page="guru_content"] .portal-user-card {
+        border-color: rgba(148, 163, 184, 0.28);
+        background: var(--guru-surface-strong);
+    }
+
+    body[data-page="guru_content"] .guru-profile-popover {
+        border-color: rgba(148, 163, 184, 0.34);
+        background: rgba(15, 23, 42, 0.96);
+        box-shadow: 0 16px 32px rgba(2, 6, 23, 0.48);
+    }
+
+    body[data-page="guru_content"] .guru-profile-popover-label {
+        color: #94a3b8;
+    }
+
+    body[data-page="guru_content"] .portal-user-avatar {
+        background: rgba(30, 64, 175, 0.3);
+        color: #dbeafe;
+    }
+
+    body[data-page="guru_content"] .portal-user-meta strong {
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .portal-user-meta span {
+        color: #94a3b8;
+    }
+
+    body[data-page="guru_content"] .portal-user-logout {
+        color: #a5b4fc;
+    }
+
+    body[data-page="guru_content"] .admin-content > .dashboard-hero {
+        border-color: rgba(96, 165, 250, 0.34);
+        background:
+            radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.1), transparent 42%),
+            linear-gradient(135deg, rgba(37, 99, 235, 0.62) 0%, rgba(14, 116, 144, 0.56) 100%);
+        box-shadow: 0 16px 34px rgba(2, 6, 23, 0.4);
+    }
+
+    body[data-page="guru_content"] .dashboard-hero-message {
+        background: rgba(15, 23, 42, 0.4);
+        border-color: rgba(191, 219, 254, 0.28);
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card {
+        border-color: rgba(148, 163, 184, 0.28);
+        background: rgba(15, 23, 42, 0.9);
+        box-shadow: 0 12px 26px rgba(2, 6, 23, 0.42);
+    }
+
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-label,
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card::before {
+        background: rgba(96, 165, 250, 0.16);
+    }
+
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card::after {
+        color: rgba(148, 163, 184, 0.18);
+        text-shadow:
+            -30px 16px 0 rgba(148, 163, 184, 0.08),
+            -12px 38px 0 rgba(148, 163, 184, 0.05);
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor {
+        border-color: rgba(148, 163, 184, 0.24);
+        background: rgba(15, 23, 42, 0.86);
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .muted {
+        color: #94a3b8;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .bs-table th,
+    body[data-page="guru_content"] .dashboard-monitor .bs-table td {
+        border-color: rgba(148, 163, 184, 0.22);
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .bs-table tbody tr:hover {
+        background: rgba(30, 41, 59, 0.84);
+    }
+
+    body[data-page="guru_content"] .dashboard-status-badge.status-in-progress {
+        background: rgba(6, 95, 70, 0.34);
+        border-color: rgba(16, 185, 129, 0.56);
+        color: #86efac;
+    }
+
+    body[data-page="guru_content"] .dashboard-status-badge.status-idle {
+        background: rgba(120, 53, 15, 0.4);
+        border-color: rgba(251, 191, 36, 0.6);
+        color: #fcd34d;
+    }
+
+    body[data-page="guru_content"] .dashboard-status-badge.status-no-event {
+        background: rgba(30, 41, 59, 0.84);
+        border-color: rgba(148, 163, 184, 0.42);
+        color: #cbd5e1;
+    }
+
+    body[data-page="guru_content"] .learning-goals-pro {
+        --bg-card: rgba(15, 23, 42, 0.88);
+        --text-main: #e2e8f0;
+        --text-muted: #94a3b8;
+        --border-color: rgba(148, 163, 184, 0.28);
+        --shadow: 0 10px 24px rgba(2, 6, 23, 0.36);
+    }
+
+    body[data-page="guru_content"] .learning-goals-pro .lg-search input,
+    body[data-page="guru_content"] .learning-goals-pro th {
+        background-color: rgba(30, 41, 59, 0.86);
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .learning-goals-pro td {
+        border-bottom-color: rgba(148, 163, 184, 0.2);
+        color: #e2e8f0;
+    }
+
+    body[data-page="guru_content"] .learning-goals-pro tr:hover {
+        background-color: rgba(30, 41, 59, 0.7);
+    }
+
+    body[data-page="guru_content"] .learning-goals-pro .btn.btn-outline {
+        background: rgba(15, 23, 42, 0.88);
+        border-color: rgba(148, 163, 184, 0.34);
+        color: #cbd5e1;
+    }
 }
 
 body[data-page="guru_content"] .dashboard-quick-btn {
@@ -298,6 +610,16 @@ body[data-page="guru_content"] .dashboard-hero .admin-stat-card {
     border: 1px solid rgba(148, 163, 184, 0.28);
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+    transition:
+        transform 0.22s ease,
+        box-shadow 0.22s ease,
+        border-color 0.22s ease;
+}
+
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 28px rgba(15, 23, 42, 0.14);
+    border-color: rgba(59, 130, 246, 0.3);
 }
 
 body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-label,
@@ -347,6 +669,18 @@ body[data-page="guru_content"] .dashboard-status-badge.status-idle {
 body[data-page="guru_content"] .dashboard-status-badge.status-no-event {
     background: #e2e8f0;
     border-color: #cbd5e1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body[data-page="guru_content"] .admin-content > .panel,
+    body[data-page="guru_content"] .dashboard-hero .admin-stat-card,
+    body[data-page="guru_content"] .portal-sidebar .admin-menu-btn,
+    body[data-page="guru_content"] .dashboard-quick-btn,
+    body[data-page="guru_content"] .portal-user-card {
+        transition: none !important;
+        animation: none !important;
+        transform: none !important;
+    }
 }
 
 @media (min-width: 1024px) {
@@ -402,7 +736,7 @@ body[data-page="guru_content"] .dashboard-status-badge.status-no-event {
 
 body {
     margin: 0;
-    font-family: "Segoe UI", Arial, sans-serif;
+    font-family: var(--font-sans);
     background: radial-gradient(
         circle at top,
         #d7e6ff 0%,
@@ -6313,5 +6647,147 @@ body[data-page="peserta_content"] .peserta-shortcut-card-profile .peserta-shortc
     body[data-page="proktor_content"] .attendance-list-table th,
     body[data-page="proktor_content"] .attendance-list-table td {
         border: 1px solid #111827 !important;
+    }
+}
+
+/* Guru UI alignment A6/A7 final polish (scoped, backend-safe) */
+body[data-page="guru_content"] .admin-content > .dashboard-hero {
+    padding: 24px;
+}
+
+body[data-page="guru_content"] .dashboard-hero-head {
+    gap: 16px;
+}
+
+body[data-page="guru_content"] .dashboard-greeting-eyebrow {
+    margin: 0;
+    font-size: clamp(22px, 2.2vw, 28px);
+    line-height: 1.3;
+}
+
+body[data-page="guru_content"] .dashboard-hero .muted {
+    line-height: 1.55;
+}
+
+body[data-page="guru_content"] .dashboard-greeting-summary {
+    margin-top: 10px;
+    font-size: 15px;
+}
+
+body[data-page="guru_content"] .dashboard-hero-message {
+    padding: 12px 14px;
+    border-radius: 14px;
+}
+
+body[data-page="guru_content"] .dashboard-hero .proktor-stats-grid {
+    gap: 12px;
+}
+
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card {
+    min-height: 106px;
+    border-radius: 16px;
+}
+
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-label {
+    font-size: 14px;
+}
+
+body[data-page="guru_content"] .dashboard-hero .admin-stat-card .stat-value {
+    font-size: clamp(34px, 3vw, 42px);
+    line-height: 1.05;
+}
+
+body[data-page="guru_content"] .dashboard-monitor {
+    border-radius: 18px;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .admin-section-head {
+    gap: 14px;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .box {
+    border-radius: 12px;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .table-wrap {
+    border: 1px solid rgba(148, 163, 184, 0.26);
+    border-radius: 14px;
+    overflow: auto;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .bs-table {
+    min-width: 860px;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .bs-table th {
+    background: rgba(241, 245, 249, 0.9);
+}
+
+body[data-page="guru_content"] .dashboard-monitor .bs-table th,
+body[data-page="guru_content"] .dashboard-monitor .bs-table td {
+    padding-top: 11px;
+    padding-bottom: 11px;
+}
+
+body[data-page="guru_content"] .dashboard-monitor .bs-table tbody tr {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+body[data-page="guru_content"] .dashboard-status-badge {
+    min-width: 104px;
+    justify-content: center;
+    border-radius: 999px;
+}
+
+body[data-page="guru_content"] .dashboard-status-badge.status-in-progress {
+    color: #166534;
+}
+
+body[data-page="guru_content"] .dashboard-status-badge.status-idle {
+    color: #92400e;
+}
+
+body[data-page="guru_content"] .dashboard-status-badge.status-no-event {
+    color: #475569;
+}
+
+@media (max-width: 900px) {
+    body[data-page="guru_content"] .admin-content > .dashboard-hero {
+        padding: 18px;
+    }
+
+    body[data-page="guru_content"] .dashboard-greeting-eyebrow {
+        font-size: 22px;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor-actions {
+        width: 100%;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor-filter {
+        min-width: 0;
+        width: 100%;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor #guru-dashboard-monitor-refresh-btn {
+        width: 100%;
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .bs-table {
+        min-width: 720px;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    body[data-page="guru_content"] .dashboard-monitor .table-wrap {
+        border-color: rgba(148, 163, 184, 0.24);
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .bs-table th {
+        background: rgba(30, 41, 59, 0.82);
+    }
+
+    body[data-page="guru_content"] .dashboard-monitor .bs-table tbody tr {
+        border-bottom-color: rgba(148, 163, 184, 0.2);
     }
 }

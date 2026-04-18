@@ -216,6 +216,7 @@
     if (
       rawTitle &&
       normalizedTitle !== "pilih soal" &&
+      normalizedTitle !== "buat soal baru" &&
       normalizedTitle !== "stimulus" &&
       normalizedTitle !== "soal baru"
     ) {
