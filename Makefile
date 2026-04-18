@@ -31,3 +31,19 @@ migrate-down:
 .PHONY: migrate-reset
 migrate-reset:
 	./scripts/migrate.sh reset
+
+.PHONY: guru-ui-guard
+guru-ui-guard:
+	./scripts/guru_ui_guard.sh
+
+.PHONY: guru-ui-preflight
+guru-ui-preflight: guru-ui-guard
+	@echo "guru ui preflight passed"
+
+.PHONY: guru-ui-uat-smoke
+guru-ui-uat-smoke:
+	./scripts/uat_guru_ui_smoke.sh
+
+.PHONY: guru-ui-release-gate
+guru-ui-release-gate: guru-ui-preflight guru-ui-uat-smoke
+	@echo "guru ui release gate passed"

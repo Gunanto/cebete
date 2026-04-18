@@ -111,6 +111,14 @@
     const menuJumpButtons = root.querySelectorAll("[data-guru-jump]");
     const guruPageTitle = document.getElementById("guru-page-title");
     const guruPageDesc = document.getElementById("guru-page-desc");
+    const guruSidebar = root.querySelector(".portal-sidebar");
+    const guruSidebarToggleBtn = root.querySelector(".guru-sidebar-toggle");
+    const dashboardGreetingEyebrow = root.querySelector(
+      ".dashboard-greeting-eyebrow",
+    );
+    const dashboardGreetingSummary = root.querySelector(
+      ".dashboard-greeting-summary",
+    );
 
     const blueprintForm = document.getElementById("guru-blueprint-form");
     const blueprintRefreshBtn = document.getElementById(
@@ -776,6 +784,7 @@
     let dashboardMonitorRows = [];
     const dashboardIdleThresholdStorageKey =
       "cbtlms_guru_dashboard_idle_threshold";
+    const guruSidebarCollapsedStorageKey = "cbtlms_guru_sidebar_collapsed";
 
     function refreshGuruSummaryStats() {
       if (statLearningGoals) {
@@ -822,6 +831,78 @@
         statNonRegularParticipants.textContent = String(
           Number(guruNonRegularParticipantCount || 0),
         );
+      }
+      updateDashboardGreetingSummary();
+    }
+
+    function resolveDayGreeting() {
+      const hour = new Date().getHours();
+      if (hour < 11) return "Selamat pagi";
+      if (hour < 15) return "Selamat siang";
+      if (hour < 19) return "Selamat sore";
+      return "Selamat malam";
+    }
+
+    function updateDashboardGreeting() {
+      if (!dashboardGreetingEyebrow) return;
+      dashboardGreetingEyebrow.textContent =
+        resolveDayGreeting() + ", semoga aktivitas mengajar lancar.";
+    }
+
+    function updateDashboardGreetingSummary() {
+      if (!dashboardGreetingSummary) return;
+      const inProgress = Number(guruInProgressCount || 0);
+      const completed = Number(guruCompletedExamCount || 0);
+      const totalParticipants = Number(guruUniqueParticipantCount || 0);
+      if (inProgress > 0) {
+        dashboardGreetingSummary.textContent =
+          "Ada " +
+          String(inProgress) +
+          " ujian aktif dipantau, " +
+          String(completed) +
+          " sesi sudah selesai.";
+        return;
+      }
+      dashboardGreetingSummary.textContent =
+        "Belum ada ujian aktif. Total peserta yang pernah mengerjakan: " +
+        String(totalParticipants) +
+        ".";
+    }
+
+    function saveGuruSidebarCollapsed(value) {
+      const normalized = value === true;
+      try {
+        window.localStorage.setItem(
+          guruSidebarCollapsedStorageKey,
+          normalized ? "1" : "0",
+        );
+      } catch (_) {
+        // Ignore if storage is unavailable.
+      }
+      return normalized;
+    }
+
+    function loadGuruSidebarCollapsed() {
+      try {
+        return (
+          window.localStorage.getItem(guruSidebarCollapsedStorageKey) === "1"
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function applyGuruSidebarCollapsed(value) {
+      const collapsed = value === true;
+      root.classList.toggle("guru-sidebar-collapsed", collapsed);
+      if (guruSidebarToggleBtn) {
+        guruSidebarToggleBtn.setAttribute(
+          "aria-pressed",
+          collapsed ? "true" : "false",
+        );
+      }
+      if (guruSidebar) {
+        guruSidebar.classList.toggle("is-collapsed", collapsed);
       }
     }
 
@@ -2767,6 +2848,17 @@
     initGuruEnrollModule();
     initGuruResultsModule();
     initGuruDashboardModule();
+    updateDashboardGreeting();
+    applyGuruSidebarCollapsed(loadGuruSidebarCollapsed());
+    if (guruSidebarToggleBtn) {
+      guruSidebarToggleBtn.addEventListener("click", function () {
+        const nextCollapsed = !root.classList.contains(
+          "guru-sidebar-collapsed",
+        );
+        applyGuruSidebarCollapsed(nextCollapsed);
+        saveGuruSidebarCollapsed(nextCollapsed);
+      });
+    }
     if (dashboardMonitorRefreshBtn) {
       dashboardMonitorRefreshBtn.addEventListener("click", function () {
         loadGuruDashboardMonitor(true);
