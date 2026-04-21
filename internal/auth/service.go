@@ -202,24 +202,24 @@ type AdminUserRecord struct {
 }
 
 type OnlineUserRecord struct {
-	ID                   int64      `json:"id"`
-	Username             string     `json:"username"`
-	Email                *string    `json:"email,omitempty"`
-	FullName             string     `json:"full_name"`
-	Role                 string     `json:"role"`
-	TeacherAccessProfile string     `json:"teacher_access_profile,omitempty"`
-	ParticipantNo        *string    `json:"participant_no,omitempty"`
-	SchoolID             *int64     `json:"school_id,omitempty"`
-	SchoolName           *string    `json:"school_name,omitempty"`
-	ClassID              *int64     `json:"class_id,omitempty"`
-	ClassName            *string    `json:"class_name,omitempty"`
-	IsActive             bool       `json:"is_active"`
-	AccountStatus        string     `json:"account_status"`
-	LastSeenAt           time.Time  `json:"last_seen_at"`
-	SessionCreatedAt     time.Time  `json:"session_created_at"`
-	ActiveSessionCount   int64      `json:"active_session_count"`
-	IPAddress            *string    `json:"ip_address,omitempty"`
-	UserAgent            *string    `json:"user_agent,omitempty"`
+	ID                   int64     `json:"id"`
+	Username             string    `json:"username"`
+	Email                *string   `json:"email,omitempty"`
+	FullName             string    `json:"full_name"`
+	Role                 string    `json:"role"`
+	TeacherAccessProfile string    `json:"teacher_access_profile,omitempty"`
+	ParticipantNo        *string   `json:"participant_no,omitempty"`
+	SchoolID             *int64    `json:"school_id,omitempty"`
+	SchoolName           *string   `json:"school_name,omitempty"`
+	ClassID              *int64    `json:"class_id,omitempty"`
+	ClassName            *string   `json:"class_name,omitempty"`
+	IsActive             bool      `json:"is_active"`
+	AccountStatus        string    `json:"account_status"`
+	LastSeenAt           time.Time `json:"last_seen_at"`
+	SessionCreatedAt     time.Time `json:"session_created_at"`
+	ActiveSessionCount   int64     `json:"active_session_count"`
+	IPAddress            *string   `json:"ip_address,omitempty"`
+	UserAgent            *string   `json:"user_agent,omitempty"`
 }
 
 type AdminDashboardStats struct {
@@ -379,6 +379,21 @@ func isUndefinedTableErr(err error, table string) bool {
 	}
 	return strings.Contains(lower, "relation \""+strings.ToLower(table)+"\" does not exist") ||
 		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
+}
+
+func isUndefinedColumnErr(err error, table, column string) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if table != "" && column != "" {
+		return strings.Contains(lower, "column \""+strings.ToLower(column)+"\" does not exist") &&
+			strings.Contains(lower, strings.ToLower(table))
+	}
+	if column != "" {
+		return strings.Contains(lower, "column \""+strings.ToLower(column)+"\" does not exist")
+	}
+	return strings.Contains(lower, "undefined_column")
 }
 
 func loadManagedSchoolScope(ctx context.Context, q dbQueryer, userID int64) ([]int64, []string, error) {
@@ -1685,10 +1700,19 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	}
 	actor, _ := CurrentUser(ctx)
 	actorID := int64(0)
+	actorRole := ""
 	restrictBySchoolScope := false
-	if actor != nil && actor.Role == "proktor" {
+	isGuruActor := false
+	if actor != nil {
+		actorRole = strings.ToLower(strings.TrimSpace(actor.Role))
+	}
+	if actorRole == "proktor" || actorRole == "guru" {
 		restrictBySchoolScope = true
 		actorID = actor.ID
+	}
+	if actorRole == "guru" {
+		isGuruActor = true
+		status = "pending"
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -1783,8 +1807,17 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate registrations: %w", err)
 	}
+	if isGuruActor {
+		filtered := make([]RegistrationRecord, 0, len(out))
+		for _, item := range out {
+			if isNonRegularRegistrationRecord(item) {
+				filtered = append(filtered, item)
+			}
+		}
+		out = filtered
+	}
 	if restrictBySchoolScope {
-		scopedSchools, err := s.listScopedSchools(ctx, actorID)
+		scopedSchools, err := s.listRegistrationReviewerScopedSchools(ctx, actorID, actorRole)
 		if err != nil {
 			return nil, err
 		}
@@ -1802,6 +1835,95 @@ func (s *Service) ListRegistrations(ctx context.Context, status string, limit, o
 type scopedSchool struct {
 	Code string
 	Name string
+}
+
+func (s *Service) listRegistrationReviewerScopedSchools(ctx context.Context, userID int64, role string) ([]scopedSchool, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "proktor":
+		return s.listScopedSchools(ctx, userID)
+	case "guru":
+		profile, err := s.loadTeacherAccessProfileForRegistration(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if profile == "cross_school" {
+			scoped, err := s.listScopedSchools(ctx, userID)
+			if err == nil && len(scoped) > 0 {
+				return scoped, nil
+			}
+			if err != nil && !isUndefinedTableErr(err, "user_school_scopes") {
+				return nil, err
+			}
+		}
+		primary, err := s.loadPrimaryScopedSchool(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if primary == nil {
+			return nil, errors.New("akun guru belum terhubung sekolah")
+		}
+		return []scopedSchool{*primary}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func (s *Service) loadTeacherAccessProfileForRegistration(ctx context.Context, userID int64) (string, error) {
+	var role sql.NullString
+	var profile sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(btrim(role), ''), ''),
+			COALESCE(NULLIF(btrim(teacher_access_profile), ''), '')
+		FROM users
+		WHERE id = $1
+		  AND is_active = TRUE
+		LIMIT 1
+	`, userID).Scan(&role, &profile); err != nil {
+		if isUndefinedColumnErr(err, "users", "teacher_access_profile") {
+			if err := s.db.QueryRowContext(ctx, `
+				SELECT COALESCE(NULLIF(btrim(role), ''), '')
+				FROM users
+				WHERE id = $1
+				  AND is_active = TRUE
+				LIMIT 1
+			`, userID).Scan(&role); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return "", ErrForbidden
+				}
+				return "", fmt.Errorf("load reviewer role: %w", err)
+			}
+			profile = sql.NullString{String: "school", Valid: true}
+		} else if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrForbidden
+		} else {
+			return "", fmt.Errorf("load reviewer profile: %w", err)
+		}
+	}
+	return normalizeTeacherAccessProfile(role.String, profile.String), nil
+}
+
+func (s *Service) loadPrimaryScopedSchool(ctx context.Context, userID int64) (*scopedSchool, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(btrim(s.code), ''), ''),
+			COALESCE(NULLIF(btrim(s.name), ''), '')
+		FROM enrollments e
+		JOIN schools s ON s.id = e.school_id
+		WHERE e.user_id = $1
+		  AND e.status = 'active'
+		ORDER BY e.enrolled_at DESC, e.id DESC
+		LIMIT 1
+	`, userID)
+	var item scopedSchool
+	if err := row.Scan(&item.Code, &item.Name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load primary school: %w", err)
+	}
+	return &item, nil
 }
 
 func (s *Service) listScopedSchools(ctx context.Context, userID int64) ([]scopedSchool, error) {
@@ -1850,6 +1972,144 @@ func matchesScopedSchool(reg RegistrationRecord, scoped []scopedSchool) bool {
 		}
 	}
 	return false
+}
+
+func matchesScopedSchoolPayload(payload RegistrationFormPayload, scoped []scopedSchool) bool {
+	reg := RegistrationRecord{
+		SchoolName: stringPtr(strings.TrimSpace(payload.SchoolName)),
+		NPSN:       stringPtr(strings.TrimSpace(payload.NPSN)),
+	}
+	return matchesScopedSchool(reg, scoped)
+}
+
+func stringPtr(v string) *string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+func parseRegistrationPayload(record RegistrationRecord) RegistrationFormPayload {
+	payload := RegistrationFormPayload{}
+	if record.FormPayload != nil && strings.TrimSpace(*record.FormPayload) != "" {
+		_ = json.Unmarshal([]byte(*record.FormPayload), &payload)
+	}
+	if payload.SchoolName == "" && record.SchoolName != nil {
+		payload.SchoolName = strings.TrimSpace(*record.SchoolName)
+	}
+	if payload.NPSN == "" && record.NPSN != nil {
+		payload.NPSN = strings.TrimSpace(*record.NPSN)
+	}
+	if payload.Kabupaten == "" && record.Kabupaten != nil {
+		payload.Kabupaten = strings.TrimSpace(*record.Kabupaten)
+	}
+	if payload.Provinsi == "" && record.Provinsi != nil {
+		payload.Provinsi = strings.TrimSpace(*record.Provinsi)
+	}
+	if payload.Kecamatan == "" && record.Kecamatan != nil {
+		payload.Kecamatan = strings.TrimSpace(*record.Kecamatan)
+	}
+	if payload.Alamat == "" && record.Alamat != nil {
+		payload.Alamat = strings.TrimSpace(*record.Alamat)
+	}
+	if payload.SchoolEmail == "" && record.SchoolEmail != nil {
+		payload.SchoolEmail = strings.TrimSpace(*record.SchoolEmail)
+	}
+	if payload.Jenjang == "" && record.Jenjang != nil {
+		payload.Jenjang = strings.TrimSpace(*record.Jenjang)
+	}
+	if payload.StatusSekolah == "" && record.StatusSekolah != nil {
+		payload.StatusSekolah = strings.TrimSpace(*record.StatusSekolah)
+	}
+	if payload.ClassName == "" && record.ClassName != nil {
+		payload.ClassName = strings.TrimSpace(*record.ClassName)
+	}
+	return payload
+}
+
+func isNonRegularRegistrationRecord(record RegistrationRecord) bool {
+	payload := parseRegistrationPayload(record)
+	return isNonRegularRegistrationPayload(record.RoleRequested, payload)
+}
+
+func isNonRegularRegistrationPayload(roleRequested string, payload RegistrationFormPayload) bool {
+	if payload.NonRegular {
+		return true
+	}
+	roleRequested = strings.ToLower(strings.TrimSpace(roleRequested))
+	if roleRequested != "siswa" {
+		return false
+	}
+	return strings.TrimSpace(payload.SchoolName) != "" &&
+		strings.TrimSpace(payload.NPSN) != "" &&
+		strings.TrimSpace(payload.ClassName) != ""
+}
+
+func formatScopedSchoolLabel(item scopedSchool) string {
+	name := strings.TrimSpace(item.Name)
+	code := strings.TrimSpace(item.Code)
+	if name != "" && code != "" {
+		return name + " | " + code
+	}
+	if name != "" {
+		return name
+	}
+	if code != "" {
+		return code
+	}
+	return "-"
+}
+
+func formatScopedSchoolHint(scoped []scopedSchool) string {
+	if len(scoped) == 0 {
+		return "sekolah yang terhubung dengan akun Anda"
+	}
+	labels := make([]string, 0, len(scoped))
+	for _, item := range scoped {
+		label := formatScopedSchoolLabel(item)
+		if label == "-" {
+			continue
+		}
+		labels = append(labels, label)
+	}
+	if len(labels) == 0 {
+		return "sekolah yang terhubung dengan akun Anda"
+	}
+	if len(labels) == 1 {
+		return labels[0]
+	}
+	if len(labels) > 3 {
+		labels = labels[:3]
+	}
+	return strings.Join(labels, ", ")
+}
+
+func (s *Service) ensureReviewerCanVerifyRegistration(ctx context.Context, reviewerID int64, reviewerRole, roleRequested string, payload RegistrationFormPayload) error {
+	reviewerRole = strings.ToLower(strings.TrimSpace(reviewerRole))
+	if reviewerRole != "guru" && reviewerRole != "proktor" {
+		return nil
+	}
+	if reviewerID <= 0 {
+		return ErrForbidden
+	}
+	if reviewerRole == "guru" && !isNonRegularRegistrationPayload(roleRequested, payload) {
+		return fmt.Errorf("%w: guru hanya dapat memverifikasi pendaftaran non-reguler", ErrForbidden)
+	}
+	scopedSchools, err := s.listRegistrationReviewerScopedSchools(ctx, reviewerID, reviewerRole)
+	if err != nil {
+		if reviewerRole == "guru" {
+			return fmt.Errorf("%w: %s", ErrForbidden, err.Error())
+		}
+		return err
+	}
+	if len(scopedSchools) == 0 || !matchesScopedSchoolPayload(payload, scopedSchools) {
+		if reviewerRole == "guru" {
+			return fmt.Errorf("%w: Anda hanya dapat memverifikasi peserta non-reguler dari %s", ErrForbidden, formatScopedSchoolHint(scopedSchools))
+		}
+		return fmt.Errorf("%w: sekolah pendaftaran di luar scope akun", ErrForbidden)
+	}
+	return nil
 }
 
 func normalizeSchoolMatchKey(value string) string {
@@ -1963,6 +2223,13 @@ func (s *Service) ApproveRegistration(ctx context.Context, registrationID, revie
 		return 0, false, fmt.Errorf("parse form payload: %w", err)
 	}
 	mergeRegistrationPayloadColumns(&payload, schoolName, npsn, kabupaten, provinsi, kecamatan, alamat, schoolEmail, jenjang, statusSekolah, className)
+	reviewerRole := ""
+	if actor, ok := CurrentUser(ctx); ok && actor != nil {
+		reviewerRole = actor.Role
+	}
+	if err := s.ensureReviewerCanVerifyRegistration(ctx, reviewerID, reviewerRole, role, payload); err != nil {
+		return 0, false, err
+	}
 	isNonRegular := payload.NonRegular
 	shouldSendFirstLoginLink := false
 	var registrationTenantID *int64
@@ -2655,6 +2922,64 @@ func (s *Service) RejectRegistration(ctx context.Context, registrationID, review
 	note = strings.TrimSpace(note)
 	if note == "" {
 		note = "rejected"
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT role_requested, form_payload,
+		       school_name, npsn, kabupaten, provinsi, kecamatan, alamat, school_email, jenjang, status_sekolah, class_name,
+		       status
+		FROM registration_requests
+		WHERE id = $1
+	`, registrationID)
+	var roleRequested string
+	var formPayloadRaw string
+	var schoolName sql.NullString
+	var npsn sql.NullString
+	var kabupaten sql.NullString
+	var provinsi sql.NullString
+	var kecamatan sql.NullString
+	var alamat sql.NullString
+	var schoolEmail sql.NullString
+	var jenjang sql.NullString
+	var statusSekolah sql.NullString
+	var className sql.NullString
+	var status string
+	if err := row.Scan(
+		&roleRequested,
+		&formPayloadRaw,
+		&schoolName,
+		&npsn,
+		&kabupaten,
+		&provinsi,
+		&kecamatan,
+		&alamat,
+		&schoolEmail,
+		&jenjang,
+		&statusSekolah,
+		&className,
+		&status,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrRegistrationState
+		}
+		return fmt.Errorf("load registration for reject: %w", err)
+	}
+	if status != "pending" {
+		return ErrRegistrationState
+	}
+	if strings.TrimSpace(formPayloadRaw) == "" {
+		formPayloadRaw = "{}"
+	}
+	var payload RegistrationFormPayload
+	if err := json.Unmarshal([]byte(formPayloadRaw), &payload); err != nil {
+		return fmt.Errorf("parse form payload: %w", err)
+	}
+	mergeRegistrationPayloadColumns(&payload, schoolName, npsn, kabupaten, provinsi, kecamatan, alamat, schoolEmail, jenjang, statusSekolah, className)
+	reviewerRole := ""
+	if actor, ok := CurrentUser(ctx); ok && actor != nil {
+		reviewerRole = actor.Role
+	}
+	if err := s.ensureReviewerCanVerifyRegistration(ctx, reviewerID, reviewerRole, roleRequested, payload); err != nil {
+		return err
 	}
 
 	res, err := s.db.ExecContext(ctx, `

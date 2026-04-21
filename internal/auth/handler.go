@@ -1010,6 +1010,12 @@ func (h *Handler) ApproveRegistration(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrRegistrationState):
 			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			msg := strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrForbidden.Error()+":"))
+			if msg == "" || strings.EqualFold(msg, ErrForbidden.Error()) {
+				msg = "forbidden"
+			}
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: msg})
 		default:
 			log.Printf("approve registration failed registration_id=%d reviewer_id=%d err=%v", id, admin.ID, err)
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
@@ -1057,8 +1063,11 @@ func (h *Handler) ApproveRegistrationsBulk(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			msg := "internal error"
 			switch {
-			case errors.Is(err, ErrRegistrationNotFound), errors.Is(err, ErrRegistrationState):
-				msg = err.Error()
+			case errors.Is(err, ErrRegistrationNotFound), errors.Is(err, ErrRegistrationState), errors.Is(err, ErrForbidden):
+				msg = strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrForbidden.Error()+":"))
+				if msg == "" {
+					msg = err.Error()
+				}
 			default:
 				log.Printf("bulk approve registration failed registration_id=%d reviewer_id=%d err=%v", id, admin.ID, err)
 			}
@@ -1146,6 +1155,12 @@ func (h *Handler) RejectRegistration(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrRegistrationState):
 			writeJSON(w, r, http.StatusConflict, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrForbidden):
+			msg := strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrForbidden.Error()+":"))
+			if msg == "" || strings.EqualFold(msg, ErrForbidden.Error()) {
+				msg = "forbidden"
+			}
+			writeJSON(w, r, http.StatusForbidden, apiResponse{OK: false, Error: msg})
 		default:
 			writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		}

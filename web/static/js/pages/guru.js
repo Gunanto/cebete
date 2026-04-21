@@ -105,6 +105,13 @@
     const examsPanel = document.getElementById("guru-exams-panel");
     const tokenPanel = document.getElementById("guru-token-panel");
     const enrollPanel = document.getElementById("guru-enroll-panel");
+    const registrationsPanel = document.getElementById(
+      "guru-registrations-panel",
+    );
+    const regRefreshBtn = document.getElementById(
+      "guru-registrations-refresh-btn",
+    );
+    const regBody = document.getElementById("guru-registrations-body");
     const resultsPanel = document.getElementById("guru-results-panel");
     const guidePanel = document.getElementById("guru-guide-panel");
     const menuButtons = root.querySelectorAll("[data-guru-menu]");
@@ -1328,6 +1335,7 @@
     const GuruResults = window.GuruResults || {};
     const GuruExams = window.GuruExams || {};
     const GuruEnroll = window.GuruEnroll || {};
+    const ProktorRegistrations = window.ProktorRegistrations || {};
     const ProktorToken = window.ProktorToken || {};
     const AuthoringReviews = window.AuthoringReviews || {};
     const ManuscriptImport = window.ManuscriptImport || {};
@@ -2014,6 +2022,25 @@
       });
     }
 
+    function initGuruRegistrationsModule() {
+      if (
+        !ProktorRegistrations ||
+        typeof ProktorRegistrations.init !== "function"
+      ) {
+        return;
+      }
+      ProktorRegistrations.init({
+        api: api,
+        beginBusy: beginBusy,
+        setMsg: setMsg,
+        msg: msg,
+        escapeHtml: escapeHtml,
+        fmtDate: fmtDate,
+        regRefreshBtn: regRefreshBtn,
+        regBody: regBody,
+      });
+    }
+
     function initQuestionCodesModule() {
       if (!QuestionCodes || typeof QuestionCodes.init !== "function") return;
       QuestionCodes.init({
@@ -2158,6 +2185,7 @@
           exams: examsPanel,
           token: tokenPanel,
           enroll: enrollPanel,
+          registrations: registrationsPanel,
           results: resultsPanel,
           "score-recap": resultsPanel,
           subjects: subjectsPanel,
@@ -2695,6 +2723,10 @@
           title: "Enroll Peserta",
           desc: "Enroll peserta ke ujian Anda per kelas.",
         },
+        registrations: {
+          title: "Verifikasi Pendaftaran",
+          desc: "Tinjau dan setujui pendaftaran non-reguler yang pending.",
+        },
         results: {
           title: "Hasil Ujian",
           desc: buildResultsDesc(),
@@ -2875,6 +2907,7 @@
     initGuruExamsModule();
     initGuruTokenModule();
     initGuruEnrollModule();
+    initGuruRegistrationsModule();
     initGuruResultsModule();
     initGuruDashboardModule();
     updateDashboardGreeting();

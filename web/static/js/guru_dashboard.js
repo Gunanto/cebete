@@ -17,6 +17,7 @@
       "exams",
       "token",
       "enroll",
+      "registrations",
       "results",
       "score-recap",
       "subjects",

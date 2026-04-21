@@ -115,6 +115,23 @@
                         <button
                             type="button"
                             class="btn btn-secondary admin-menu-btn"
+                            data-guru-menu="registrations"
+                        >
+                            <span class="admin-menu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path
+                                        d="M16 19.5v-1a3 3 0 0 0-3-3H8a3 3 0 0 0-3 3v1"
+                                    />
+                                    <circle cx="10.5" cy="9" r="2.5" />
+                                    <path d="M19 19.5v-1a3 3 0 0 0-2.25-2.9" />
+                                    <path d="M16.5 6.5a2.5 2.5 0 0 1 0 5" />
+                                </svg>
+                            </span>
+                            Verifikasi Pendaftaran
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-secondary admin-menu-btn"
                             data-guru-menu="learning-goals"
                         >
                             <span class="admin-menu-icon" aria-hidden="true">
@@ -1695,6 +1712,42 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </section>
+
+            <section id="guru-registrations-panel" class="panel" hidden>
+                <div class="admin-section-head">
+                    <h3>Verifikasi Pendaftaran</h3>
+                    <button
+                        id="guru-registrations-refresh-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        Muat Pendaftaran Pending
+                    </button>
+                </div>
+                <div class="table-wrap mt">
+                    <table class="bs-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nama</th>
+                                <th>Email</th>
+                                <th>Peran</th>
+                                <th>Nama Sekolah</th>
+                                <th>Kabupaten</th>
+                                <th>Dibuat</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="guru-registrations-body">
+                            <tr>
+                                <td colspan="8" class="muted">
+                                    Belum ada data pendaftaran pending.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </section>
 
