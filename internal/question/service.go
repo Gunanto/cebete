@@ -29,6 +29,7 @@ var (
 	ErrQuestionNotInExam     = errors.New("question not in exam")
 	ErrVersionNotFound       = errors.New("question version not found")
 	ErrStimulusGroupNotFound = errors.New("stimulus group not found")
+	ErrStimulusGroupFeature  = errors.New("stimulus group migration required")
 	ErrReviewTaskNotFound    = errors.New("review task not found")
 	ErrReviewForbidden       = errors.New("review forbidden")
 	ErrReopenNotAllowed      = errors.New("reopen final tidak diizinkan karena soal sudah pernah dipakai ujian")
@@ -72,6 +73,18 @@ func (s *Service) ensureSubjectAccess(ctx context.Context, subjectID, actorID in
 		return ErrForbidden
 	}
 	return nil
+}
+
+func isUndefinedTableErr(err error, table string) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if table == "" {
+		return strings.Contains(lower, "does not exist") || strings.Contains(lower, "undefined_table")
+	}
+	return strings.Contains(lower, `relation "`+strings.ToLower(table)+`" does not exist`) ||
+		(strings.Contains(lower, "undefined_table") && strings.Contains(lower, strings.ToLower(table)))
 }
 
 type CreateQuestionInput struct {
@@ -533,6 +546,9 @@ func (s *Service) CreateStimulusGroup(ctx context.Context, in CreateStimulusGrou
 	`, in.SubjectID, title, nullStringPtr(stimType), nullJSONBytes(stimContent), nullStringPtr(stimHTML), in.CreatedBy)
 	out, err := scanStimulusGroup(row)
 	if err != nil {
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return nil, ErrStimulusGroupFeature
+		}
 		return nil, fmt.Errorf("insert stimulus group: %w", err)
 	}
 	return out, nil
@@ -559,6 +575,9 @@ func (s *Service) ListStimulusGroups(ctx context.Context, subjectID int64, owner
 	query += ` GROUP BY sg.id ORDER BY sg.id DESC`
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return nil, ErrStimulusGroupFeature
+		}
 		return nil, fmt.Errorf("query stimulus groups: %w", err)
 	}
 	defer rows.Close()
@@ -595,6 +614,9 @@ func (s *Service) UpdateStimulusGroup(ctx context.Context, in UpdateStimulusGrou
 	if err := row.Scan(&subjectID, &title, &stimType, &stimContent, &stimHTML, &createdBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrStimulusGroupNotFound
+		}
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return nil, ErrStimulusGroupFeature
 		}
 		return nil, fmt.Errorf("load stimulus group: %w", err)
 	}
@@ -650,6 +672,9 @@ func (s *Service) UpdateStimulusGroup(ctx context.Context, in UpdateStimulusGrou
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrStimulusGroupNotFound
 		}
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return nil, ErrStimulusGroupFeature
+		}
 		return nil, fmt.Errorf("update stimulus group: %w", err)
 	}
 	return out, nil
@@ -669,6 +694,9 @@ func (s *Service) DeleteStimulusGroup(ctx context.Context, id, actorID int64, en
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrStimulusGroupNotFound
 		}
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return ErrStimulusGroupFeature
+		}
 		return fmt.Errorf("load stimulus group delete: %w", err)
 	}
 	if enforceOwner && (!createdBy.Valid || createdBy.Int64 != actorID) {
@@ -679,6 +707,9 @@ func (s *Service) DeleteStimulusGroup(ctx context.Context, id, actorID int64, en
 		SET is_active = FALSE, updated_at = now()
 		WHERE id = $1
 	`, id); err != nil {
+		if isUndefinedTableErr(err, "stimulus_groups") {
+			return ErrStimulusGroupFeature
+		}
 		return fmt.Errorf("delete stimulus group: %w", err)
 	}
 	return nil

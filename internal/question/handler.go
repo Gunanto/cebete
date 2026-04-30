@@ -225,6 +225,10 @@ func (h *Handler) ListStimulusGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.svc.ListStimulusGroups(r.Context(), subjectID, ownerID)
 	if err != nil {
+		if errors.Is(err, ErrStimulusGroupFeature) {
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "Tabel stimulus_groups belum ada. Jalankan migration terbaru."})
+			return
+		}
 		writeJSON(w, r, http.StatusInternalServerError, apiResponse{OK: false, Error: "internal error"})
 		return
 	}
@@ -255,6 +259,8 @@ func (h *Handler) CreateStimulusGroup(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrStimulusGroupFeature):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "Tabel stimulus_groups belum ada. Jalankan migration terbaru."})
 		case errors.Is(err, ErrSubjectNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrForbidden):
@@ -297,6 +303,8 @@ func (h *Handler) UpdateStimulusGroup(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrStimulusGroupFeature):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "Tabel stimulus_groups belum ada. Jalankan migration terbaru."})
 		case errors.Is(err, ErrStimulusGroupNotFound), errors.Is(err, ErrSubjectNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrForbidden):
@@ -324,6 +332,8 @@ func (h *Handler) DeleteStimulusGroup(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInvalidInput):
 			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error()})
+		case errors.Is(err, ErrStimulusGroupFeature):
+			writeJSON(w, r, http.StatusBadRequest, apiResponse{OK: false, Error: "Tabel stimulus_groups belum ada. Jalankan migration terbaru."})
 		case errors.Is(err, ErrStimulusGroupNotFound):
 			writeJSON(w, r, http.StatusNotFound, apiResponse{OK: false, Error: err.Error()})
 		case errors.Is(err, ErrForbidden):

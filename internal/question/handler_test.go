@@ -307,6 +307,34 @@ func TestCreateStimulusGroupOK(t *testing.T) {
 	}
 }
 
+func TestCreateStimulusGroupFeatureMigrationRequired(t *testing.T) {
+	h := &Handler{svc: &mockQuestionService{
+		createStimulusGroupFn: func(ctx context.Context, in CreateStimulusGroupInput) (*StimulusGroup, error) {
+			return nil, ErrStimulusGroupFeature
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/stimulus-groups", bytes.NewReader([]byte(`{"subject_id":3,"title":"Stimulus A","stimulus_html":"<p>Teks</p>"}`)))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 9, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.CreateStimulusGroup(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	errText := ""
+	if errObj, ok := body["error"].(map[string]any); ok {
+		errText, _ = errObj["message"].(string)
+	}
+	if !strings.Contains(strings.ToLower(errText), "stimulus_groups") {
+		t.Fatalf("expected migration error message, got %#v", body)
+	}
+}
+
 func TestListStimulusGroupsGuruOwnerOnly(t *testing.T) {
 	h := &Handler{svc: &mockQuestionService{
 		listStimulusGroupsFn: func(ctx context.Context, subjectID int64, ownerID *int64) ([]StimulusGroup, error) {
