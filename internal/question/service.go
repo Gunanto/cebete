@@ -536,14 +536,37 @@ func (s *Service) CreateStimulusGroup(ctx context.Context, in CreateStimulusGrou
 	if title == "" {
 		title = "Stimulus"
 	}
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO stimulus_groups (
-			subject_id, title, stimulus_type, stimulus_content, stimulus_html, is_active, created_by, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4::jsonb, $5, TRUE, NULLIF($6, 0), now(), now()
-		)
+	stimulusGroupHasTenant, err := hasColumn(ctx, s.db, "stimulus_groups", "tenant_id")
+	if err != nil {
+		return nil, err
+	}
+	var tenantID *int64
+	if stimulusGroupHasTenant {
+		tenantID, err = loadUserTenantID(ctx, s.db, in.CreatedBy)
+		if err != nil {
+			return nil, err
+		}
+		if tenantID == nil || *tenantID <= 0 {
+			return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+		}
+	}
+	insertColumns := []string{
+		"subject_id", "title", "stimulus_type", "stimulus_content", "stimulus_html", "is_active", "created_by", "created_at", "updated_at",
+	}
+	insertValues := []string{
+		"$1", "$2", "$3", "$4::jsonb", "$5", "TRUE", "NULLIF($6, 0)", "now()", "now()",
+	}
+	insertArgs := []any{in.SubjectID, title, nullStringPtr(stimType), nullJSONBytes(stimContent), nullStringPtr(stimHTML), in.CreatedBy}
+	if stimulusGroupHasTenant {
+		insertColumns = append(insertColumns, "tenant_id")
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)+1))
+		insertArgs = append(insertArgs, *tenantID)
+	}
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO stimulus_groups (%s)
+		VALUES (%s)
 		RETURNING id, subject_id, title, stimulus_type, stimulus_content, stimulus_html, is_active, created_by, created_at, updated_at, 0::bigint
-	`, in.SubjectID, title, nullStringPtr(stimType), nullJSONBytes(stimContent), nullStringPtr(stimHTML), in.CreatedBy)
+	`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 	out, err := scanStimulusGroup(row)
 	if err != nil {
 		if isUndefinedTableErr(err, "stimulus_groups") {
