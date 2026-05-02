@@ -979,6 +979,13 @@ type AppendExamAssignmentsByClassInput struct {
 	AssignedBy int64
 }
 
+type RemoveExamAssignmentsByClassInput struct {
+	ExamID   int64
+	SchoolID int64
+	ClassID  int64
+	ActorID  int64
+}
+
 type ExamQuestionManageItem struct {
 	ExamID        int64   `json:"exam_id"`
 	QuestionID    int64   `json:"question_id"`
@@ -5045,6 +5052,87 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 		`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...); err != nil {
 			return nil, fmt.Errorf("upsert exam assignment: %w", err)
 		}
+	}
+
+	return s.ListExamAssignments(ctx, in.ExamID)
+}
+
+func (s *Service) RemoveExamAssignmentsByClass(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+	if in.ExamID <= 0 || in.SchoolID <= 0 || in.ClassID <= 0 || in.ActorID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if _, err := s.GetExamAdminByID(ctx, in.ExamID); err != nil {
+		return nil, err
+	}
+	examScope, ownerSchoolID, err := s.loadExamEffectiveParticipantScope(ctx, in.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	actorRole := s.loadExamActorRole(ctx)
+	if actorRole == "guru" {
+		profile, err := s.loadTeacherAccessProfile(ctx, in.ActorID)
+		if err != nil {
+			return nil, err
+		}
+		if examScope == examManagementScopeCrossSchool && profile != teacherAccessProfileCrossSchool {
+			return nil, ErrExamForbidden
+		}
+	}
+	if examScope == examManagementScopeSameSchool {
+		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+			return nil, ErrExamForbidden
+		}
+		if actorRole == "guru" {
+			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.ActorID)
+			if err != nil {
+				return nil, err
+			}
+			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+				return nil, ErrExamForbidden
+			}
+		}
+	}
+	if err := s.ensureProktorSchoolScope(ctx, in.SchoolID); err != nil {
+		return nil, err
+	}
+
+	var classValid bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM classes c
+			JOIN schools s ON s.id = c.school_id
+			WHERE c.id = $1
+			  AND c.school_id = $2
+			  AND c.is_active = TRUE
+			  AND s.is_active = TRUE
+		)
+	`, in.ClassID, in.SchoolID).Scan(&classValid); err != nil {
+		return nil, fmt.Errorf("validate class for exam assignment removal: %w", err)
+	}
+	if !classValid {
+		return nil, ErrInvalidInput
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE exam_assignments ea
+		SET status = 'inactive',
+			updated_at = now()
+		FROM enrollments e
+		JOIN users u ON u.id = e.user_id
+		WHERE ea.exam_id = $1
+		  AND ea.user_id = e.user_id
+		  AND ea.status = 'active'
+		  AND e.school_id = $2
+		  AND e.class_id = $3
+		  AND e.status = 'active'
+		  AND u.is_active = TRUE
+		  AND u.role = 'siswa'
+	`, in.ExamID, in.SchoolID, in.ClassID); err != nil {
+		if isUndefinedTableErr(err, "exam_assignments") {
+			return nil, ErrAssignmentFeature
+		}
+		return nil, fmt.Errorf("deactivate exam assignments by class: %w", err)
 	}
 
 	return s.ListExamAssignments(ctx, in.ExamID)

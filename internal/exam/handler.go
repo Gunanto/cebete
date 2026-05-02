@@ -55,6 +55,7 @@ type examService interface {
 	ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	AppendExamAssignmentsByClass(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	RemoveExamAssignmentsByClass(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	RemoveExamAssignment(ctx context.Context, examID, userID, actorID int64) error
 	ListExamQuestions(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
 	GetExamQuestionDetail(ctx context.Context, examID, questionID int64) (*ExamQuestionDetail, error)
@@ -182,6 +183,11 @@ type replaceExamAssignmentsByClassRequest struct {
 }
 
 type appendExamAssignmentsByClassRequest struct {
+	SchoolID int64 `json:"school_id"`
+	ClassID  int64 `json:"class_id"`
+}
+
+type removeExamAssignmentsByClassRequest struct {
 	SchoolID int64 `json:"school_id"`
 	ClassID  int64 `json:"class_id"`
 }
@@ -1591,6 +1597,58 @@ func (h *Handler) AppendExamAssignmentsByClass(w http.ResponseWriter, r *http.Re
 			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrAssignmentTenantRequired):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "ujian belum terhubung tenant/sekolah"})
+		case errors.Is(err, ErrAssignmentFeature):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+	writeJSON(w, r, http.StatusOK, response{OK: true, Data: items})
+}
+
+func (h *Handler) RemoveExamAssignmentsByClass(w http.ResponseWriter, r *http.Request) {
+	examID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || examID <= 0 {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid exam id"})
+		return
+	}
+	var req removeExamAssignmentsByClassRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "invalid request body"})
+		return
+	}
+	user, ok := auth.CurrentUser(r.Context())
+	if !ok {
+		writeJSON(w, r, http.StatusUnauthorized, response{OK: false, Error: "unauthorized"})
+		return
+	}
+	if err := h.ensureGuruExamOwner(r.Context(), user, examID); err != nil {
+		switch {
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		default:
+			writeJSON(w, r, http.StatusInternalServerError, response{OK: false, Error: "internal error"})
+		}
+		return
+	}
+
+	items, err := h.svc.RemoveExamAssignmentsByClass(r.Context(), RemoveExamAssignmentsByClassInput{
+		ExamID:   examID,
+		SchoolID: req.SchoolID,
+		ClassID:  req.ClassID,
+		ActorID:  user.ID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "school_id dan class_id wajib valid"})
+		case errors.Is(err, ErrExamNotFound):
+			writeJSON(w, r, http.StatusNotFound, response{OK: false, Error: "exam not found"})
+		case errors.Is(err, ErrExamForbidden):
+			writeExamForbidden(w, r, user, err)
 		case errors.Is(err, ErrAssignmentFeature):
 			writeJSON(w, r, http.StatusBadRequest, response{OK: false, Error: "Tabel exam_assignments belum ada. Jalankan migration terbaru."})
 		default:

@@ -48,6 +48,7 @@ type mockExamService struct {
 	replaceExamAssignmentsFn         func(ctx context.Context, in ReplaceExamAssignmentsInput) ([]ExamAssignmentUser, error)
 	replaceExamAssignmentsByClassFn  func(ctx context.Context, in ReplaceExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	appendExamAssignmentsByClassFn   func(ctx context.Context, in AppendExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
+	removeExamAssignmentsByClassFn   func(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error)
 	removeExamAssignmentFn           func(ctx context.Context, examID, userID, actorID int64) error
 	previewExamByTokenForStaffFn     func(ctx context.Context, examToken string) (*ExamTokenPreview, error)
 	listExamQuestionsFn              func(ctx context.Context, examID int64) ([]ExamQuestionManageItem, error)
@@ -310,6 +311,13 @@ func (m *mockExamService) AppendExamAssignmentsByClass(ctx context.Context, in A
 		return nil, errors.New("not implemented")
 	}
 	return m.appendExamAssignmentsByClassFn(ctx, in)
+}
+
+func (m *mockExamService) RemoveExamAssignmentsByClass(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+	if m.removeExamAssignmentsByClassFn == nil {
+		return nil, errors.New("not implemented")
+	}
+	return m.removeExamAssignmentsByClassFn(ctx, in)
 }
 
 func (m *mockExamService) RemoveExamAssignment(ctx context.Context, examID, userID, actorID int64) error {
@@ -930,9 +938,9 @@ func TestUpdateExamReturnsForbiddenWhenServiceDeniesScope(t *testing.T) {
 
 func TestResetExamAttemptForwardsArgs(t *testing.T) {
 	var (
-		gotExamID   int64
-		gotStudent  int64
-		gotActorID  int64
+		gotExamID  int64
+		gotStudent int64
+		gotActorID int64
 	)
 	h := NewHandler(&mockExamService{
 		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
@@ -1839,6 +1847,63 @@ func TestAppendExamAssignmentsByClassReturnsForbiddenOnScopeViolation(t *testing
 	w := httptest.NewRecorder()
 
 	h.AppendExamAssignmentsByClass(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	errBody, ok := body["error"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected structured error body, got %#v", body["error"])
+	}
+	if errBody["message"] != "forbidden" {
+		t.Fatalf("expected forbidden message, got %#v", errBody["message"])
+	}
+}
+
+func TestRemoveExamAssignmentsByClassForwardsArgs(t *testing.T) {
+	var got RemoveExamAssignmentsByClassInput
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		removeExamAssignmentsByClassFn: func(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+			got = in
+			return []ExamAssignmentUser{}, nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/assignments/by-class", bytes.NewBufferString(`{"school_id":4,"class_id":11}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.RemoveExamAssignmentsByClass(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got.ExamID != 9 || got.SchoolID != 4 || got.ClassID != 11 || got.ActorID != 7 {
+		t.Fatalf("unexpected forwarded input: %#v", got)
+	}
+}
+
+func TestRemoveExamAssignmentsByClassReturnsForbiddenOnScopeViolation(t *testing.T) {
+	h := NewHandler(&mockExamService{
+		isExamOwnedByFn: func(ctx context.Context, examID, ownerID int64) (bool, error) {
+			return true, nil
+		},
+		removeExamAssignmentsByClassFn: func(ctx context.Context, in RemoveExamAssignmentsByClassInput) ([]ExamAssignmentUser, error) {
+			return nil, ErrExamForbidden
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/exams/9/assignments/by-class", bytes.NewBufferString(`{"school_id":4,"class_id":11}`))
+	req = withChiParam(req, "id", "9")
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: 7, Role: "guru"}))
+	w := httptest.NewRecorder()
+
+	h.RemoveExamAssignmentsByClass(w, req)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", w.Code)

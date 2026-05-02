@@ -492,6 +492,9 @@
     const assignSchoolSelect = document.getElementById("guru-assign-school");
     const assignClassSelect = document.getElementById("guru-assign-class");
     const assignScopeHint = document.getElementById("guru-assign-scope-hint");
+    const examUnassignClassBtn = document.getElementById(
+      "guru-exam-unassign-class-btn",
+    );
     const examAssignmentsLoadBtn = document.getElementById(
       "guru-exam-assignments-load-btn",
     );
@@ -2017,6 +2020,7 @@
         assignSchoolSelect: assignSchoolSelect,
         assignClassSelect: assignClassSelect,
         assignScopeHint: assignScopeHint,
+        examUnassignClassBtn: examUnassignClassBtn,
         examAssignmentsLoadBtn: examAssignmentsLoadBtn,
         examAssignmentsBody: examAssignmentsBody,
       });

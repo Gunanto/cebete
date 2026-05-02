@@ -282,6 +282,42 @@
     return Array.isArray(rows) ? rows : [];
   }
 
+  function getSelectedClassPayload(actionLabel) {
+    const examID = Number(
+      (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
+    );
+    if (examID <= 0) {
+      deps.setMsg("Pilih ujian untuk " + actionLabel + " peserta.");
+      return null;
+    }
+    const schoolID = Number(
+      (deps.assignSchoolSelect && deps.assignSchoolSelect.value) || 0,
+    );
+    const classID = Number(
+      (deps.assignClassSelect && deps.assignClassSelect.value) || 0,
+    );
+    const exam = findExamByID(examID);
+    const examScope = String((exam && exam.management_scope) || "same_school")
+      .trim()
+      .toLowerCase();
+    const ownerSchoolID = Number((exam && exam.owner_school_id) || 0);
+    if (
+      examScope === "same_school" &&
+      ownerSchoolID > 0 &&
+      schoolID !== ownerSchoolID
+    ) {
+      deps.setMsg(
+        "Exam ini hanya bisa mengelola peserta dari sekolah pemilik ujian.",
+      );
+      return null;
+    }
+    if (schoolID <= 0 || classID <= 0) {
+      deps.setMsg("Pilih sekolah dan kelas untuk " + actionLabel + " peserta.");
+      return null;
+    }
+    return { examID: examID, schoolID: schoolID, classID: classID };
+  }
+
   function bindHandlers() {
     if (!deps) return;
 
@@ -321,32 +357,8 @@
     if (deps.examAssignForm) {
       deps.examAssignForm.addEventListener("submit", async function (e) {
         e.preventDefault();
-        const examID = Number(
-          (deps.assignExamIDInput && deps.assignExamIDInput.value) || 0,
-        );
-        if (examID <= 0) {
-          deps.setMsg("Pilih ujian untuk enroll peserta.");
-          return;
-        }
-        const schoolID = Number(
-          (deps.assignSchoolSelect && deps.assignSchoolSelect.value) || 0,
-        );
-        const classID = Number(
-          (deps.assignClassSelect && deps.assignClassSelect.value) || 0,
-        );
-        const exam = findExamByID(examID);
-        const examScope = String((exam && exam.management_scope) || "same_school")
-          .trim()
-          .toLowerCase();
-        const ownerSchoolID = Number((exam && exam.owner_school_id) || 0);
-        if (examScope === "same_school" && ownerSchoolID > 0 && schoolID !== ownerSchoolID) {
-          deps.setMsg("Exam ini hanya bisa assign peserta dari sekolah pemilik ujian.");
-          return;
-        }
-        if (schoolID <= 0 || classID <= 0) {
-          deps.setMsg("Pilih sekolah dan kelas untuk enroll peserta.");
-          return;
-        }
+        const payload = getSelectedClassPayload("enroll");
+        if (!payload) return;
         const done = deps.beginBusy(
           deps.examAssignForm,
           deps.msg,
@@ -354,15 +366,50 @@
         );
         try {
           const items = await deps.api(
-            "/api/v1/admin/exams/" + examID + "/assignments/by-class/append",
+            "/api/v1/admin/exams/" +
+              payload.examID +
+              "/assignments/by-class/append",
             "POST",
-            { school_id: schoolID, class_id: classID },
+            { school_id: payload.schoolID, class_id: payload.classID },
           );
           renderExamAssignments(items, false);
           deps.setMsg("Enroll peserta berhasil disimpan.");
           await loadExamManageTable();
         } catch (err) {
           deps.setMsg("Gagal menyimpan enroll peserta: " + err.message);
+        } finally {
+          done();
+        }
+      });
+    }
+
+    if (deps.examUnassignClassBtn) {
+      deps.examUnassignClassBtn.addEventListener("click", async function () {
+        const payload = getSelectedClassPayload("unenroll");
+        if (!payload) return;
+        if (
+          !window.confirm(
+            "Unenroll semua peserta dari kelas ini untuk ujian yang dipilih?",
+          )
+        ) {
+          return;
+        }
+        const done = deps.beginBusy(
+          deps.examUnassignClassBtn,
+          deps.msg,
+          "Menghapus enroll peserta per kelas...",
+        );
+        try {
+          const items = await deps.api(
+            "/api/v1/admin/exams/" + payload.examID + "/assignments/by-class",
+            "DELETE",
+            { school_id: payload.schoolID, class_id: payload.classID },
+          );
+          renderExamAssignments(items, true);
+          deps.setMsg("Unenroll peserta per kelas berhasil disimpan.");
+          await loadExamManageTable();
+        } catch (err) {
+          deps.setMsg("Gagal unenroll peserta per kelas: " + err.message);
         } finally {
           done();
         }
