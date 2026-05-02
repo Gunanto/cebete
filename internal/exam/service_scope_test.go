@@ -2,6 +2,7 @@ package exam
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -420,6 +421,35 @@ func TestLoadUserPrimarySchoolIDReturnsLatestSchool(t *testing.T) {
 	}
 	if schoolID == nil || *schoolID != 77 {
 		t.Fatalf("expected school id 77, got %+v", schoolID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestLoadUserPrimarySchoolIDFallsBackToScopedSchool(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+	mock.ExpectQuery(`SELECT school_id[\s\S]*FROM enrollments`).
+		WithArgs(int64(13)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT school_id[\s\S]*FROM user_school_scopes`).
+		WithArgs(int64(13)).
+		WillReturnRows(sqlmock.NewRows([]string{"school_id"}).AddRow(int64(88)))
+
+	schoolID, err := svc.loadUserPrimarySchoolID(context.Background(), 13)
+	if err != nil {
+		t.Fatalf("loadUserPrimarySchoolID: %v", err)
+	}
+	if schoolID == nil || *schoolID != 88 {
+		t.Fatalf("expected scoped school id 88, got %+v", schoolID)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

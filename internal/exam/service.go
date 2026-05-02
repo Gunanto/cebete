@@ -282,10 +282,25 @@ func (s *Service) loadUserPrimarySchoolID(ctx context.Context, userID int64) (*i
 		ORDER BY enrolled_at DESC, id DESC
 		LIMIT 1
 	`, userID).Scan(&schoolID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("load user primary school: %w", err)
+		}
+	} else if schoolID.Valid && schoolID.Int64 > 0 {
+		v := schoolID.Int64
+		return &v, nil
+	}
+
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT school_id
+		FROM user_school_scopes
+		WHERE user_id = $1
+		ORDER BY created_at ASC, school_id ASC
+		LIMIT 1
+	`, userID).Scan(&schoolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || isUndefinedTableErr(err, "user_school_scopes") {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("load user primary school: %w", err)
+		return nil, fmt.Errorf("load user scoped school: %w", err)
 	}
 	if !schoolID.Valid || schoolID.Int64 <= 0 {
 		return nil, nil
