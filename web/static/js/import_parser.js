@@ -20,28 +20,95 @@
     }
   }
 
-  function buildImportRichHTML(rawText) {
+  function decodeBasicHtmlEntities(raw) {
+    return String(raw || "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&#39;/gi, "'")
+      .replace(/&quot;/gi, '"');
+  }
+
+  function sanitizeImportImageSrc(rawSrc) {
+    const src = decodeBasicHtmlEntities(String(rawSrc || "").trim());
+    if (!src) return "";
+    if (/^data:image\//i.test(src)) return src;
+    if (/^\/api\/v1\/media\/question-images\//i.test(src)) return src;
+    return "";
+  }
+
+  function collectImportSegments(rawText) {
     const text = String(rawText || "").trim();
-    if (!text) return "";
     const tokenPattern = /\[\[CBTIMG:([A-Za-z0-9_-]+)\]\]/g;
+    const imgPattern = /<img\b[^>]*\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi;
+    const matches = [];
+    let tokenMatch = tokenPattern.exec(text);
+    while (tokenMatch) {
+      matches.push({
+        start: tokenMatch.index,
+        end: tokenPattern.lastIndex,
+        kind: "token",
+        value: tokenMatch[1],
+      });
+      tokenMatch = tokenPattern.exec(text);
+    }
+    let imgMatch = imgPattern.exec(text);
+    while (imgMatch) {
+      matches.push({
+        start: imgMatch.index,
+        end: imgPattern.lastIndex,
+        kind: "img",
+        value: imgMatch[2] || imgMatch[3] || imgMatch[4] || "",
+      });
+      imgMatch = imgPattern.exec(text);
+    }
+    matches.sort(function (a, b) {
+      return a.start - b.start;
+    });
+    return { text: text, matches: matches };
+  }
+
+  function buildImportRichHTML(rawText) {
+    const segmented = collectImportSegments(rawText);
+    const text = segmented.text;
+    if (!text) return "";
     const parts = [];
     let lastIndex = 0;
-    let match = tokenPattern.exec(text);
-    while (match) {
-      const before = text.slice(lastIndex, match.index);
+    segmented.matches.forEach(function (match) {
+      if (match.start < lastIndex) return;
+      const before = text.slice(lastIndex, match.start);
       if (before) {
-        parts.push(escapeHtml(before).replace(/\r?\n/g, "<br>"));
+        parts.push(
+          escapeHtml(before.replace(/<br\s*\/?>/gi, "\n")).replace(
+            /\r?\n/g,
+            "<br>",
+          ),
+        );
       }
-      const dataURL = decodeBase64Url(match[1]);
-      if (dataURL && /^data:image\//i.test(dataURL)) {
-        parts.push('<img src="' + escapeHtml(dataURL) + '" alt="gambar soal">');
+      if (match.kind === "token") {
+        const dataURL = decodeBase64Url(match.value);
+        if (dataURL && /^data:image\//i.test(dataURL)) {
+          parts.push(
+            '<img src="' + escapeHtml(dataURL) + '" alt="gambar soal">',
+          );
+        }
+      } else if (match.kind === "img") {
+        const safeSrc = sanitizeImportImageSrc(match.value);
+        if (safeSrc) {
+          parts.push('<img src="' + escapeHtml(safeSrc) + '" alt="gambar soal">');
+        }
       }
-      lastIndex = tokenPattern.lastIndex;
-      match = tokenPattern.exec(text);
-    }
+      lastIndex = match.end;
+    });
     const tail = text.slice(lastIndex);
     if (tail) {
-      parts.push(escapeHtml(tail).replace(/\r?\n/g, "<br>"));
+      parts.push(
+        escapeHtml(tail.replace(/<br\s*\/?>/gi, "\n")).replace(
+          /\r?\n/g,
+          "<br>",
+        ),
+      );
     }
     if (!parts.length) return "";
     return "<p>" + parts.join("") + "</p>";
