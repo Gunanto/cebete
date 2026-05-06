@@ -1307,6 +1307,41 @@ func loadUserTenantID(ctx context.Context, q columnQuerier, userID int64) (*int6
 	return &out, nil
 }
 
+func (s *Service) resolveAssignmentTenantID(ctx context.Context, examID int64, fallbackSchoolID *int64) (*int64, error) {
+	tenantID, err := loadExamTenantID(ctx, s.db, examID)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID != nil && *tenantID > 0 {
+		return tenantID, nil
+	}
+
+	_, ownerSchoolID, err := s.loadExamManagementScope(ctx, examID)
+	if err != nil {
+		return nil, err
+	}
+	if ownerSchoolID != nil && *ownerSchoolID > 0 {
+		ownerTenantID, err := s.loadSchoolTenantID(ctx, *ownerSchoolID)
+		if err != nil {
+			return nil, err
+		}
+		if ownerTenantID != nil && *ownerTenantID > 0 {
+			return ownerTenantID, nil
+		}
+	}
+
+	if fallbackSchoolID != nil && *fallbackSchoolID > 0 {
+		schoolTenantID, err := s.loadSchoolTenantID(ctx, *fallbackSchoolID)
+		if err != nil {
+			return nil, err
+		}
+		if schoolTenantID != nil && *schoolTenantID > 0 {
+			return schoolTenantID, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *Service) StartAttempt(ctx context.Context, examID, studentID int64, examToken string) (*Attempt, error) {
 	if err := s.ensureProktorExamScope(ctx, examID); err != nil {
 		return nil, err
@@ -4756,7 +4791,7 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	}
 	var assignmentTenantID *int64
 	if assignmentHasTenant {
-		assignmentTenantID, err = loadExamTenantID(ctx, s.db, in.ExamID)
+		assignmentTenantID, err = s.resolveAssignmentTenantID(ctx, in.ExamID, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -4984,7 +5019,7 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 	}
 	var assignmentTenantID *int64
 	if assignmentHasTenant {
-		assignmentTenantID, err = loadExamTenantID(ctx, s.db, in.ExamID)
+		assignmentTenantID, err = s.resolveAssignmentTenantID(ctx, in.ExamID, &in.SchoolID)
 		if err != nil {
 			return nil, err
 		}
