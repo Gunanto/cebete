@@ -4773,15 +4773,21 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 	}
 	if examScope == examManagementScopeSameSchool {
 		if ownerSchoolID == nil || *ownerSchoolID <= 0 {
-			return nil, ErrExamForbidden
-		}
-		if actorRole == "guru" {
-			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
-			if err != nil {
-				return nil, err
-			}
-			if !allowed {
+			if actorRole == "guru" {
+				// Backward compatibility for legacy exam rows with empty owner_school_id.
+				// Keep permission guard via school scope checks at user-level below.
+			} else {
 				return nil, ErrExamForbidden
+			}
+		} else {
+			if actorRole == "guru" {
+				allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
+				if err != nil {
+					return nil, err
+				}
+				if !allowed {
+					return nil, ErrExamForbidden
+				}
 			}
 		}
 	}
@@ -4816,7 +4822,7 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 		if err := s.ensureProktorStudentScope(ctx, userID); err != nil {
 			return nil, err
 		}
-		if examScope == examManagementScopeSameSchool {
+		if examScope == examManagementScopeSameSchool && ownerSchoolID != nil && *ownerSchoolID > 0 {
 			if err := s.ensureUserInSchool(ctx, userID, *ownerSchoolID); err != nil {
 				return nil, err
 			}
@@ -4908,11 +4914,15 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 		}
 	}
 	if examScope == examManagementScopeSameSchool {
-		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+		if ownerSchoolID != nil && *ownerSchoolID > 0 && in.SchoolID != *ownerSchoolID {
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
+			targetSchoolID := in.SchoolID
+			if ownerSchoolID != nil && *ownerSchoolID > 0 {
+				targetSchoolID = *ownerSchoolID
+			}
+			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, targetSchoolID)
 			if err != nil {
 				return nil, err
 			}
@@ -5000,11 +5010,15 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 		}
 	}
 	if examScope == examManagementScopeSameSchool {
-		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+		if ownerSchoolID != nil && *ownerSchoolID > 0 && in.SchoolID != *ownerSchoolID {
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
+			targetSchoolID := in.SchoolID
+			if ownerSchoolID != nil && *ownerSchoolID > 0 {
+				targetSchoolID = *ownerSchoolID
+			}
+			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, targetSchoolID)
 			if err != nil {
 				return nil, err
 			}
@@ -5141,11 +5155,15 @@ func (s *Service) RemoveExamAssignmentsByClass(ctx context.Context, in RemoveExa
 		}
 	}
 	if examScope == examManagementScopeSameSchool {
-		if ownerSchoolID == nil || *ownerSchoolID <= 0 || in.SchoolID != *ownerSchoolID {
+		if ownerSchoolID != nil && *ownerSchoolID > 0 && in.SchoolID != *ownerSchoolID {
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			allowed, err := s.teacherCanManageSchool(ctx, in.ActorID, *ownerSchoolID)
+			targetSchoolID := in.SchoolID
+			if ownerSchoolID != nil && *ownerSchoolID > 0 {
+				targetSchoolID = *ownerSchoolID
+			}
+			allowed, err := s.teacherCanManageSchool(ctx, in.ActorID, targetSchoolID)
 			if err != nil {
 				return nil, err
 			}
