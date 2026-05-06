@@ -464,6 +464,33 @@ func (s *Service) loadExamActorRole(ctx context.Context) string {
 	return strings.ToLower(strings.TrimSpace(user.Role))
 }
 
+func (s *Service) teacherCanManageSchool(ctx context.Context, userID, schoolID int64) (bool, error) {
+	if userID <= 0 || schoolID <= 0 {
+		return false, ErrInvalidInput
+	}
+	var allowed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM user_school_scopes
+			WHERE user_id = $1
+			  AND school_id = $2
+		)
+	`, userID, schoolID).Scan(&allowed); err != nil {
+		if !isUndefinedTableErr(err, "user_school_scopes") {
+			return false, fmt.Errorf("check teacher managed school scope: %w", err)
+		}
+	}
+	if allowed {
+		return true, nil
+	}
+	primarySchoolID, err := s.loadUserPrimarySchoolID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return primarySchoolID != nil && *primarySchoolID == schoolID, nil
+}
+
 func (s *Service) ensureUserInSchool(ctx context.Context, userID, schoolID int64) error {
 	if userID <= 0 || schoolID <= 0 {
 		return ErrInvalidInput
@@ -4714,11 +4741,11 @@ func (s *Service) ReplaceExamAssignments(ctx context.Context, in ReplaceExamAssi
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
 			if err != nil {
 				return nil, err
 			}
-			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+			if !allowed {
 				return nil, ErrExamForbidden
 			}
 		}
@@ -4850,11 +4877,11 @@ func (s *Service) ReplaceExamAssignmentsByClass(ctx context.Context, in ReplaceE
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
 			if err != nil {
 				return nil, err
 			}
-			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+			if !allowed {
 				return nil, ErrExamForbidden
 			}
 		}
@@ -4942,11 +4969,11 @@ func (s *Service) AppendExamAssignmentsByClass(ctx context.Context, in AppendExa
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.AssignedBy)
+			allowed, err := s.teacherCanManageSchool(ctx, in.AssignedBy, *ownerSchoolID)
 			if err != nil {
 				return nil, err
 			}
-			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+			if !allowed {
 				return nil, ErrExamForbidden
 			}
 		}
@@ -5083,11 +5110,11 @@ func (s *Service) RemoveExamAssignmentsByClass(ctx context.Context, in RemoveExa
 			return nil, ErrExamForbidden
 		}
 		if actorRole == "guru" {
-			actorSchoolID, err := s.loadUserPrimarySchoolID(ctx, in.ActorID)
+			allowed, err := s.teacherCanManageSchool(ctx, in.ActorID, *ownerSchoolID)
 			if err != nil {
 				return nil, err
 			}
-			if actorSchoolID == nil || *actorSchoolID != *ownerSchoolID {
+			if !allowed {
 				return nil, ErrExamForbidden
 			}
 		}

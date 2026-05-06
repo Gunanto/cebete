@@ -762,6 +762,9 @@ func TestUpdateExamSameSchoolReplacesOwnerSchoolWithTeacherPrimarySchool(t *test
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
+	mock.ExpectQuery(`SELECT EXISTS\(`).
+		WithArgs(int64(21), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery(`SELECT school_id[\s\S]*FROM enrollments`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"school_id"}).AddRow(int64(3)))
@@ -906,6 +909,33 @@ func TestUpdateExamRejectsCrossSchoolForSchoolTeacher(t *testing.T) {
 	}
 }
 
+func TestTeacherCanManageSchoolUsesManagedScope(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	svc := NewService(db, 90)
+
+	mock.ExpectQuery(`SELECT EXISTS\(`).
+		WithArgs(int64(21), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	allowed, err := svc.teacherCanManageSchool(context.Background(), 21, 3)
+	if err != nil {
+		t.Fatalf("teacherCanManageSchool: %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected teacher to be allowed for managed school scope")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func TestReplaceExamAssignmentsByClassRejectsSchoolOutsideSameSchoolScope(t *testing.T) {
 	t.Parallel()
 
@@ -1003,6 +1033,9 @@ func TestReplaceExamAssignmentsRejectsStudentOutsideSameSchoolScopeForSchoolTeac
 	mock.ExpectQuery(`SELECT teacher_access_profile[\s\S]*FROM users`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"teacher_access_profile"}).AddRow("school"))
+	mock.ExpectQuery(`SELECT EXISTS\(`).
+		WithArgs(int64(21), int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery(`SELECT school_id[\s\S]*FROM enrollments`).
 		WithArgs(int64(21)).
 		WillReturnRows(sqlmock.NewRows([]string{"school_id"}).AddRow(int64(3)))
