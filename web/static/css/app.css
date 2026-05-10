@@ -5792,6 +5792,22 @@ body[data-page="ujian_content"] #exam-token-dialog-current {
     letter-spacing: 0;
 }
 
+body[data-page="ujian_content"] #exam-token-dialog-form {
+    text-align: center;
+}
+
+body[data-page="ujian_content"] #exam-token-dialog-form label {
+    text-align: center;
+}
+
+body[data-page="ujian_content"] #exam-token-dialog-input {
+    text-align: center;
+}
+
+body[data-page="ujian_content"] #exam-token-dialog-input::placeholder {
+    text-align: center;
+}
+
 body[data-page="peserta_content"] .peserta-dashboard-shortcuts {
     display: none;
     gap: 14px;
