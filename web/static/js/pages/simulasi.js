@@ -196,6 +196,17 @@
       return items;
     }
 
+    function getExamTokenFromItem(item) {
+      if (!item || typeof item !== "object") return "";
+      const raw =
+        item.token ||
+        item.exam_token ||
+        item.examToken ||
+        item.token_plain ||
+        "";
+      return String(raw || "").trim();
+    }
+
     function renderCurrentExamToken(value) {
       if (!examTokenDialogCurrent || !examTokenDialogCurrentValue) return;
       const clean = String(value || "").trim();
@@ -319,7 +330,7 @@
             examTokenDialogInput.value = "";
           }
           const selectedExam = publishedExamByID[examID] || {};
-          renderCurrentExamToken(selectedExam.token);
+          renderCurrentExamToken(getExamTokenFromItem(selectedExam));
           if (examTokenDialogHelp) {
             examTokenDialogHelp.textContent = tokenDialogHelpDefault;
           }
@@ -744,6 +755,20 @@
           done();
         }
         return;
+      }
+      try {
+        const published = await loadPublishedExams();
+        if (Array.isArray(published) && published.length > 0) {
+          let selected = published[0];
+          if (pendingStartExamID > 0) {
+            selected = publishedExamByID[pendingStartExamID] || selected;
+          }
+          renderCurrentExamToken(getExamTokenFromItem(selected));
+        } else {
+          renderCurrentExamToken("");
+        }
+      } catch (_err) {
+        renderCurrentExamToken("");
       }
       if (examTokenDialogInput) examTokenDialogInput.value = "";
       if (examTokenDialogHelp) {
