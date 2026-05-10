@@ -31,6 +31,12 @@
     const examTokenDialogHelp = document.getElementById(
       "exam-token-dialog-help",
     );
+    const examTokenDialogCurrent = document.getElementById(
+      "exam-token-dialog-current",
+    );
+    const examTokenDialogCurrentValue = document.getElementById(
+      "exam-token-dialog-current-value",
+    );
     const examTokenDialogInput = document.getElementById(
       "exam-token-dialog-input",
     );
@@ -100,7 +106,7 @@
     const isNonRegular = !!(user && user.is_non_regular);
     const tokenDialogHelpDefault = String(
       (examTokenDialogHelp && examTokenDialogHelp.textContent) ||
-        "Token wajib diisi. Mintakan token ujian ke proktor.",
+        "Token wajib diisi.",
     ).trim();
     const examReadyHelpDefault = String(
       (examReadyDialogHelp && examReadyDialogHelp.textContent) ||
@@ -111,6 +117,7 @@
         "Baca petunjuk berikut sebelum memulai ujian.",
     ).trim();
     let subjects = [];
+    let publishedExamByID = {};
     if (selfEnrollPanel) {
       selfEnrollPanel.hidden = !isNonRegular;
     }
@@ -149,6 +156,13 @@
       if (!selfEnrollBody) return [];
       const list = await api("/api/v1/exams/published", "GET");
       const items = Array.isArray(list) ? list : [];
+      publishedExamByID = {};
+      items.forEach(function (it) {
+        const id = Number((it && it.id) || 0);
+        if (id > 0) {
+          publishedExamByID[id] = it;
+        }
+      });
       if (!items.length) {
         selfEnrollBody.innerHTML =
           '<div class="peserta-exam-empty muted">Belum ada ujian aktif yang bisa diikuti.</div>';
@@ -180,6 +194,18 @@
         selfEnrollBody.appendChild(card);
       });
       return items;
+    }
+
+    function renderCurrentExamToken(value) {
+      if (!examTokenDialogCurrent || !examTokenDialogCurrentValue) return;
+      const clean = String(value || "").trim();
+      if (!clean) {
+        examTokenDialogCurrent.hidden = true;
+        examTokenDialogCurrentValue.textContent = "-";
+        return;
+      }
+      examTokenDialogCurrentValue.textContent = clean;
+      examTokenDialogCurrent.hidden = false;
     }
 
     function resetSelect(sel, placeholder) {
@@ -292,6 +318,8 @@
           if (examTokenDialogInput) {
             examTokenDialogInput.value = "";
           }
+          const selectedExam = publishedExamByID[examID] || {};
+          renderCurrentExamToken(selectedExam.token);
           if (examTokenDialogHelp) {
             examTokenDialogHelp.textContent = tokenDialogHelpDefault;
           }
@@ -440,6 +468,7 @@
 
       if (!isStudentRole) {
         if (examTokenDialogInput) examTokenDialogInput.value = "";
+        renderCurrentExamToken("");
         if (
           examTokenDialog &&
           typeof examTokenDialog.showModal === "function"
@@ -468,6 +497,7 @@
         if (examTokenDialogInput) {
           examTokenDialogInput.value = "";
         }
+        renderCurrentExamToken("");
         if (examTokenDialogHelp) {
           examTokenDialogHelp.textContent = tokenDialogHelpDefault;
         }
@@ -510,6 +540,7 @@
             "Token ujian belum valid. Silakan isi token terlebih dulu.",
           );
           if (examTokenDialogInput) examTokenDialogInput.value = "";
+          renderCurrentExamToken("");
           if (
             examTokenDialog &&
             typeof examTokenDialog.showModal === "function"

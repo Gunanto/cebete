@@ -5779,6 +5779,19 @@ body[data-page="ujian_content"] .peserta-exam-actions .btn-inline {
     white-space: nowrap;
 }
 
+body[data-page="ujian_content"] #exam-token-dialog-current {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fbff;
+    color: var(--ink);
+    font-size: 1.05rem;
+    letter-spacing: 0;
+}
+
 body[data-page="peserta_content"] .peserta-dashboard-shortcuts {
     display: none;
     gap: 14px;
